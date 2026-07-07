@@ -11,7 +11,7 @@ import https from 'https';
 import crypto from 'crypto';
 import { getStore } from './store.js';
 
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 const FIREBASE_PROJECT_ID = 'whatsapp-omni-f2918';
 const app = express();
 const httpServer = createServer(app);

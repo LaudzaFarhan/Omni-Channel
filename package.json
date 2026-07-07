@@ -5,6 +5,7 @@
   "main": "server/index.js",
   "type": "module",
   "scripts": {
+    "start": "node server/index.js",
     "server": "nodemon --ignore sessions/ --ignore *.json server/index.js",
     "client": "vite",
     "build": "vite build",
