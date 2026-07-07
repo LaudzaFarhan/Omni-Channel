@@ -1,0 +1,969 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { getSocket, connectSocket, disconnectSocket } from './utils/socket.js';
+import ChatList from './components/ChatList.jsx';
+import ChatWindow from './components/ChatWindow.jsx';
+import ConnectionPanel from './components/ConnectionPanel.jsx';
+import StatsPanel from './components/StatsPanel.jsx';
+import LandingPage from './components/LandingPage.jsx';
+import AuthScreens from './components/AuthScreens.jsx';
+import AdminDashboard from './components/AdminDashboard.jsx';
+import { auth, db, fetchWithAuth } from './utils/firebase.js';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { MessageSquare, Clock, AlertTriangle, Bell, X } from 'lucide-react';
+
+import Sidebar from './components/Sidebar.jsx';
+import Subscription from './components/Subscription.jsx';
+import Profile from './components/Profile.jsx';
+import Settings from './components/Settings.jsx';
+import MessageDashboard from './components/MessageDashboard.jsx';
+import Dashboard from './components/Dashboard.jsx';
+import TopBar from './components/TopBar.jsx';
+import NotificationsView from './components/NotificationsView.jsx';
+
+export default function App() {
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  const [user, setUser] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('messages');
+  const [isSessionBlocked, setIsSessionBlocked] = useState(false);
+  const [activeSessionCount, setActiveSessionCount] = useState(1);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // =============================================
+  // MULTI-SESSION STATE
+  // =============================================
+  // Each WA session: { sessionId, status, qr, user }
+  const [waSessions, setWaSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState('default');
+
+  const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
+  const [notifications, setNotifications] = useState([
+    {
+      id: '1',
+      title: 'WhatsApp Connected',
+      message: 'Your WhatsApp session has connected successfully.',
+      time: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      type: 'success',
+      read: false
+    },
+    {
+      id: '2',
+      title: 'Trial Period Active',
+      message: 'You have 7 days left in your free trial. Upgrade to premium for unlimited sessions.',
+      time: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      type: 'info',
+      read: false
+    },
+    {
+      id: '3',
+      title: 'Formatting Tips',
+      message: 'You can now format text using bold (*), italics (_), strikethrough (~), and monospace (```).',
+      time: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      type: 'warning',
+      read: false
+    }
+  ]);
+
+  // Per-active-session UI state
+  const [connectionStatus, setConnectionStatus] = useState('disconnected');
+  const [qrCode, setQrCode] = useState(null);
+  const [userInfo, setUserInfo] = useState(null);
+  
+  const [chats, setChats] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeChatJid, setActiveChatJid] = useState(null);
+  const [messages, setMessages] = useState([]);
+
+  const activeChatJidRef = useRef(null);
+  const activeSessionIdRef = useRef('default');
+
+  // Sync refs
+  useEffect(() => {
+    activeChatJidRef.current = activeChatJid;
+  }, [activeChatJid]);
+
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
+
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSyncHistory = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      const res = await fetchWithAuth(`/api/sync?sessionId=${activeSessionId}`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('Re-synchronizing chat history. Your connection will reload momentarily.');
+      } else {
+        alert(`Sync failed: ${data.error || 'Unknown error'}`);
+      }
+    } catch (e) {
+      console.error('Failed to sync history:', e);
+      alert('Failed to trigger history sync.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Navigate helper
+  const navigateTo = (path) => {
+    window.history.pushState({}, '', path);
+    setCurrentPath(path);
+  };
+
+  // Sync state with browser back/forward buttons
+  useEffect(() => {
+    const handleLocationChange = () => {
+      setCurrentPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+    };
+  }, []);
+
+  // Monitor Firebase Auth state
+  useEffect(() => {
+    let unsubscribeProfile = () => {};
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+        
+        // Listen to Firestore profile changes
+        unsubscribeProfile = onSnapshot(doc(db, 'users', currentUser.uid), async (docSnap) => {
+          if (docSnap.exists()) {
+            const profile = docSnap.data();
+            setUserProfile(profile);
+
+            // Connect socket if approved
+            if (profile.isApproved) {
+              try {
+                const token = await currentUser.getIdToken();
+                const ws = connectSocket(token);
+                setupSocketListeners(ws);
+              } catch (e) {
+                console.error('[App] Failed to establish dynamic socket:', e);
+              }
+            } else {
+              disconnectSocket();
+            }
+          } else {
+            console.warn('[App] Profile document not found in Firestore. Auto-creating default profile...');
+            
+            const emailLower = (currentUser.email || '').toLowerCase();
+            const isAdmin = emailLower.endsWith('@admin.com') || 
+                            emailLower === 'adminthelab@gmail.com' || 
+                            emailLower === import.meta.env.VITE_ADMIN_EMAIL?.toLowerCase();
+            
+            const defaultProfile = {
+              uid: currentUser.uid,
+              name: currentUser.displayName || currentUser.email.split('@')[0],
+              email: currentUser.email,
+              role: isAdmin ? 'admin' : 'customer',
+              isApproved: isAdmin ? true : false,
+              tier: isAdmin ? 'premium' : 'free',
+              messageLimit: 500,
+              messagesSent: 0,
+              sessionLimit: 1,
+              createdAt: new Date(),
+            };
+
+            try {
+              // Creating Firestore document for user
+              await setDoc(doc(db, 'users', currentUser.uid), defaultProfile);
+            } catch (err) {
+              console.error('[App] Failed to auto-create missing user profile:', err);
+              setUserProfile(null);
+            }
+          }
+          setLoading(false);
+        });
+      } else {
+        setUser(null);
+        setUserProfile(null);
+        disconnectSocket();
+        unsubscribeProfile();
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      unsubscribeAuth();
+      unsubscribeProfile();
+    };
+  }, []);
+
+  // Handle page focus or tab visibility changes to auto-sync background tabs
+  useEffect(() => {
+    const handleFocusOrVisibility = () => {
+      if (document.visibilityState === 'visible' && user && userProfile?.isApproved) {
+        fetchChats(activeSessionIdRef.current);
+        const currentActiveJid = activeChatJidRef.current;
+        if (currentActiveJid) {
+          fetchMessages(activeSessionIdRef.current, currentActiveJid);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleFocusOrVisibility);
+    window.addEventListener('focus', handleFocusOrVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleFocusOrVisibility);
+      window.removeEventListener('focus', handleFocusOrVisibility);
+    };
+  }, [user, userProfile]);
+
+  // =============================================
+  // SOCKET EVENT LISTENERS (multi-session aware)
+  // =============================================
+  const setupSocketListeners = (ws) => {
+    if (!ws) return;
+
+    ws.on('connect', () => {
+      console.log('Socket.io connected securely');
+      // Server will send 'all-sessions' on connect
+    });
+
+    // Receive all existing WA sessions on first connect
+    ws.on('all-sessions', (sessions) => {
+      console.log('[App] Received all-sessions:', sessions);
+      setWaSessions(sessions);
+      
+      // If there are sessions, pick the first connected one or the first one
+      if (sessions.length > 0) {
+        const connectedSession = sessions.find(s => s.status === 'connected');
+        const target = connectedSession || sessions[0];
+        setActiveSessionId(target.sessionId);
+        setConnectionStatus(target.status);
+        setQrCode(target.qr || null);
+        setUserInfo(target.user || null);
+        
+        if (target.status === 'connected') {
+          fetchChats(target.sessionId);
+        }
+      } else {
+        // No sessions exist — init default
+        ws.emit('init-session', { sessionId: 'default' });
+        setWaSessions([{ sessionId: 'default', status: 'connecting', qr: null, user: null }]);
+        setActiveSessionId('default');
+        setConnectionStatus('connecting');
+      }
+    });
+
+    ws.on('status-change', (data) => {
+      const { sessionId, status, qr, user } = data;
+
+      // Add status change notification
+      if (status === 'connected') {
+        setNotifications(prev => [
+          {
+            id: `status_${Date.now()}`,
+            title: `Session Connected`,
+            message: `WhatsApp session (${sessionId}) connected successfully.`,
+            time: new Date().toISOString(),
+            type: 'success',
+            read: false
+          },
+          ...prev
+        ]);
+      } else if (status === 'disconnected') {
+        setNotifications(prev => [
+          {
+            id: `status_${Date.now()}`,
+            title: `Session Disconnected`,
+            message: `WhatsApp session (${sessionId}) has disconnected.`,
+            time: new Date().toISOString(),
+            type: 'error',
+            read: false
+          },
+          ...prev
+        ]);
+      }
+
+      // Update waSessions array
+      setWaSessions(prev => {
+        const idx = prev.findIndex(s => s.sessionId === sessionId);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], status, qr: qr || null, user: user || updated[idx].user };
+          return updated;
+        } else {
+          return [...prev, { sessionId, status, qr: qr || null, user: user || null }];
+        }
+      });
+
+      // Only update main view state if this is the active session
+      if (sessionId === activeSessionIdRef.current) {
+        setConnectionStatus(status);
+        setQrCode(qr || null);
+        if (user) setUserInfo(user);
+
+        if (status === 'connected') {
+          fetchChats(sessionId);
+          const currentActiveJid = activeChatJidRef.current;
+          if (currentActiveJid) {
+            fetchMessages(sessionId, currentActiveJid);
+          }
+        } else if (status === 'disconnected') {
+          setChats([]);
+          setActiveChatJid(null);
+          setMessages([]);
+        }
+      }
+    });
+
+    ws.on('new-message', (data) => {
+      const { sessionId } = data;
+      if (sessionId !== activeSessionIdRef.current) return;
+      
+      fetchChats(sessionId);
+      const currentActiveJid = activeChatJidRef.current;
+      if (currentActiveJid && data.jid === currentActiveJid) {
+        setMessages(prev => {
+          const exists = prev.some(m => m.key.id === data.message.key.id);
+          return exists ? prev : [...prev, data.message];
+        });
+      }
+
+      // Add real-time message notification
+      if (data.message && !data.message.key.fromMe) {
+        const msgText = data.message.message?.conversation || 
+                       data.message.message?.extendedTextMessage?.text || 
+                       'Received media attachment.';
+        
+        setNotifications(prev => [
+          {
+            id: `msg_${Date.now()}`,
+            title: `New Message`,
+            message: `From +${data.jid.split('@')[0]}: ${msgText.substring(0, 60)}${msgText.length > 60 ? '...' : ''}`,
+            time: new Date().toISOString(),
+            type: 'message',
+            read: false
+          },
+          ...prev
+        ]);
+      }
+    });
+
+    ws.on('message-update', (data) => {
+      const { sessionId } = data;
+      if (sessionId !== activeSessionIdRef.current) return;
+      
+      // Update message status in the main chat pane if currently open
+      if (activeChatJidRef.current && data.key.remoteJid === activeChatJidRef.current) {
+        setMessages(prev => 
+          prev.map(m => m.key.id === data.key.id ? { ...m, ...data.update } : m)
+        );
+      }
+
+      // Also update the check status in the left sidebar chat row
+      if (data.update && data.update.status !== undefined) {
+        setChats(prev => 
+          prev.map(chat => {
+            if (chat.id === data.key.remoteJid) {
+              return {
+                ...chat,
+                lastMessageStatus: data.update.status
+              };
+            }
+            return chat;
+          })
+        );
+      }
+    });
+
+    ws.on('history-sync-complete', (data) => {
+      const { sessionId } = data;
+      if (sessionId !== activeSessionIdRef.current) return;
+      
+      fetchChats(sessionId);
+      const currentActiveJid = activeChatJidRef.current;
+      if (currentActiveJid) {
+        fetchMessages(sessionId, currentActiveJid);
+      }
+    });
+
+    ws.on('store-cleared', (data) => {
+      const { sessionId } = data;
+      if (sessionId !== activeSessionIdRef.current) return;
+      
+      setChats([]);
+      setActiveChatJid(null);
+      setMessages([]);
+    });
+
+    ws.on('session-blocked', (data) => {
+      setIsSessionBlocked(true);
+      disconnectSocket();
+    });
+
+    ws.on('session-count-update', (data) => {
+      setActiveSessionCount(data.count);
+    });
+  };
+
+  // =============================================
+  // SESSION SWITCHING
+  // =============================================
+  const handleSwitchSession = (sessionId) => {
+    setActiveSessionId(sessionId);
+    activeSessionIdRef.current = sessionId;
+
+    // Clear current view
+    setChats([]);
+    setActiveChatJid(null);
+    setMessages([]);
+    setSearchQuery('');
+
+    // Find this session in our list
+    const session = waSessions.find(s => s.sessionId === sessionId);
+    if (session) {
+      setConnectionStatus(session.status);
+      setQrCode(session.qr || null);
+      setUserInfo(session.user || null);
+
+      if (session.status === 'connected') {
+        fetchChats(sessionId);
+      }
+    } else {
+      // Session doesn't exist yet (new), init it
+      setConnectionStatus('connecting');
+      setQrCode(null);
+      setUserInfo(null);
+      const ws = getSocket();
+      if (ws) {
+        ws.emit('init-session', { sessionId });
+      }
+    }
+  };
+
+  const handleAddSession = () => {
+    const newId = `session_${Date.now()}`;
+    
+    // Add to local state immediately
+    setWaSessions(prev => [...prev, { sessionId: newId, status: 'connecting', qr: null, user: null }]);
+    
+    // Switch to the new session
+    setActiveSessionId(newId);
+    activeSessionIdRef.current = newId;
+    setConnectionStatus('connecting');
+    setQrCode(null);
+    setUserInfo(null);
+    setChats([]);
+    setActiveChatJid(null);
+    setMessages([]);
+    setSearchQuery('');
+
+    // Tell server to init
+    const ws = getSocket();
+    if (ws) {
+      ws.emit('init-session', { sessionId: newId });
+    }
+  };
+
+  const handleRemoveSession = (sessionId) => {
+    if (!window.confirm('Are you sure you want to disconnect and remove this WhatsApp number?')) return;
+
+    const ws = getSocket();
+    if (ws) {
+      ws.emit('logout-session', { sessionId });
+    }
+
+    // Remove from local list
+    setWaSessions(prev => prev.filter(s => s.sessionId !== sessionId));
+
+    // If it was the active session, switch to another
+    if (activeSessionIdRef.current === sessionId) {
+      const remaining = waSessions.filter(s => s.sessionId !== sessionId);
+      if (remaining.length > 0) {
+        handleSwitchSession(remaining[0].sessionId);
+      } else {
+        // No sessions left, create default
+        handleAddSession();
+      }
+    }
+  };
+
+  // =============================================
+  // DATA FETCHERS (session-scoped)
+  // =============================================
+  const fetchStatus = async (sessionId) => {
+    const sid = sessionId || activeSessionIdRef.current;
+    try {
+      const res = await fetchWithAuth(`/api/status?sessionId=${sid}`);
+      const data = await res.json();
+      
+      if (sid === activeSessionIdRef.current) {
+        setConnectionStatus(data.status);
+        setQrCode(data.qr);
+        setUserInfo(data.user);
+        
+        if (data.status === 'connected') {
+          fetchChats(sid);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching connection status:', err);
+      if (sid === activeSessionIdRef.current) {
+        setConnectionStatus('disconnected');
+      }
+    }
+  };
+
+  const fetchChats = async (sessionId) => {
+    const sid = sessionId || activeSessionIdRef.current;
+    try {
+      const res = await fetchWithAuth(`/api/chats?sessionId=${sid}`);
+      const data = await res.json();
+      if (sid === activeSessionIdRef.current) {
+        setChats(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Error fetching chats:', err);
+    }
+  };
+
+  const fetchMessages = async (sessionId, jid) => {
+    const sid = sessionId || activeSessionIdRef.current;
+    try {
+      const res = await fetchWithAuth(`/api/chats/${jid}/messages?sessionId=${sid}`);
+      const data = await res.json();
+      if (sid === activeSessionIdRef.current) {
+        setMessages(data);
+      }
+    } catch (err) {
+      console.error('Error fetching messages:', err);
+    }
+  };
+
+  // Handle Website Logout
+  const handleWebsiteLogout = async () => {
+    const confirmLogout = window.confirm('Are you sure you want to sign out of the dashboard?');
+    if (!confirmLogout) return;
+
+    try {
+      setLoading(true);
+      await signOut(auth);
+      navigateTo('/');
+    } catch (e) {
+      console.error('Website signout failed:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle WhatsApp Session Disconnect for the active session
+  const handleWhatsAppLogout = async () => {
+    const confirmLogout = window.confirm('Are you sure you want to disconnect your WhatsApp account? This will unlink your device.');
+    if (!confirmLogout) return;
+
+    try {
+      setLoading(true);
+      await fetchWithAuth('/api/logout', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: activeSessionId })
+      });
+    } catch (e) {
+      console.error('WhatsApp logout failed:', e);
+      alert('Failed to disconnect WhatsApp session.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load messages when selecting a chat
+  useEffect(() => {
+    if (activeChatJid) {
+      fetchMessages(activeSessionIdRef.current, activeChatJid);
+      
+      // Clear unread count locally for visual response
+      setChats(prev => 
+        prev.map(c => c.id === activeChatJid ? { ...c, unreadCount: 0 } : c)
+      );
+    }
+  }, [activeChatJid]);
+
+  // Load connection status when approved customer logs in
+  useEffect(() => {
+    if (user && userProfile && userProfile.isApproved && userProfile.role === 'customer') {
+      fetchStatus(activeSessionIdRef.current);
+    }
+  }, [user, userProfile]);
+
+  let activeChat = Array.isArray(chats) ? chats.find(c => c.id === activeChatJid) : null;
+  if (!activeChat && activeChatJid) {
+    const cleanId = activeChatJid.split('@')[0];
+    if (/^\d+$/.test(cleanId)) {
+      activeChat = {
+        id: activeChatJid,
+        name: '+' + cleanId,
+        phoneNumber: '+' + cleanId,
+        unreadCount: 0
+      };
+    }
+  }
+
+  // 1. Loading State Screen
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', height: '100vh', width: '100vw', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-main)' }}>
+        <div className="spinner"></div>
+      </div>
+    );
+  }
+
+  // 1.5. Session Blocked Screening
+  if (isSessionBlocked) {
+    return (
+      <div className="connection-overlay">
+        <div className="connection-card glass" style={{ maxWidth: '440px', padding: '40px' }}>
+          <div className="welcome-logo-wrapper" style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.2)', margin: '0 auto 24px auto' }}>
+            <AlertTriangle size={36} />
+          </div>
+          <h2 className="connection-title">Session Already Active</h2>
+          <p className="connection-subtitle" style={{ marginBottom: '24px' }}>
+            This account is currently logged in on another device or browser tab.
+          </p>
+          <div style={{ padding: '16px', background: 'rgba(239, 68, 68, 0.08)', borderLeft: '4px solid #ef4444', borderRadius: '6px', textAlign: 'left', fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '30px' }}>
+            Please log out from the previous device or tab first to access the dashboard on this device.
+          </div>
+          <button className="logout-button" onClick={() => {
+            setIsSessionBlocked(false);
+            signOut(auth);
+            navigateTo('/login');
+          }} style={{ width: '100%', padding: '12px' }}>
+            Back to Sign In
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Unauthenticated Routing (SaaS Landing & Login/Register Panels)
+  if (!user) {
+    if (currentPath === '/login') {
+      return (
+        <AuthScreens 
+          type="login" 
+          onSwitchType={() => navigateTo('/register')} 
+          onBackToHome={() => navigateTo('/')}
+          onAuthSuccess={() => navigateTo('/dashboard')}
+        />
+      );
+    }
+    if (currentPath === '/register') {
+      return (
+        <AuthScreens 
+          type="register" 
+          onSwitchType={() => navigateTo('/login')} 
+          onBackToHome={() => navigateTo('/')}
+          onAuthSuccess={() => navigateTo('/dashboard')}
+        />
+      );
+    }
+    return (
+      <LandingPage 
+        onGoToDashboard={() => navigateTo('/login')} 
+      />
+    );
+  }
+
+  // 3. Admin Account Routing
+  if (userProfile && userProfile.role === 'admin') {
+    return (
+      <AdminDashboard 
+        user={user} 
+        onLogout={handleWebsiteLogout} 
+      />
+    );
+  }
+
+  // 4. Pending Approval Screening
+  if (userProfile && !userProfile.isApproved) {
+    return (
+      <div className="connection-overlay">
+        <div className="connection-card glass" style={{ maxWidth: '440px', padding: '40px' }}>
+          <div className="welcome-logo-wrapper" style={{ color: '#f59e0b', borderColor: 'rgba(245,158,11,0.2)', margin: '0 auto 24px auto' }}>
+            <Clock size={36} />
+          </div>
+          <h2 className="connection-title">Pending Verification</h2>
+          <p className="connection-subtitle" style={{ marginBottom: '24px' }}>
+            Your account has been registered successfully but requires administrator approval.
+          </p>
+          <div style={{ padding: '16px', background: 'rgba(245, 158, 11, 0.08)', borderLeft: '4px solid #f59e0b', borderRadius: '6px', textAlign: 'left', fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '30px' }}>
+            Please contact your system administrator to approve access for: <br />
+            <strong>{user.email}</strong>
+          </div>
+          <button className="logout-button" onClick={handleWebsiteLogout} style={{ width: '100%', padding: '12px' }}>
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Calculate trial status
+  let isTrialExpired = userProfile?.trialExpired || false;
+  let trialDaysLeft = 7;
+  if (userProfile && userProfile.role !== 'admin' && (userProfile.tier || 'free') === 'free') {
+    let createdAtDate = new Date();
+    if (userProfile.createdAt) {
+      if (typeof userProfile.createdAt.toDate === 'function') {
+        createdAtDate = userProfile.createdAt.toDate();
+      } else if (userProfile.createdAt.seconds) {
+        createdAtDate = new Date(userProfile.createdAt.seconds * 1000);
+      } else {
+        createdAtDate = new Date(userProfile.createdAt);
+      }
+    }
+    const differenceMs = Date.now() - createdAtDate.getTime();
+    const differenceDays = differenceMs / (1000 * 60 * 60 * 24);
+    if (differenceDays >= 7) {
+      isTrialExpired = true;
+    } else {
+      trialDaysLeft = Math.max(0, 7 - Math.floor(differenceDays));
+    }
+  }
+
+  // Check: is the active WA session connected?
+  const activeWaSession = waSessions.find(s => s.sessionId === activeSessionId);
+  const isActiveConnected = connectionStatus === 'connected';
+
+  // 5. Approved Customer Dashboard
+  return (
+    <div className="dashboard-container" style={{ position: 'relative' }}>
+      <div style={{ display: 'flex', width: '100%', height: '100%' }}>
+        <div className={`sidebar-wrapper ${sidebarCollapsed ? 'collapsed' : ''}`}>
+          <Sidebar 
+            activeTab={activeTab} 
+            setActiveTab={setActiveTab} 
+            onLogout={handleWebsiteLogout}
+            collapsed={sidebarCollapsed}
+            notifications={notifications}
+          />
+        </div>
+        
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+          <TopBar 
+            user={user} 
+            userProfile={userProfile} 
+            connectionStatus={connectionStatus}
+            userInfo={userInfo}
+            onWhatsAppLogout={handleWhatsAppLogout}
+            waSessions={waSessions}
+            activeSessionId={activeSessionId}
+            onSwitchSession={handleSwitchSession}
+            onAddSession={handleAddSession}
+            onRemoveSession={handleRemoveSession}
+            sidebarCollapsed={sidebarCollapsed}
+            onToggleSidebar={() => setSidebarCollapsed(prev => !prev)}
+            syncing={isSyncing}
+            onSyncHistory={handleSyncHistory}
+            notifications={notifications}
+            onToggleNotifications={() => setShowNotificationsDrawer(prev => !prev)}
+          />
+          <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden' }}>
+            {isTrialExpired && activeTab !== 'subscription' && activeTab !== 'profile' && (
+              <div className="upgrade-overlay">
+                <div className="upgrade-card glass">
+                  <div style={{ background: 'rgba(239, 68, 68, 0.1)', width: '60px', height: '60px', borderRadius: '50%', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto' }}>
+                    <AlertTriangle size={32} />
+                  </div>
+                  <h3 style={{ fontSize: '1.5rem', fontWeight: '700', marginBottom: '12px' }}>Free Trial Expired</h3>
+                  <p style={{ color: 'var(--text-muted)', marginBottom: '24px', fontSize: '0.95rem', lineHeight: '1.5' }}>
+                    Your 7-day free trial has ended. Subscribe to Premium to continue using the dashboard.
+                  </p>
+                  <button 
+                    className="upgrade-btn" 
+                    style={{ width: '100%', padding: '14px', borderRadius: '8px' }}
+                    onClick={() => setActiveTab('subscription')}
+                  >
+                    Upgrade to Premium
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            <div className={isTrialExpired && activeTab !== 'subscription' && activeTab !== 'profile' ? 'blurry-workspace' : ''} style={{ display: 'flex', flex: 1, position: 'relative' }}>
+              {!isActiveConnected && (activeTab === 'dashboard' || activeTab === 'messages') ? (
+                <ConnectionPanel status={connectionStatus} qrCode={qrCode} />
+              ) : (
+                <>
+                  {activeTab === 'dashboard' && (
+                    <Dashboard 
+                      chats={chats}
+                      userProfile={userProfile}
+                      userInfo={userInfo}
+                      waSessions={waSessions}
+                      messages={messages}
+                    />
+                  )}
+
+                  {activeTab === 'messages' && (
+                    <MessageDashboard 
+                      chats={chats}
+                      searchQuery={searchQuery}
+                      setSearchQuery={setSearchQuery}
+                      activeChatJid={activeChatJid}
+                      setActiveChatJid={setActiveChatJid}
+                      activeChat={activeChat}
+                      messages={messages}
+                      setMessages={setMessages}
+                      userInfo={userInfo}
+                      userProfile={userProfile}
+                      user={user}
+                      onLogout={handleWhatsAppLogout}
+                      activeSessionId={activeSessionId}
+                    />
+                  )}
+                </>
+              )}
+
+              {activeTab === 'notifications' && (
+                <NotificationsView 
+                  notifications={notifications}
+                  setNotifications={setNotifications}
+                />
+              )}
+
+              {activeTab === 'subscription' && (
+                <Subscription 
+                  userProfile={userProfile} 
+                  activeSessionCount={activeSessionCount} 
+                />
+              )}
+
+              {activeTab === 'profile' && (
+                <Profile user={user} userProfile={userProfile} />
+              )}
+
+              {activeTab === 'settings' && (
+                <Settings />
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Right Slide-out Notifications Drawer */}
+      {showNotificationsDrawer && (
+        <div 
+          style={{ 
+            position: 'fixed', 
+            top: 0, 
+            right: 0, 
+            bottom: 0, 
+            width: '360px', 
+            backgroundColor: 'var(--bg-sidebar)', 
+            borderLeft: '1px solid var(--border-color)', 
+            zIndex: 1000, 
+            boxShadow: '-4px 0 16px rgba(0,0,0,0.3)',
+            display: 'flex',
+            flexDirection: 'column',
+            animation: 'slideIn 0.2s ease-out'
+          }}
+        >
+          {/* Drawer Header */}
+          <div style={{ padding: '20px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Bell size={18} style={{ color: 'var(--primary)' }} />
+              Notifications
+            </h3>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button 
+                onClick={() => {
+                  setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+                }}
+                style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.78rem', fontWeight: '600', cursor: 'pointer' }}
+                title="Mark all as read"
+              >
+                Mark all read
+              </button>
+              <button 
+                onClick={() => setShowNotificationsDrawer(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-dimmed)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+
+          {/* Drawer List */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+            {notifications.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {notifications.map(n => (
+                  <div 
+                    key={n.id}
+                    onClick={() => {
+                      setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, read: true } : item));
+                    }}
+                    style={{ 
+                      padding: '12px', 
+                      borderRadius: '8px', 
+                      border: '1px solid var(--border-color)', 
+                      backgroundColor: n.read ? 'var(--bg-main)' : 'rgba(16, 185, 129, 0.03)',
+                      cursor: 'pointer',
+                      position: 'relative'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                      <span style={{ fontSize: '0.88rem', fontWeight: n.read ? '500' : '700', color: 'var(--text-main)' }}>
+                        {n.title}
+                      </span>
+                      {!n.read && (
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--primary)', flexShrink: 0, marginTop: '4px' }} />
+                      )}
+                    </div>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                      {n.message}
+                    </p>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-dimmed)', display: 'block', marginTop: '6px' }}>
+                      {new Date(n.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-dimmed)' }}>
+                <p style={{ fontSize: '0.88rem', margin: 0 }}>No notifications yet</p>
+              </div>
+            )}
+          </div>
+
+          {/* Drawer Footer */}
+          <div style={{ padding: '16px', borderTop: '1px solid var(--border-color)', display: 'flex' }}>
+            <button 
+              onClick={() => {
+                setShowNotificationsDrawer(false);
+                setActiveTab('notifications');
+              }}
+              style={{ 
+                width: '100%', 
+                padding: '10px', 
+                backgroundColor: 'rgba(0,168,132,0.1)', 
+                color: 'var(--primary)', 
+                border: 'none', 
+                borderRadius: '8px', 
+                fontSize: '0.85rem', 
+                fontWeight: '600', 
+                cursor: 'pointer',
+                textAlign: 'center'
+              }}
+            >
+              View All Notifications
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
