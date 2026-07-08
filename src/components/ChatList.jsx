@@ -1,7 +1,17 @@
 import React from 'react';
 import { Search, Plus, Check, CheckCheck } from 'lucide-react';
+import { loadAllTags } from '../utils/contactTags.js';
 
 export default function ChatList({ chats, searchQuery, setSearchQuery, activeChatJid, setActiveChatJid, userInfo }) {
+  // Load contact tags (reactively updated via custom event)
+  const [contactTags, setContactTags] = React.useState(loadAllTags);
+
+  React.useEffect(() => {
+    const handleTagsUpdated = () => setContactTags(loadAllTags());
+    window.addEventListener('contact-tags-updated', handleTagsUpdated);
+    return () => window.removeEventListener('contact-tags-updated', handleTagsUpdated);
+  }, []);
+
   // Format timestamps into user-friendly times
   const formatTime = (timestamp) => {
     if (!timestamp) return '';
@@ -166,8 +176,22 @@ export default function ChatList({ chats, searchQuery, setSearchQuery, activeCha
                 </div>
                 <div className="chat-info">
                   <div className="chat-name-row">
-                    <span className="chat-name">
+                    <span className="chat-name" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       {getDisplayName(chat)}
+                      {contactTags[chat.id] && (
+                        <span style={{
+                          fontSize: '0.58rem',
+                          fontWeight: '600',
+                          padding: '1px 6px',
+                          borderRadius: '8px',
+                          color: contactTags[chat.id].color,
+                          background: contactTags[chat.id].bg,
+                          whiteSpace: 'nowrap',
+                          lineHeight: '1.4'
+                        }}>
+                          {contactTags[chat.id].label}
+                        </span>
+                      )}
                     </span>
                     <span className="chat-time">{formatTime(chat.lastMessageTimestamp)}</span>
                   </div>

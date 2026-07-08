@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck } from 'lucide-react';
+import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown } from 'lucide-react';
 import { fetchWithAuth, db } from '../utils/firebase.js';
 import { doc, updateDoc, increment } from 'firebase/firestore';
+import { PRESET_TAGS, getTag, setTag as saveTag, createCustomTag } from '../utils/contactTags.js';
 
 const DEFAULT_QUICK_REPLIES = [
   { id: 'welcome', title: '👋 Welcome Message', text: 'Hello! Thank you for contacting us. How can we assist you today?' },
@@ -248,6 +249,57 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+
+  // Tag state
+  const [currentTag, setCurrentTag] = useState(null);
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const [customTagInput, setCustomTagInput] = useState('');
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const tagDropdownRef = useRef(null);
+
+  // Load tag when active chat changes
+  useEffect(() => {
+    if (activeChat?.id) {
+      setCurrentTag(getTag(activeChat.id));
+      setShowTagDropdown(false);
+      setShowCustomInput(false);
+    }
+  }, [activeChat?.id]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (tagDropdownRef.current && !tagDropdownRef.current.contains(e.target)) {
+        setShowTagDropdown(false);
+        setShowCustomInput(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSelectTag = (tag) => {
+    saveTag(activeChat.id, tag);
+    setCurrentTag(tag);
+    setShowTagDropdown(false);
+    setShowCustomInput(false);
+  };
+
+  const handleRemoveTag = () => {
+    saveTag(activeChat.id, null);
+    setCurrentTag(null);
+    setShowTagDropdown(false);
+  };
+
+  const handleSaveCustomTag = () => {
+    if (!customTagInput.trim()) return;
+    const tag = createCustomTag(customTagInput.trim());
+    saveTag(activeChat.id, tag);
+    setCurrentTag(tag);
+    setCustomTagInput('');
+    setShowCustomInput(false);
+    setShowTagDropdown(false);
+  };
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -497,8 +549,22 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
               {(activeChat.name || activeChat.id).substring(0, 2).toUpperCase()}
             </div>
             <div>
-              <div className="header-name">
+              <div className="header-name" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {getDisplayName(activeChat)}
+                {currentTag && (
+                  <span style={{
+                    fontSize: '0.65rem',
+                    fontWeight: '600',
+                    padding: '2px 8px',
+                    borderRadius: '10px',
+                    color: currentTag.color,
+                    background: currentTag.bg,
+                    border: `1px solid ${currentTag.color}22`,
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {currentTag.label}
+                  </span>
+                )}
               </div>
               <div className="header-status">
                 {activeChat.id.endsWith('@g.us') 
@@ -509,7 +575,161 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
               </div>
             </div>
           </div>
-          <div className="header-actions">
+          <div className="header-actions" style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+            {/* Tag Selector */}
+            <div style={{ position: 'relative' }} ref={tagDropdownRef}>
+              <button 
+                className="icon-button" 
+                onClick={() => setShowTagDropdown(!showTagDropdown)}
+                title="Set Contact Tag"
+                style={{ 
+                  color: currentTag ? currentTag.color : 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px'
+                }}
+              >
+                <Tag size={17} />
+                <ChevronDown size={12} />
+              </button>
+
+              {showTagDropdown && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: 0,
+                  marginTop: '6px',
+                  background: 'var(--bg-sidebar)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '10px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                  zIndex: 100,
+                  width: '200px',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-color)', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-dimmed)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Set Tag
+                  </div>
+                  {PRESET_TAGS.map(tag => (
+                    <button
+                      key={tag.value}
+                      onClick={() => handleSelectTag(tag)}
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        border: 'none',
+                        background: currentTag?.value === tag.value ? tag.bg : 'transparent',
+                        color: 'var(--text-main)',
+                        fontSize: '0.82rem',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        transition: 'background 0.15s'
+                      }}
+                      onMouseEnter={e => e.target.style.background = tag.bg}
+                      onMouseLeave={e => e.target.style.background = currentTag?.value === tag.value ? tag.bg : 'transparent'}
+                    >
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tag.color, flexShrink: 0 }} />
+                      {tag.label}
+                      {currentTag?.value === tag.value && (
+                        <Check size={14} style={{ marginLeft: 'auto', color: tag.color }} />
+                      )}
+                    </button>
+                  ))}
+
+                  {/* Custom Tag Option */}
+                  {!showCustomInput ? (
+                    <button
+                      onClick={() => setShowCustomInput(true)}
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        border: 'none',
+                        background: currentTag?.value === 'custom' ? 'rgba(139, 92, 246, 0.12)' : 'transparent',
+                        color: 'var(--text-main)',
+                        fontSize: '0.82rem',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        transition: 'background 0.15s'
+                      }}
+                      onMouseEnter={e => e.target.style.background = 'rgba(139, 92, 246, 0.08)'}
+                      onMouseLeave={e => e.target.style.background = currentTag?.value === 'custom' ? 'rgba(139, 92, 246, 0.12)' : 'transparent'}
+                    >
+                      <Pencil size={12} style={{ color: '#8b5cf6', flexShrink: 0 }} />
+                      Custom Tag...
+                    </button>
+                  ) : (
+                    <div style={{ padding: '8px 10px', display: 'flex', gap: '6px' }}>
+                      <input
+                        type="text"
+                        value={customTagInput}
+                        onChange={(e) => setCustomTagInput(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSaveCustomTag()}
+                        placeholder="Type tag name..."
+                        autoFocus
+                        style={{
+                          flex: 1,
+                          padding: '6px 8px',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '6px',
+                          background: 'var(--bg-main)',
+                          color: 'var(--text-main)',
+                          fontSize: '0.78rem',
+                          outline: 'none'
+                        }}
+                      />
+                      <button
+                        onClick={handleSaveCustomTag}
+                        style={{
+                          padding: '4px 8px',
+                          background: '#8b5cf6',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '0.72rem',
+                          fontWeight: '600',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Save
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Remove Tag */}
+                  {currentTag && (
+                    <button
+                      onClick={handleRemoveTag}
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        border: 'none',
+                        borderTop: '1px solid var(--border-color)',
+                        background: 'transparent',
+                        color: '#ef4444',
+                        fontSize: '0.78rem',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}
+                      onMouseEnter={e => e.target.style.background = 'rgba(239, 68, 68, 0.08)'}
+                      onMouseLeave={e => e.target.style.background = 'transparent'}
+                    >
+                      <X size={14} />
+                      Remove Tag
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
             <button 
               className="icon-button" 
               onClick={() => setShowQuickReplies(!showQuickReplies)}
