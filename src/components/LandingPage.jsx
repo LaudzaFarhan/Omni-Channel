@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Users, Zap, Shield, Check, HelpCircle } from 'lucide-react';
+import { MessageSquare, Users, Zap, Shield, Check, HelpCircle, Pause, Play, Code } from 'lucide-react';
 
 export default function LandingPage({ onGoToDashboard }) {
   const [agentCount, setAgentCount] = React.useState(3);
@@ -22,35 +22,63 @@ export default function LandingPage({ onGoToDashboard }) {
 
   const [messages, setMessages] = React.useState([]);
   const [typingAgent, setTypingAgent] = React.useState(null);
+  const [isHolding, setIsHolding] = React.useState(false);
+  const [holdingAgent, setHoldingAgent] = React.useState(null);
+  const [showApiHint, setShowApiHint] = React.useState(false);
   const chatContainerRef = React.useRef(null);
 
-  React.useEffect(() => {
-    const chatSteps = [
-      { id: 1, type: 'incoming', text: 'Halo, saya tertarik dengan Toyota Avanza 2024. Masih ready stock?' },
-      { id: 2, type: 'typing', agent: 'Agent Dani' },
-      { id: 3, type: 'outgoing', agent: 'Agent Dani', text: 'Halo Pak! Ready stock untuk Avanza G dan Avanza Veloz. Mau tipe yang mana?' },
-      { id: 4, type: 'incoming', text: 'Veloz dong, warna putih ada? Boleh tahu harga OTR-nya?' },
-      { id: 5, type: 'typing', agent: 'Agent Rina' },
-      { id: 6, type: 'outgoing', agent: 'Agent Rina', text: 'Warna putih tersedia Pak! Harga OTR Rp 295 juta, dan sekarang ada promo DP ringan mulai dari Rp 35 juta.' },
-      { id: 7, type: 'incoming', text: 'Wah boleh juga. Bisa jadwalkan test drive hari Sabtu ini?' },
-      { id: 8, type: 'typing', agent: 'Agent Dani' },
-      { id: 9, type: 'outgoing', agent: 'Agent Dani', text: 'Siap Pak, test drive hari Sabtu sudah kami jadwalkan. Ditunggu kehadirannya! 🚗' }
-    ];
+  const isHoldingRef = React.useRef(false);
+  const resumeCallbackRef = React.useRef(null);
+  const activeRef = React.useRef(true);
+  const timerRef = React.useRef(null);
 
+  const chatSteps = React.useMemo(() => [
+    { id: 1, type: 'incoming', text: 'Halo, saya tertarik dengan Toyota Avanza 2024. Masih ready stock?' },
+    { id: 2, type: 'typing', agent: 'Agent Dani' },
+    { id: 3, type: 'outgoing', agent: 'Agent Dani', text: 'Halo Pak! Ready stock untuk Avanza G dan Avanza Veloz. Mau tipe yang mana?' },
+    { id: 4, type: 'incoming', text: 'Veloz dong, warna putih ada? Boleh tahu harga OTR-nya?' },
+    { id: 5, type: 'typing', agent: 'Agent Rina' },
+    { id: 6, type: 'outgoing', agent: 'Agent Rina', text: 'Warna putih tersedia Pak! Harga OTR Rp 295 juta, dan sekarang ada promo DP ringan mulai dari Rp 35 juta.' },
+    { id: 7, type: 'incoming', text: 'Wah boleh juga. Bisa jadwalkan test drive hari Sabtu ini?' },
+    { id: 8, type: 'typing', agent: 'Agent Dani' },
+    { id: 9, type: 'outgoing', agent: 'Agent Dani', text: 'Siap Pak, test drive hari Sabtu sudah kami jadwalkan. Ditunggu kehadirannya! 🚗' }
+  ], []);
+
+  // Hold/Release handlers
+  const handleHold = () => {
+    isHoldingRef.current = true;
+    setIsHolding(true);
+    setShowApiHint(true);
+  };
+
+  const handleRelease = () => {
+    isHoldingRef.current = false;
+    setIsHolding(false);
+    setHoldingAgent(null);
+    setShowApiHint(false);
+    // Resume the animation if it was paused
+    if (resumeCallbackRef.current) {
+      const cb = resumeCallbackRef.current;
+      resumeCallbackRef.current = null;
+      cb();
+    }
+  };
+
+  React.useEffect(() => {
     let currentStep = 0;
-    let active = true;
-    let timerId = null;
+    activeRef.current = true;
 
     setMessages([chatSteps[0]]);
     currentStep = 1;
 
     const runLoop = () => {
-      if (!active) return;
+      if (!activeRef.current) return;
       if (currentStep >= chatSteps.length) {
-        timerId = setTimeout(() => {
-          if (!active) return;
+        timerRef.current = setTimeout(() => {
+          if (!activeRef.current) return;
           setMessages([chatSteps[0]]);
           setTypingAgent(null);
+          setHoldingAgent(null);
           currentStep = 1;
           runLoop();
         }, 5000);
@@ -61,6 +89,20 @@ export default function LandingPage({ onGoToDashboard }) {
       let delay = 2000;
 
       if (step.type === 'typing') {
+        // If holding, pause here and wait for release
+        if (isHoldingRef.current) {
+          setTypingAgent(null);
+          setHoldingAgent(step.agent);
+          // Store a callback so release can resume
+          resumeCallbackRef.current = () => {
+            if (!activeRef.current) return;
+            setHoldingAgent(null);
+            setTypingAgent(step.agent);
+            currentStep++;
+            timerRef.current = setTimeout(runLoop, 1500);
+          };
+          return; // Stop the loop — release will resume it
+        }
         setTypingAgent(step.agent);
         delay = 1500;
       } else {
@@ -70,22 +112,23 @@ export default function LandingPage({ onGoToDashboard }) {
       }
 
       currentStep++;
-      timerId = setTimeout(runLoop, delay);
+      timerRef.current = setTimeout(runLoop, delay);
     };
 
-    timerId = setTimeout(runLoop, 2500);
+    timerRef.current = setTimeout(runLoop, 2500);
 
     return () => {
-      active = false;
-      clearTimeout(timerId);
+      activeRef.current = false;
+      clearTimeout(timerRef.current);
+      resumeCallbackRef.current = null;
     };
-  }, []);
+  }, [chatSteps]);
 
   React.useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
-  }, [messages, typingAgent]);
+  }, [messages, typingAgent, holdingAgent]);
 
   return (
     <div className="landing-container">
@@ -138,6 +181,21 @@ export default function LandingPage({ onGoToDashboard }) {
                     <span className="wa-status-dot"></span> Online
                   </div>
                 </div>
+                {isHolding && (
+                  <div style={{
+                    marginLeft: 'auto',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: '#ef4444',
+                    fontSize: '0.65rem',
+                    fontWeight: '700',
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    letterSpacing: '0.5px',
+                    animation: 'pulse 1.5s ease-in-out infinite'
+                  }}>
+                    ⏸ ON HOLD
+                  </div>
+                )}
               </div>
 
               <div className="wa-mockup-chat" ref={chatContainerRef}>
@@ -158,7 +216,121 @@ export default function LandingPage({ onGoToDashboard }) {
                     <div className="typing-dot"></div>
                   </div>
                 )}
+
+                {holdingAgent && !typingAgent && (
+                  <div style={{
+                    padding: '8px 12px',
+                    margin: '6px 12px',
+                    background: 'rgba(239, 68, 68, 0.08)',
+                    border: '1px dashed rgba(239, 68, 68, 0.3)',
+                    borderRadius: '8px',
+                    fontSize: '0.75rem',
+                    color: '#ef4444',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    <Pause size={12} />
+                    <span><strong>{holdingAgent}</strong> is on hold — waiting for release</span>
+                  </div>
+                )}
               </div>
+
+              {/* Agent Control Bar */}
+              <div style={{
+                padding: '10px 14px',
+                borderTop: '1px solid var(--border-color)',
+                display: 'flex',
+                gap: '8px',
+                alignItems: 'center',
+                background: 'rgba(0,0,0,0.15)'
+              }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-dimmed)', marginRight: 'auto', fontWeight: '600' }}>
+                  API Control
+                </div>
+                {!isHolding ? (
+                  <button
+                    onClick={handleHold}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '6px 14px',
+                      fontSize: '0.72rem',
+                      fontWeight: '600',
+                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                      borderRadius: '6px',
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      color: '#ef4444',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <Pause size={12} /> Hold Agent
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleRelease}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '6px 14px',
+                      fontSize: '0.72rem',
+                      fontWeight: '600',
+                      border: '1px solid rgba(16, 185, 129, 0.4)',
+                      borderRadius: '6px',
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      color: '#10b981',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      animation: 'pulse 1.5s ease-in-out infinite'
+                    }}
+                  >
+                    <Play size={12} /> Let Agent Reply
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* API Code Hint */}
+            <div style={{
+              marginTop: '12px',
+              background: 'rgba(0,0,0,0.3)',
+              borderRadius: '10px',
+              border: '1px solid var(--border-color)',
+              overflow: 'hidden',
+              maxHeight: showApiHint ? '160px' : '0px',
+              opacity: showApiHint ? 1 : 0,
+              transition: 'max-height 0.4s ease, opacity 0.3s ease'
+            }}>
+              <div style={{
+                padding: '10px 14px',
+                borderBottom: '1px solid var(--border-color)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.72rem',
+                fontWeight: '600',
+                color: 'var(--primary)'
+              }}>
+                <Code size={13} /> API Endpoint
+              </div>
+              <pre style={{
+                margin: 0,
+                padding: '12px 14px',
+                fontSize: '0.68rem',
+                lineHeight: '1.5',
+                color: '#a5f3fc',
+                fontFamily: "'JetBrains Mono', 'Fira Code', monospace',",
+                overflowX: 'auto',
+                whiteSpace: 'pre'
+              }}>{`POST /api/agent/hold
+{
+  "sessionId": "default",
+  "chatJid": "628..@s.whatsapp.net",
+  "action": "release"  // or "hold"
+}`}</pre>
             </div>
           </div>
         </div>
