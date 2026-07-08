@@ -26,15 +26,15 @@ export default function LandingPage({ onGoToDashboard }) {
 
   React.useEffect(() => {
     const chatSteps = [
-      { id: 1, type: 'incoming', text: 'Halo, saya mau tanya pendaftaran kelas coding.' },
-      { id: 2, type: 'typing', agent: 'Agent Alvi' },
-      { id: 3, type: 'outgoing', agent: 'Agent Alvi', text: 'Halo! Tentu, untuk kelas coding anak ada kelas trial gratis di hari Sabtu ini ya.' },
-      { id: 4, type: 'incoming', text: 'Wah menarik, jam berapa saja ya?' },
-      { id: 5, type: 'typing', agent: 'Agent Laudza' },
-      { id: 6, type: 'outgoing', agent: 'Agent Laudza', text: 'Tersedia jam 10:00 WIB dan 14:00 WIB. Mau book slot yang mana?' },
-      { id: 7, type: 'incoming', text: 'Boleh book untuk jam 10:00 pagi ya. Anak saya usia 10 tahun.' },
-      { id: 8, type: 'typing', agent: 'Agent Alvi' },
-      { id: 9, type: 'outgoing', agent: 'Agent Alvi', text: 'Baik, slot Sabtu jam 10:00 pagi sudah kami amankan. Sampai jumpa!' }
+      { id: 1, type: 'incoming', text: 'Halo, saya tertarik dengan Toyota Avanza 2024. Masih ready stock?' },
+      { id: 2, type: 'typing', agent: 'Agent Dani' },
+      { id: 3, type: 'outgoing', agent: 'Agent Dani', text: 'Halo Pak! Ready stock untuk Avanza G dan Avanza Veloz. Mau tipe yang mana?' },
+      { id: 4, type: 'incoming', text: 'Veloz dong, warna putih ada? Boleh tahu harga OTR-nya?' },
+      { id: 5, type: 'typing', agent: 'Agent Rina' },
+      { id: 6, type: 'outgoing', agent: 'Agent Rina', text: 'Warna putih tersedia Pak! Harga OTR Rp 295 juta, dan sekarang ada promo DP ringan mulai dari Rp 35 juta.' },
+      { id: 7, type: 'incoming', text: 'Wah boleh juga. Bisa jadwalkan test drive hari Sabtu ini?' },
+      { id: 8, type: 'typing', agent: 'Agent Dani' },
+      { id: 9, type: 'outgoing', agent: 'Agent Dani', text: 'Siap Pak, test drive hari Sabtu sudah kami jadwalkan. Ditunggu kehadirannya! 🚗' }
     ];
 
     let currentStep = 0;
@@ -131,9 +131,9 @@ export default function LandingPage({ onGoToDashboard }) {
           <div className="hero-right">
             <div className="wa-mockup glass">
               <div className="wa-mockup-header">
-                <div className="wa-mockup-avatar">WA</div>
+                <div className="wa-mockup-avatar">BK</div>
                 <div className="wa-mockup-info" style={{ textAlign: 'left' }}>
-                  <div className="wa-mockup-name">+62 852-8457-5606</div>
+                  <div className="wa-mockup-name">Budi Kartono</div>
                   <div className="wa-mockup-status">
                     <span className="wa-status-dot"></span> Online
                   </div>
