@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { auth, db } from '../utils/firebase.js';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { MessageSquare, Mail, Lock, User, ArrowLeft } from 'lucide-react';
+import { MessageSquare, Mail, Lock, User, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 
 export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSuccess }) {
   const [email, setEmail] = useState('');
@@ -10,6 +10,7 @@ export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSu
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -23,8 +24,8 @@ export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSu
 
     try {
       if (type === 'login') {
-        await signInWithEmailAndPassword(auth, email, password);
-        onAuthSuccess();
+        const credential = await signInWithEmailAndPassword(auth, email, password);
+        onAuthSuccess(credential.user);
       } else {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
@@ -49,7 +50,7 @@ export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSu
           createdAt: serverTimestamp(),
         });
 
-        onAuthSuccess();
+        onAuthSuccess(user);
       }
     } catch (err) {
       console.error('Auth error:', err);
@@ -149,14 +150,26 @@ export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSu
           <div className="search-input-wrapper">
             <Lock className="search-icon" />
             <input 
-              type="password" 
+              type={showPassword ? 'text' : 'password'} 
               placeholder="Password" 
-              className="search-input"
+              className="search-input has-trailing-action"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
+              autoComplete={type === 'login' ? 'current-password' : 'new-password'}
               required
             />
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setShowPassword(prev => !prev)}
+              disabled={loading}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-pressed={showPassword}
+              title={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+            </button>
           </div>
 
           <button 

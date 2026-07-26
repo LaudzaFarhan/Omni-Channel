@@ -20,6 +20,7 @@ import MessageDashboard from './components/MessageDashboard.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import TopBar from './components/TopBar.jsx';
 import NotificationsView from './components/NotificationsView.jsx';
+import { showToast } from './utils/toastBus.js';
 
 export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -97,7 +98,17 @@ export default function App() {
       const res = await fetchWithAuth(`/api/sync?sessionId=${activeSessionId}`, {
         method: 'POST',
       });
-      const data = await res.json();
+      if (!res.ok) {
+        const errText = await res.text();
+        alert(`Sync failed: ${errText || res.statusText}`);
+        return;
+      }
+      const text = await res.text();
+      if (!text) {
+        alert('Sync triggered, but server returned empty response. Please wait for reconnection.');
+        return;
+      }
+      const data = JSON.parse(text);
       if (data.success) {
         alert('Re-synchronizing chat history. Your connection will reload momentarily.');
       } else {
@@ -521,7 +532,16 @@ export default function App() {
     const sid = sessionId || activeSessionIdRef.current;
     try {
       const res = await fetchWithAuth(`/api/chats?sessionId=${sid}`);
-      const data = await res.json();
+      if (!res.ok) {
+        console.warn(`fetchChats: server returned ${res.status}`);
+        return;
+      }
+      const text = await res.text();
+      if (!text) {
+        // Empty response body — session likely not ready
+        return;
+      }
+      const data = JSON.parse(text);
       if (sid === activeSessionIdRef.current) {
         setChats(Array.isArray(data) ? data : []);
       }
@@ -534,7 +554,13 @@ export default function App() {
     const sid = sessionId || activeSessionIdRef.current;
     try {
       const res = await fetchWithAuth(`/api/chats/${jid}/messages?sessionId=${sid}`);
-      const data = await res.json();
+      if (!res.ok) {
+        console.warn(`fetchMessages: server returned ${res.status}`);
+        return;
+      }
+      const text = await res.text();
+      if (!text) return;
+      const data = JSON.parse(text);
       if (sid === activeSessionIdRef.current) {
         setMessages(data);
       }
@@ -548,12 +574,27 @@ export default function App() {
     const confirmLogout = window.confirm('Are you sure you want to sign out of the dashboard?');
     if (!confirmLogout) return;
 
+    // Capture the email before signOut clears the user object.
+    const signedOutEmail = auth.currentUser?.email || user?.email;
+
     try {
       setLoading(true);
       await signOut(auth);
       navigateTo('/');
+      showToast({
+        type: 'logout',
+        title: 'Signed out',
+        message: signedOutEmail
+          ? `${signedOutEmail} has been signed out.`
+          : 'You have been signed out of the dashboard.',
+      });
     } catch (e) {
       console.error('Website signout failed:', e);
+      showToast({
+        type: 'error',
+        title: 'Sign out failed',
+        message: e.message || 'Could not sign out. Please try again.',
+      });
     } finally {
       setLoading(false);
     }
@@ -655,7 +696,16 @@ export default function App() {
           type="login" 
           onSwitchType={() => navigateTo('/register')} 
           onBackToHome={() => navigateTo('/')}
-          onAuthSuccess={() => navigateTo('/dashboard')}
+          onAuthSuccess={(signedInUser) => {
+            navigateTo('/dashboard');
+            showToast({
+              type: 'success',
+              title: 'Signed in',
+              message: signedInUser?.email
+                ? `Welcome back, ${signedInUser.email}.`
+                : 'Welcome back.',
+            });
+          }}
         />
       );
     }
@@ -665,7 +715,17 @@ export default function App() {
           type="register" 
           onSwitchType={() => navigateTo('/login')} 
           onBackToHome={() => navigateTo('/')}
-          onAuthSuccess={() => navigateTo('/dashboard')}
+          onAuthSuccess={(newUser) => {
+            navigateTo('/dashboard');
+            showToast({
+              type: 'success',
+              title: 'Account created',
+              message: newUser?.email
+                ? `Welcome, ${newUser.email}. Your account is ready.`
+                : 'Your account has been created.',
+              duration: 4200,
+            });
+          }}
         />
       );
     }

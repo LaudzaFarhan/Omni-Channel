@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown } from 'lucide-react';
 import { fetchWithAuth, db } from '../utils/firebase.js';
 import { doc, updateDoc, increment } from 'firebase/firestore';
-import { PRESET_TAGS, getTag, setTag as saveTag, createCustomTag } from '../utils/contactTags.js';
+import { PRESET_TAGS, getTags, toggleTag, clearTags, createCustomTag, loadGlobalCustomTags, addGlobalCustomTag, deleteGlobalCustomTag } from '../utils/contactTags.js';
 
 const DEFAULT_QUICK_REPLIES = [
   { id: 'welcome', title: '👋 Welcome Message', text: 'Hello! Thank you for contacting us. How can we assist you today?' },
@@ -251,19 +251,28 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   const messagesEndRef = useRef(null);
 
   // Tag state
-  const [currentTag, setCurrentTag] = useState(null);
+  const [currentTags, setCurrentTags] = useState([]);
+  const [globalCustomTags, setGlobalCustomTags] = useState(loadGlobalCustomTags());
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [customTagInput, setCustomTagInput] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
   const tagDropdownRef = useRef(null);
 
-  // Load tag when active chat changes
+  // Load and sync tags when active chat changes or updates are dispatched
   useEffect(() => {
-    if (activeChat?.id) {
-      setCurrentTag(getTag(activeChat.id));
-      setShowTagDropdown(false);
-      setShowCustomInput(false);
-    }
+    const updateAllTags = () => {
+      if (activeChat?.id) {
+        setCurrentTags(getTags(activeChat.id));
+      }
+      setGlobalCustomTags(loadGlobalCustomTags());
+    };
+    
+    updateAllTags();
+    window.addEventListener('contact-tags-updated', updateAllTags);
+    
+    return () => {
+      window.removeEventListener('contact-tags-updated', updateAllTags);
+    };
   }, [activeChat?.id]);
 
   // Close dropdown on outside click
@@ -278,27 +287,33 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleSelectTag = (tag) => {
-    saveTag(activeChat.id, tag);
-    setCurrentTag(tag);
-    setShowTagDropdown(false);
-    setShowCustomInput(false);
+  const handleToggleTag = (tag) => {
+    toggleTag(activeChat.id, tag);
   };
 
-  const handleRemoveTag = () => {
-    saveTag(activeChat.id, null);
-    setCurrentTag(null);
+  const handleRemoveSpecificTag = (tag) => {
+    toggleTag(activeChat.id, tag);
+  };
+
+  const handleClearAllTags = () => {
+    clearTags(activeChat.id);
     setShowTagDropdown(false);
   };
 
   const handleSaveCustomTag = () => {
     if (!customTagInput.trim()) return;
     const tag = createCustomTag(customTagInput.trim());
-    saveTag(activeChat.id, tag);
-    setCurrentTag(tag);
+    addGlobalCustomTag(tag);
+    toggleTag(activeChat.id, tag);
     setCustomTagInput('');
     setShowCustomInput(false);
-    setShowTagDropdown(false);
+  };
+
+  const handleDeleteGlobalCustomTag = (e, tag) => {
+    e.stopPropagation();
+    if (window.confirm(`Are you sure you want to permanently delete the custom tag "${tag.label}"?`)) {
+      deleteGlobalCustomTag(tag.label);
+    }
   };
 
   const handleFileChange = (e) => {
@@ -549,22 +564,50 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
               {(activeChat.name || activeChat.id).substring(0, 2).toUpperCase()}
             </div>
             <div>
-              <div className="header-name" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {getDisplayName(activeChat)}
-                {currentTag && (
-                  <span style={{
+              <div className="header-name" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span>{getDisplayName(activeChat)}</span>
+                {currentTags && currentTags.map((tag, idx) => (
+                  <span key={idx} style={{
                     fontSize: '0.65rem',
                     fontWeight: '600',
                     padding: '2px 8px',
                     borderRadius: '10px',
-                    color: currentTag.color,
-                    background: currentTag.bg,
-                    border: `1px solid ${currentTag.color}22`,
-                    whiteSpace: 'nowrap'
+                    color: tag.color,
+                    background: tag.bg,
+                    border: `1px solid ${tag.color}22`,
+                    whiteSpace: 'nowrap',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
                   }}>
-                    {currentTag.label}
+                    {tag.label}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveSpecificTag(tag);
+                      }}
+                      style={{
+                        border: 'none',
+                        background: 'transparent',
+                        color: tag.color,
+                        padding: 0,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: '50%',
+                        width: '12px',
+                        height: '12px',
+                        transition: 'background 0.2s',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.06)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      title={`Remove tag ${tag.label}`}
+                    >
+                      <X size={10} style={{ pointerEvents: 'none' }} />
+                    </button>
                   </span>
-                )}
+                ))}
               </div>
               <div className="header-status">
                 {activeChat.id.endsWith('@g.us') 
@@ -583,7 +626,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                 onClick={() => setShowTagDropdown(!showTagDropdown)}
                 title="Set Contact Tag"
                 style={{ 
-                  color: currentTag ? currentTag.color : 'var(--text-muted)',
+                  color: currentTags.length > 0 ? currentTags[0].color : 'var(--text-muted)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '3px'
@@ -604,40 +647,115 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                   borderRadius: '10px',
                   boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
                   zIndex: 100,
-                  width: '200px',
+                  width: '220px',
                   overflow: 'hidden'
                 }}>
                   <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-color)', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-dimmed)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Set Tag
+                    Set Tags
                   </div>
-                  {PRESET_TAGS.map(tag => (
-                    <button
-                      key={tag.value}
-                      onClick={() => handleSelectTag(tag)}
-                      style={{
-                        width: '100%',
-                        padding: '9px 12px',
-                        border: 'none',
-                        background: currentTag?.value === tag.value ? tag.bg : 'transparent',
-                        color: 'var(--text-main)',
-                        fontSize: '0.82rem',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        transition: 'background 0.15s'
-                      }}
-                      onMouseEnter={e => e.target.style.background = tag.bg}
-                      onMouseLeave={e => e.target.style.background = currentTag?.value === tag.value ? tag.bg : 'transparent'}
-                    >
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tag.color, flexShrink: 0 }} />
-                      {tag.label}
-                      {currentTag?.value === tag.value && (
-                        <Check size={14} style={{ marginLeft: 'auto', color: tag.color }} />
-                      )}
-                    </button>
-                  ))}
+                  {PRESET_TAGS.map(tag => {
+                    const isSelected = currentTags.some(t => t.label.toLowerCase() === tag.label.toLowerCase());
+                    return (
+                      <button
+                        key={tag.value}
+                        onClick={() => handleToggleTag(tag)}
+                        style={{
+                          width: '100%',
+                          padding: '9px 12px',
+                          border: 'none',
+                          background: isSelected ? tag.bg : 'transparent',
+                          color: 'var(--text-main)',
+                          fontSize: '0.82rem',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          transition: 'background 0.15s'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = tag.bg}
+                        onMouseLeave={e => e.currentTarget.style.background = isSelected ? tag.bg : 'transparent'}
+                      >
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tag.color, flexShrink: 0 }} />
+                        {tag.label}
+                        {isSelected && (
+                          <Check size={14} style={{ marginLeft: 'auto', color: tag.color }} />
+                        )}
+                      </button>
+                    );
+                  })}
+
+                  {/* Global Custom Tags */}
+                  {globalCustomTags.map(tag => {
+                    const isSelected = currentTags.some(t => t.label.toLowerCase() === tag.label.toLowerCase());
+                    return (
+                      <div
+                        key={tag.value}
+                        style={{
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          paddingRight: '8px',
+                          background: isSelected ? tag.bg : 'transparent',
+                          transition: 'background 0.15s'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = tag.bg}
+                        onMouseLeave={e => e.currentTarget.style.background = isSelected ? tag.bg : 'transparent'}
+                      >
+                        <button
+                          onClick={() => handleToggleTag(tag)}
+                          style={{
+                            flex: 1,
+                            padding: '9px 12px',
+                            border: 'none',
+                            background: 'transparent',
+                            color: 'var(--text-main)',
+                            fontSize: '0.82rem',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                          }}
+                        >
+                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tag.color, flexShrink: 0 }} />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px' }}>
+                            {tag.label}
+                          </span>
+                          {isSelected && (
+                            <Check size={14} style={{ marginLeft: 'auto', color: tag.color, flexShrink: 0 }} />
+                          )}
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteGlobalCustomTag(e, tag)}
+                          title="Delete Tag Globally"
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '4px',
+                            borderRadius: '4px',
+                            transition: 'color 0.15s, background 0.15s'
+                          }}
+                          onMouseEnter={e => {
+                            e.stopPropagation();
+                            e.currentTarget.style.color = '#ef4444';
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.color = 'var(--text-muted)';
+                            e.currentTarget.style.background = 'transparent';
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    );
+                  })}
 
                   {/* Custom Tag Option */}
                   {!showCustomInput ? (
@@ -647,7 +765,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                         width: '100%',
                         padding: '9px 12px',
                         border: 'none',
-                        background: currentTag?.value === 'custom' ? 'rgba(139, 92, 246, 0.12)' : 'transparent',
+                        background: 'transparent',
                         color: 'var(--text-main)',
                         fontSize: '0.82rem',
                         cursor: 'pointer',
@@ -657,14 +775,14 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                         gap: '8px',
                         transition: 'background 0.15s'
                       }}
-                      onMouseEnter={e => e.target.style.background = 'rgba(139, 92, 246, 0.08)'}
-                      onMouseLeave={e => e.target.style.background = currentTag?.value === 'custom' ? 'rgba(139, 92, 246, 0.12)' : 'transparent'}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(139, 92, 246, 0.08)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >
                       <Pencil size={12} style={{ color: '#8b5cf6', flexShrink: 0 }} />
                       Custom Tag...
                     </button>
                   ) : (
-                    <div style={{ padding: '8px 10px', display: 'flex', gap: '6px' }}>
+                    <div style={{ padding: '8px 10px', display: 'flex', gap: '6px', boxSizing: 'border-box', width: '100%', alignItems: 'center' }}>
                       <input
                         type="text"
                         value={customTagInput}
@@ -674,6 +792,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                         autoFocus
                         style={{
                           flex: 1,
+                          minWidth: 0,
                           padding: '6px 8px',
                           border: '1px solid var(--border-color)',
                           borderRadius: '6px',
@@ -686,14 +805,15 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                       <button
                         onClick={handleSaveCustomTag}
                         style={{
-                          padding: '4px 8px',
+                          padding: '6px 10px',
                           background: '#8b5cf6',
                           color: '#fff',
                           border: 'none',
                           borderRadius: '6px',
-                          fontSize: '0.72rem',
+                          fontSize: '0.78rem',
                           fontWeight: '600',
-                          cursor: 'pointer'
+                          cursor: 'pointer',
+                          flexShrink: 0
                         }}
                       >
                         Save
@@ -701,10 +821,10 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                     </div>
                   )}
 
-                  {/* Remove Tag */}
-                  {currentTag && (
+                  {/* Clear All Tags */}
+                  {currentTags.length > 0 && (
                     <button
-                      onClick={handleRemoveTag}
+                      onClick={handleClearAllTags}
                       style={{
                         width: '100%',
                         padding: '9px 12px',
@@ -719,11 +839,11 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                         alignItems: 'center',
                         gap: '8px'
                       }}
-                      onMouseEnter={e => e.target.style.background = 'rgba(239, 68, 68, 0.08)'}
-                      onMouseLeave={e => e.target.style.background = 'transparent'}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >
                       <X size={14} />
-                      Remove Tag
+                      Clear All Tags
                     </button>
                   )}
                 </div>

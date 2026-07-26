@@ -12,11 +12,32 @@ import crypto from 'crypto';
 import { getStore } from './store.js';
 
 const PORT = process.env.PORT || 5000;
-const FIREBASE_PROJECT_ID = 'whatsapp-omni-f2918';
+// Bind to loopback by default so a VPS only exposes the app through its reverse
+// proxy (nginx). Set HOST=0.0.0.0 to listen on all interfaces (e.g. in Docker).
+const HOST = process.env.HOST || '127.0.0.1';
+
+// Comma-separated list of allowed browser origins, e.g.
+// CORS_ORIGIN=https://app.example.com,https://www.example.com
+// Defaults to '*' to keep local development frictionless, but a warning is
+// emitted at startup so this is never left wide open in production by accident.
+const CORS_ORIGIN = (process.env.CORS_ORIGIN || '*').trim();
+const allowedOrigins = CORS_ORIGIN === '*'
+  ? '*'
+  : CORS_ORIGIN.split(',').map(o => o.trim().replace(/\/+$/, '')).filter(Boolean);
+
+process.on('uncaughtException', (err) => {
+  console.error('[Process] Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Process] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+// Trimmed because values pasted into a host's env UI often carry a trailing newline.
+const FIREBASE_PROJECT_ID = (process.env.FIREBASE_PROJECT_ID || 'whatsapp-omni-f2918').trim();
 const app = express();
 const httpServer = createServer(app);
 
-app.use(cors({ origin: '*' }));
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -28,8 +49,9 @@ app.use((req, res, next) => {
 
 const io = new Server(httpServer, {
   cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
+    origin: allowedOrigins,
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
@@ -141,6 +163,20 @@ function sessionKey(uid, sessionId) {
   return `${uid}_${sessionId || 'default'}`;
 }
 
+// Debounced 'history-sync-complete' emitter.
+// WhatsApp streams hundreds of contact/chat events during a sync; emitting on each
+// one makes the client refetch in a tight loop (flickering). Coalesce bursts into
+// at most one refresh signal per window.
+const syncEmitTimers = {};
+function emitSyncComplete(uid, sessionId) {
+  const k = sessionKey(uid, sessionId);
+  if (syncEmitTimers[k]) return; // already scheduled within the current window
+  syncEmitTimers[k] = setTimeout(() => {
+    delete syncEmitTimers[k];
+    io.to(uid).emit('history-sync-complete', { sessionId });
+  }, 700);
+}
+
 async function getOrInitWASocket(uid, sessionId = 'default') {
   const key = sessionKey(uid, sessionId);
 
@@ -149,7 +185,14 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
   }
 
   console.log(`[Baileys - ${key}] Initializing socket connection...`);
-  
+
+  // Preserve reconnect bookkeeping across re-inits so backoff keeps escalating
+  // instead of resetting on every attempt.
+  const prevAttempts = activeSessions[key]?.reconnectAttempts || 0;
+  if (activeSessions[key]?.reconnectTimer) {
+    clearTimeout(activeSessions[key].reconnectTimer);
+  }
+
   // Set default placeholder
   activeSessions[key] = {
     sock: null,
@@ -157,7 +200,9 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
     qr: null,
     user: null,
     uid,
-    sessionId
+    sessionId,
+    reconnectAttempts: prevAttempts,
+    reconnectTimer: null,
   };
 
   try {
@@ -190,6 +235,12 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
       const session = activeSessions[key];
       if (!session) return; // session deleted during logout
 
+      // Guard: Ignore events from obsolete socket instances to prevent connection conflicts (e.g. Code 440)
+      if (session.sock !== sock) {
+        console.log(`[Baileys - ${key}] Ignoring connection.update (connection: ${connection}) for obsolete socket instance.`);
+        return;
+      }
+
       if (qr) {
         session.status = 'qr';
         try {
@@ -210,11 +261,18 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
         session.status = 'connected';
         session.qr = null;
         session.user = sock.user;
+        session.reconnectAttempts = 0; // healthy connection resets backoff
         io.to(uid).emit('status-change', { sessionId, status: 'connected', user: sock.user });
         console.log(`[Baileys - ${key}] Connection successfully opened!`);
       }
 
       if (connection === 'close') {
+        // Ignore close events from a socket that has already been superseded by a
+        // newer one (prevents duplicate/overlapping reconnect loops).
+        if (activeSessions[key] && activeSessions[key].sock && activeSessions[key].sock !== sock) {
+          return;
+        }
+
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
         console.log(`[Baileys - ${key}] Connection closed. Code: ${statusCode}. Reconnecting: ${shouldReconnect}`);
@@ -222,12 +280,25 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
         session.status = 'disconnected';
         session.qr = null;
         session.user = null;
+        session.sock = null;
         io.to(uid).emit('status-change', { sessionId, status: 'disconnected', reason: statusCode });
 
         if (shouldReconnect) {
-          // Restart socket connection
-          session.sock = null;
-          getOrInitWASocket(uid, sessionId);
+          // Exponential backoff (1s, 2s, 4s ... capped at 30s) so a flapping
+          // connection can't spin in a tight loop and miss live messages.
+          const attempts = (session.reconnectAttempts || 0) + 1;
+          session.reconnectAttempts = attempts;
+          const delay = Math.min(30000, 1000 * Math.pow(2, attempts - 1));
+          console.log(`[Baileys - ${key}] Scheduling reconnect in ${delay}ms (attempt ${attempts}).`);
+
+          if (session.reconnectTimer) clearTimeout(session.reconnectTimer);
+          session.reconnectTimer = setTimeout(() => {
+            // Only reconnect if the session still exists and isn't already connected.
+            const current = activeSessions[key];
+            if (current && !current.sock) {
+              getOrInitWASocket(uid, sessionId);
+            }
+          }, delay);
         } else {
           logoutSession(uid, sessionId);
         }
@@ -249,7 +320,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
             id: jid,
             name: metadata.subject
           });
-          io.to(uid).emit('history-sync-complete', { sessionId });
+          emitSyncComplete(uid, sessionId);
         }
       } catch (err) {
         console.warn(`[Baileys - ${key}] Failed to fetch group metadata for ${jid}:`, err.message);
@@ -273,7 +344,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
           store.addMessage(m.key.remoteJid, m);
         });
       }
-      io.to(uid).emit('history-sync-complete', { sessionId });
+      emitSyncComplete(uid, sessionId);
     });
 
     sock.ev.on('chats.upsert', (newChats) => {
@@ -284,7 +355,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
           fetchGroupMetadataIfNeeded(c.id, c.name);
         }
       });
-      io.to(uid).emit('history-sync-complete', { sessionId });
+      emitSyncComplete(uid, sessionId);
     });
 
     sock.ev.on('chats.update', (updates) => {
@@ -296,7 +367,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
           fetchGroupMetadataIfNeeded(u.id, u.name || existing?.name);
         }
       });
-      io.to(uid).emit('history-sync-complete', { sessionId });
+      emitSyncComplete(uid, sessionId);
     });
 
     sock.ev.on('contacts.upsert', (newContacts) => {
@@ -308,6 +379,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
         }
         store.addContact(c);
       });
+      emitSyncComplete(uid, sessionId);
     });
 
     sock.ev.on('contacts.update', (updates) => {
@@ -318,64 +390,47 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
         }
         store.addContact(u);
       });
+      emitSyncComplete(uid, sessionId);
     });
 
-    // After connection is opened, try to resolve unresolved LID contacts
-    const resolveLidContacts = async () => {
+    // Explicit LID <-> phone number mapping shared by WhatsApp
+    sock.ev.on('chats.phoneNumberShare', ({ lid, jid }) => {
+      if (!lid || !jid) return;
+      console.log(`[Baileys - ${key}] Phone number share: ${lid} -> ${jid}`);
       const store = getStore(key);
-      const unresolvedLids = Object.values(store.chats)
-        .filter(c => c.id.endsWith('@lid') && !c.phoneNumber)
-        .map(c => c.id);
+      store.addPhoneNumberShare(lid, jid);
+      emitSyncComplete(uid, sessionId);
+    });
 
-      if (unresolvedLids.length === 0) return;
-      console.log(`[Baileys - ${key}] Attempting to resolve ${unresolvedLids.length} unresolved LID contacts...`);
-
-      // Check if sock has a store with LID mappings
-      if (sock.store && sock.store.contacts) {
-        for (const lid of unresolvedLids) {
-          const contact = sock.store.contacts[lid];
-          if (contact && (contact.notify || contact.name || contact.verifiedName)) {
-            const displayName = contact.notify || contact.name || contact.verifiedName;
-            store.addChat({ id: lid, name: displayName });
-            console.log(`[Baileys - ${key}] Resolved LID from sock.store: ${lid} -> ${displayName}`);
-          }
+    // After connection is opened, re-apply the contact-derived LID mappings to
+    // any chats that synced before their contact record arrived, then refresh clients.
+    const resolveLidContacts = () => {
+      const store = getStore(key);
+      let resolved = 0;
+      Object.keys(store.chats).forEach(jid => {
+        if (jid.endsWith('@lid')) {
+          const before = store.chats[jid].name;
+          store._applyMappingToChat(jid);
+          if (store.chats[jid].name !== before) resolved++;
         }
-      }
+      });
 
-      // Try to use sock.user to see LID mapping
-      if (sock.authState && sock.authState.creds) {
-        const myLid = sock.authState.creds.me?.lid;
-        if (myLid) {
-          console.log(`[Baileys - ${key}] My LID: ${myLid}`);
-        }
-      }
+      const stillUnresolved = Object.values(store.chats)
+        .filter(c => c.id.endsWith('@lid') && !c.phoneNumber).length;
 
-      // Batch resolve: try fetchStatus for each unresolved contact (limited to first 30)
-      const batch = unresolvedLids.slice(0, 30);
-      for (const lid of batch) {
-        try {
-          const status = await sock.fetchStatus(lid);
-          if (status && status.status) {
-            // Status exists = valid contact, use pushName from status if available
-            console.log(`[Baileys - ${key}] Status for ${lid}: ${status.status?.substring(0, 50)}`);
-          }
-        } catch (err) {
-          // silently ignore - this is a best-effort resolution
-        }
-
-        // Small delay to avoid rate limiting
-        await new Promise(r => setTimeout(r, 100));
-      }
-
-      io.to(uid).emit('history-sync-complete', { sessionId });
+      console.log(`[Baileys - ${key}] LID resolution pass: ${resolved} chats updated, ${stillUnresolved} still awaiting a live message.`);
+      store.save();
+      emitSyncComplete(uid, sessionId);
     };
 
     // Run LID resolution 10 seconds after connection to allow sync to complete
     setTimeout(() => {
       if (activeSessions[key]?.status === 'connected') {
-        resolveLidContacts().catch(err => {
+        try {
+          resolveLidContacts();
+        } catch (err) {
           console.warn(`[Baileys - ${key}] LID resolution error:`, err.message);
-        });
+        }
       }
     }, 10000);
 
@@ -428,7 +483,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
             id: u.id,
             name: u.subject
           });
-          io.to(uid).emit('history-sync-complete', { sessionId });
+          emitSyncComplete(uid, sessionId);
         }
       });
     });
@@ -449,6 +504,9 @@ function logoutSession(uid, sessionId = 'default') {
   const session = activeSessions[key];
   
   if (session) {
+    if (session.reconnectTimer) {
+      clearTimeout(session.reconnectTimer);
+    }
     if (session.sock) {
       try {
         session.sock.logout();
@@ -603,7 +661,7 @@ async function fetchGroupMetadata(uid, sessionId, jid) {
           id: jid,
           name: metadata.subject
         });
-        io.to(uid).emit('history-sync-complete', { sessionId });
+        emitSyncComplete(uid, sessionId);
       }
     }
   } catch (err) {
@@ -825,6 +883,16 @@ app.post('/api/logout', authMiddleware, (req, res) => {
   }
 });
 
+// Unauthenticated health check for the reverse proxy / uptime monitoring.
+// Intentionally exposes no session or customer data.
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    uptimeSeconds: Math.floor(process.uptime()),
+    activeWhatsAppSessions: Object.values(activeSessions).filter(s => s.status === 'connected').length,
+  });
+});
+
 // Serve frontend build static files in production
 const distPath = path.resolve('dist');
 if (fs.existsSync(distPath)) {
@@ -834,7 +902,24 @@ if (fs.existsSync(distPath)) {
   });
 }
 
+// Graceful shutdown so pm2/systemd restarts don't sever sockets abruptly.
+const shutdown = (signal) => {
+  console.log(`[Process] Received ${signal}, shutting down gracefully...`);
+  httpServer.close(() => process.exit(0));
+  // Force exit if connections refuse to close in time.
+  setTimeout(() => process.exit(0), 10000);
+};
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
 // Start Server
-httpServer.listen(PORT, () => {
-  console.log(`Multi-Tenant Server listening on http://localhost:${PORT}`);
+httpServer.listen(PORT, HOST, () => {
+  console.log(`Multi-Tenant Server listening on http://${HOST}:${PORT}`);
+  console.log(`[Config] Firebase project: ${FIREBASE_PROJECT_ID}`);
+  console.log(`[Config] Sessions directory: ${path.resolve('sessions')}`);
+  if (allowedOrigins === '*') {
+    console.warn('[Config] CORS_ORIGIN is not set — allowing all origins. Set CORS_ORIGIN to your frontend URL in production.');
+  } else {
+    console.log(`[Config] CORS allowed origins: ${allowedOrigins.join(', ')}`);
+  }
 });

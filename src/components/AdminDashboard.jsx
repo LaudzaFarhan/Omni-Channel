@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../utils/firebase.js';
-import { collection, onSnapshot, doc, updateDoc, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { Users, UserCheck, UserX, Shield, LogOut, Search, Clock } from 'lucide-react';
 
 export default function AdminDashboard({ user, onLogout }) {
@@ -9,13 +9,32 @@ export default function AdminDashboard({ user, onLogout }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Listen to all user profile documents in real-time
-    const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    // Listen to all user profile documents in real-time.
+    //
+    // Deliberately NOT using orderBy('createdAt'): a Firestore orderBy silently
+    // excludes any document that is missing that field, which made legitimately
+    // registered users disappear from this registry. Read everything and sort
+    // client-side instead so no account is ever hidden.
+    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
       const userList = [];
-      snapshot.forEach((doc) => {
-        userList.push(doc.data());
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data() || {};
+        // Fall back to the document ID when a record predates the uid field.
+        userList.push({ uid: data.uid || docSnap.id, ...data });
       });
+
+      // Normalize createdAt (Firestore Timestamp | Date | string | missing) to
+      // millis purely for sorting; newest first, undated records last.
+      const toMillis = (value) => {
+        if (!value) return 0;
+        if (typeof value.toMillis === 'function') return value.toMillis();
+        if (typeof value.seconds === 'number') return value.seconds * 1000;
+        const parsed = new Date(value).getTime();
+        return Number.isFinite(parsed) ? parsed : 0;
+      };
+
+      userList.sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
+
       setUsers(userList);
       setLoading(false);
     }, (error) => {

@@ -2,7 +2,7 @@ import React from 'react';
 import { Search, Plus, Check, CheckCheck } from 'lucide-react';
 import { loadAllTags } from '../utils/contactTags.js';
 
-export default function ChatList({ chats, searchQuery, setSearchQuery, activeChatJid, setActiveChatJid, userInfo }) {
+export default function ChatList({ chats, searchQuery, setSearchQuery, activeChatJid, setActiveChatJid, userInfo, selectedTagFilter }) {
   // Load contact tags (reactively updated via custom event)
   const [contactTags, setContactTags] = React.useState(loadAllTags);
 
@@ -81,12 +81,33 @@ export default function ChatList({ chats, searchQuery, setSearchQuery, activeCha
     return name || cleanId;
   };
 
-  // Filter chats by name or JID (phone number)
+  // Filter chats by name or JID (phone number) and selected tag filter
   const filteredChats = chats.filter(chat => {
     const name = (chat.name || '').toLowerCase();
     const id = (chat.id || '').toLowerCase();
-    const query = searchQuery.toLowerCase();
-    return name.includes(query) || id.includes(query);
+    const phoneNumber = (chat.phoneNumber || '').toLowerCase();
+    const query = searchQuery.toLowerCase().trim();
+    
+    // Check match by raw query (case-insensitive name, id, or phone number)
+    let isMatched = name.includes(query) || id.includes(query) || phoneNumber.includes(query);
+    
+    // Also support matching by cleaned digits if the query contains numbers
+    const queryDigits = query.replace(/\D/g, ''); // Extract only digits
+    if (!isMatched && queryDigits.length > 0) {
+      const idDigits = id.replace(/\D/g, '');
+      const phoneDigits = phoneNumber.replace(/\D/g, '');
+      const nameDigits = name.replace(/\D/g, '');
+      isMatched = idDigits.includes(queryDigits) || phoneDigits.includes(queryDigits) || nameDigits.includes(queryDigits);
+    }
+    
+    if (!isMatched) return false;
+
+    if (selectedTagFilter) {
+      const tagsForChat = contactTags[chat.id] || [];
+      return tagsForChat.some(t => t.label.toLowerCase() === selectedTagFilter.toLowerCase());
+    }
+
+    return true;
   });
 
   // Check if search query looks like a phone number to allow initiating a chat
@@ -176,20 +197,41 @@ export default function ChatList({ chats, searchQuery, setSearchQuery, activeCha
                 </div>
                 <div className="chat-info">
                   <div className="chat-name-row">
-                    <span className="chat-name" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      {getDisplayName(chat)}
+                    <span className="chat-name" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {getDisplayName(chat)}
+                      </span>
                       {contactTags[chat.id] && (
-                        <span style={{
-                          fontSize: '0.58rem',
-                          fontWeight: '600',
-                          padding: '1px 6px',
-                          borderRadius: '8px',
-                          color: contactTags[chat.id].color,
-                          background: contactTags[chat.id].bg,
-                          whiteSpace: 'nowrap',
-                          lineHeight: '1.4'
-                        }}>
-                          {contactTags[chat.id].label}
+                        <span style={{ display: 'inline-flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
+                          {Array.isArray(contactTags[chat.id]) ? (
+                            contactTags[chat.id].map((tag, idx) => (
+                              <span key={idx} style={{
+                                fontSize: '0.58rem',
+                                fontWeight: '600',
+                                padding: '1px 6px',
+                                borderRadius: '8px',
+                                color: tag.color,
+                                background: tag.bg,
+                                whiteSpace: 'nowrap',
+                                lineHeight: '1.4'
+                              }}>
+                                {tag.label}
+                              </span>
+                            ))
+                          ) : (
+                            <span style={{
+                              fontSize: '0.58rem',
+                              fontWeight: '600',
+                              padding: '1px 6px',
+                              borderRadius: '8px',
+                              color: contactTags[chat.id].color,
+                              background: contactTags[chat.id].bg,
+                              whiteSpace: 'nowrap',
+                              lineHeight: '1.4'
+                            }}>
+                              {contactTags[chat.id].label}
+                            </span>
+                          )}
                         </span>
                       )}
                     </span>

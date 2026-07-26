@@ -8,3 +8,9 @@ baileys_store.json
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+.vercel
+.env*.local
+
+# pm2 runtime logs
+logs/
