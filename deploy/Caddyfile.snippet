@@ -1,0 +1,32 @@
+# Caddy site block for the WhatsApp backend.
+#
+# This VPS already runs Caddy on port 80, so we APPEND this block to the
+# existing /etc/caddy/Caddyfile instead of installing nginx (which could not
+# bind port 80 anyway).
+#
+#   sudo cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak
+#   sudo nano /etc/caddy/Caddyfile      # paste the block below at the end
+#   sudo caddy validate --config /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# Caddy obtains and renews the Let's Encrypt certificate automatically — no
+# certbot needed. Requirements:
+#   - DNS A record api.omnireach.my.id -> 43.157.208.221 must resolve
+#   - Inbound TCP 80 and 443 open in the Tencent firewall
+#
+# Deliberately minimal. Caddy's defaults already cover what this app needs:
+#   - WebSocket/Socket.IO upgrades are proxied transparently
+#   - No request body size limit by default (media is posted as base64 JSON)
+#   - Streaming responses are not cut by a read timeout
+#   - HTTP is redirected to HTTPS automatically
+
+api.omnireach.my.id {
+	reverse_proxy 127.0.0.1:5000
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}

@@ -89,7 +89,28 @@ pm2 startup    # run the command it prints, as root
 pm2 install pm2-logrotate
 ```
 
-## 6. nginx + TLS
+## 6. Reverse proxy + TLS
+
+Pick the option matching what already runs on the server. Check first:
+
+```bash
+sudo ss -tulpn | grep -E ':80|:443'
+```
+
+### Option A — Caddy (use this if Caddy already owns port 80)
+
+Caddy issues and renews certificates automatically; no certbot required.
+
+```bash
+sudo cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak   # always back up first
+sudo nano /etc/caddy/Caddyfile                          # append Caddyfile.snippet
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+```
+
+The block to append is in `deploy/Caddyfile.snippet`.
+
+### Option B — nginx + certbot (only on a server with nothing on port 80)
 
 ```bash
 sudo cp deploy/nginx.conf /etc/nginx/sites-available/wa-backend

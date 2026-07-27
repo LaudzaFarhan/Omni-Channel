@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { apiUrl } from './apiBase.js';
 
@@ -25,9 +25,39 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
+// Firebase restores a persisted session asynchronously, so auth.currentUser is
+// null for the first moments after a page load. Requests fired in that window
+// would go out with no Authorization header and get a 401. Resolve once the SDK
+// has reported its initial state so callers can await it.
+let authReadyPromise = null;
+function waitForAuthReady() {
+  if (auth.currentUser) return Promise.resolve(auth.currentUser);
+
+  if (!authReadyPromise) {
+    authReadyPromise = new Promise((resolve) => {
+      const unsubscribe = onAuthStateChanged(
+        auth,
+        (user) => {
+          unsubscribe();
+          resolve(user);
+        },
+        () => {
+          unsubscribe();
+          resolve(null);
+        }
+      );
+    });
+  }
+
+  return authReadyPromise;
+}
+
 // Helper to perform authenticated HTTP requests against the backend.
 export async function fetchWithAuth(url, options = {}) {
-  const currentUser = auth.currentUser;
+  // Wait for Firebase to restore its session before reading currentUser,
+  // otherwise early calls are sent unauthenticated and rejected with 401.
+  const currentUser = auth.currentUser || await waitForAuthReady();
+
   if (currentUser) {
     try {
       const token = await currentUser.getIdToken();
@@ -40,7 +70,22 @@ export async function fetchWithAuth(url, options = {}) {
     }
   }
 
-  const res = await fetch(apiUrl(url), options);
+  let res = await fetch(apiUrl(url), options);
+
+  // A 401 can also mean the cached ID token expired (they last one hour).
+  // Force-refresh once and retry before surfacing the failure.
+  if (res.status === 401 && currentUser) {
+    try {
+      const freshToken = await currentUser.getIdToken(true);
+      options.headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${freshToken}`
+      };
+      res = await fetch(apiUrl(url), options);
+    } catch (err) {
+      console.error('[Firebase] Token refresh failed:', err);
+    }
+  }
 
   // A static host (or a catch-all rewrite) answers unknown /api routes with the
   // SPA's index.html. Parsing that as JSON throws the confusing
