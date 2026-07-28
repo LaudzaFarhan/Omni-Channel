@@ -1,8 +1,9 @@
 import React from 'react';
 import { Search, Plus, Check, CheckCheck } from 'lucide-react';
 import { loadAllTags } from '../utils/contactTags.js';
+import { getChatDisplayName, getInitials } from '../utils/displayName.js';
 
-export default function ChatList({ chats, searchQuery, setSearchQuery, activeChatJid, setActiveChatJid, userInfo, selectedTagFilter }) {
+export default function ChatList({ chats, setChats, searchQuery, setSearchQuery, activeChatJid, setActiveChatJid, userInfo, selectedTagFilter }) {
   // Load contact tags (reactively updated via custom event)
   const [contactTags, setContactTags] = React.useState(loadAllTags);
 
@@ -31,55 +32,8 @@ export default function ChatList({ chats, searchQuery, setSearchQuery, activeCha
     return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   };
 
-  // Get initials for profile placeholder
-  const getInitials = (name) => {
-    if (!name) return 'WA';
-    const clean = name.replace(/[^a-zA-Z0-9 ]/g, '').trim();
-    if (!clean) return 'WA';
-    const parts = clean.split(' ');
-    if (parts.length > 1) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return parts[0].substring(0, 2).toUpperCase();
-  };
-
-  // Format display name for a chat contact
-  const getDisplayName = (chat) => {
-    if (userInfo && userInfo.id) {
-      const myCleanId = userInfo.id.split('@')[0].split(':')[0];
-      const chatCleanId = chat.id.split('@')[0].split(':')[0];
-      if (myCleanId === chatCleanId) {
-        return '(YOU)';
-      }
-    }
-
-    const name = chat.name || '';
-    const cleanId = chat.id.split('@')[0];
-    const isLid = chat.id.endsWith('@lid');
-
-    // If name is a real text name (not just digits), use it directly
-    if (name && !/^\d+$/.test(name.trim())) {
-      return name;
-    }
-
-    // If we have a resolved phone number from LID mapping, show it
-    if (chat.phoneNumber) {
-      return chat.phoneNumber;
-    }
-
-    // For standard @s.whatsapp.net contacts, prepend +
-    if (chat.id.endsWith('@s.whatsapp.net') && /^\d+$/.test(cleanId)) {
-      return '+' + cleanId;
-    }
-
-    // For unresolved LID contacts (no phone, no name), show friendly label
-    if (isLid) {
-      return 'WhatsApp User';
-    }
-
-    // Fallback
-    return name || cleanId;
-  };
+  // Naming/initials come from the shared helper so every view agrees.
+  const getDisplayName = (chat) => getChatDisplayName(chat, userInfo);
 
   // Filter chats by name or JID (phone number) and selected tag filter
   const filteredChats = chats.filter(chat => {
@@ -112,7 +66,28 @@ export default function ChatList({ chats, searchQuery, setSearchQuery, activeCha
 
   // Check if search query looks like a phone number to allow initiating a chat
   const isPhoneNumberQuery = /^\+?\d{8,15}$/.test(searchQuery.trim());
-  const cleanSearchQuery = searchQuery.replace(/\D/g, '');
+  let normalizedDigits = searchQuery.replace(/\D/g, '');
+  if (normalizedDigits.startsWith('0')) {
+    normalizedDigits = '62' + normalizedDigits.substring(1);
+  }
+
+  const handleStartNewChat = (targetDigits) => {
+    if (!targetDigits) return;
+    const targetJid = `${targetDigits}@s.whatsapp.net`;
+    if (setChats && !chats.some(c => c.id === targetJid)) {
+      const draftChat = {
+        id: targetJid,
+        name: '+' + targetDigits,
+        lastMessage: 'New chat initiated',
+        lastMessageTimestamp: Date.now(),
+        unreadCount: 0,
+        isDraft: true
+      };
+      setChats(prev => [draftChat, ...prev]);
+    }
+    setActiveChatJid(targetJid);
+    setSearchQuery('');
+  };
 
   return (
     <>
@@ -132,7 +107,7 @@ export default function ChatList({ chats, searchQuery, setSearchQuery, activeCha
 
       {/* Chat List Scroll Box */}
       <ul className="chat-list">
-        {isPhoneNumberQuery && !filteredChats.some(c => c.id.split('@')[0] === cleanSearchQuery) && (
+        {isPhoneNumberQuery && !filteredChats.some(c => c.id.split('@')[0] === normalizedDigits) && (
           <li 
             className="chat-item start-new-chat-item"
             style={{ 
@@ -146,15 +121,12 @@ export default function ChatList({ chats, searchQuery, setSearchQuery, activeCha
               cursor: 'pointer', 
               background: 'rgba(16,185,129,0.04)' 
             }}
-            onClick={() => {
-              setActiveChatJid(`${cleanSearchQuery}@s.whatsapp.net`);
-              setSearchQuery('');
-            }}
+            onClick={() => handleStartNewChat(normalizedDigits)}
           >
             <Plus size={18} style={{ color: 'var(--primary)' }} />
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: '600', fontSize: '0.88rem', color: 'var(--primary)' }}>Start new chat</div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-dimmed)' }}>+{cleanSearchQuery}</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-dimmed)' }}>+{normalizedDigits}</div>
             </div>
           </li>
         )}
@@ -189,7 +161,7 @@ export default function ChatList({ chats, searchQuery, setSearchQuery, activeCha
                     className="chat-avatar" 
                     style={{ backgroundColor: getAvatarColor(chat.id), color: '#2c3e50', fontWeight: '700' }}
                   >
-                    {getInitials(chat.name || chat.id)}
+                    {getInitials(getDisplayName(chat))}
                   </div>
                   {hasUnread && !isActive && (
                     <span className="chat-badge-avatar">{chat.unreadCount}</span>

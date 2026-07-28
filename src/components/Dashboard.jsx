@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { Send, MessageCircle, Users, Phone, TrendingUp, Clock, MessageSquare } from 'lucide-react';
+import { getChatDisplayName, getInitials } from '../utils/displayName.js';
 
 export default function Dashboard({ chats, userProfile, userInfo, waSessions, messages }) {
   // Calculate stats from real data
@@ -77,28 +78,8 @@ export default function Dashboard({ chats, userProfile, userInfo, waSessions, me
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  // Display name — same logic as ChatList
-  const getDisplayName = (chat) => {
-    const name = chat.name || '';
-    const cleanId = chat.id?.split('@')[0] || '';
-    const isLid = chat.id?.endsWith('@lid');
-
-    if (name && !/^\d+$/.test(name.trim())) return name;
-    if (chat.phoneNumber) return chat.phoneNumber;
-    if (chat.id?.endsWith('@s.whatsapp.net') && /^\d+$/.test(cleanId)) return '+' + cleanId;
-    if (isLid) return 'WhatsApp User';
-    return name || cleanId || 'Unknown';
-  };
-
-  // Get initials for avatar
-  const getInitials = (name) => {
-    if (!name) return 'WA';
-    const clean = name.replace(/[^a-zA-Z0-9 ]/g, '').trim();
-    if (!clean) return 'WA';
-    const parts = clean.split(' ');
-    if (parts.length > 1) return (parts[0][0] + parts[1][0]).toUpperCase();
-    return parts[0].substring(0, 2).toUpperCase();
-  };
+  // Naming/initials come from the shared helper so every view agrees.
+  const getDisplayName = (chat) => getChatDisplayName(chat, userInfo);
 
   // Stable avatar color per chat ID
   const getAvatarColor = (jid) => {

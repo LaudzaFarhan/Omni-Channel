@@ -3,6 +3,7 @@ import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, Plus, 
 import { fetchWithAuth, db } from '../utils/firebase.js';
 import { doc, updateDoc, increment } from 'firebase/firestore';
 import { PRESET_TAGS, getTags, toggleTag, clearTags, createCustomTag, loadGlobalCustomTags, addGlobalCustomTag, deleteGlobalCustomTag } from '../utils/contactTags.js';
+import { getChatDisplayName, getInitials } from '../utils/displayName.js';
 
 const DEFAULT_QUICK_REPLIES = [
   { id: 'welcome', title: '👋 Welcome Message', text: 'Hello! Thank you for contacting us. How can we assist you today?' },
@@ -388,44 +389,8 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
     return <Check size={14} style={{ color: 'rgba(255, 255, 255, 0.6)', marginLeft: '4px', display: 'inline-block', verticalAlign: 'middle' }} />;
   };
 
-  // Format display name for a chat contact
-  const getDisplayName = (chat) => {
-    if (!chat) return '';
-    if (userInfo && userInfo.id) {
-      const myCleanId = userInfo.id.split('@')[0].split(':')[0];
-      const chatCleanId = chat.id.split('@')[0].split(':')[0];
-      if (myCleanId === chatCleanId) {
-        return '(YOU)';
-      }
-    }
-
-    const name = chat.name || '';
-    const cleanId = chat.id.split('@')[0];
-    const isLid = chat.id.endsWith('@lid');
-
-    // If name is a real text name (not just digits), use it directly
-    if (name && !/^\d+$/.test(name.trim())) {
-      return name;
-    }
-
-    // If we have a resolved phone number from LID mapping, show it
-    if (chat.phoneNumber) {
-      return chat.phoneNumber;
-    }
-
-    // For standard @s.whatsapp.net contacts, prepend +
-    if (chat.id.endsWith('@s.whatsapp.net') && /^\d+$/.test(cleanId)) {
-      return '+' + cleanId;
-    }
-
-    // For unresolved LID contacts (no phone, no name), show friendly label
-    if (isLid) {
-      return 'WhatsApp User';
-    }
-
-    // Fallback
-    return name || cleanId;
-  };
+  // Naming comes from the shared helper so every view agrees.
+  const getDisplayName = (chat) => (chat ? getChatDisplayName(chat, userInfo) : '');
 
   // Format message timestamps (Epoch in seconds -> readable)
   const formatMsgTime = (timestamp) => {
@@ -889,7 +854,14 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                 senderName = '+' + msg.key.participantPn.split('@')[0];
               } else if (msg.key.participant) {
                 const pid = msg.key.participant.split('@')[0];
-                senderName = /^\d+$/.test(pid) ? 'WhatsApp User' : pid;
+                if (!/^\d+$/.test(pid)) {
+                  senderName = pid;
+                } else if (msg.key.participant.endsWith('@s.whatsapp.net')) {
+                  senderName = '+' + pid;
+                } else {
+                  // Anonymous @lid participant: keep senders distinguishable.
+                  senderName = `WhatsApp User #${pid.slice(-4)}`;
+                }
               }
 
               // Generate a stable color for each sender
@@ -909,14 +881,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
             }
 
             // Get sender initials for the mini avatar
-            const getSenderInitials = () => {
-              if (!senderName || senderName === 'WhatsApp User') return 'WU';
-              const clean = senderName.replace(/[^a-zA-Z0-9 ]/g, '').trim();
-              if (!clean) return 'WU';
-              const parts = clean.split(' ');
-              if (parts.length > 1) return (parts[0][0] + parts[1][0]).toUpperCase();
-              return parts[0].substring(0, 2).toUpperCase();
-            };
+            const getSenderInitials = () => getInitials(senderName);
 
             return (
               <div 
