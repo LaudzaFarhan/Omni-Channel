@@ -421,51 +421,83 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
       emitSyncComplete(uid, sessionId);
     };
 
-    // Build the LID -> phone mapping using a USync lookup.
+    // Resolve @lid chats to real phone numbers.
     //
-    // WhatsApp offers no way to reverse a LID into a phone number, but it will
-    // tell us the LID for a phone number we already know. So we look up every
-    // known number that is not yet paired with a LID and store the reverse
-    // pairing. That turns "WhatsApp User #1234" rows into real numbers/names
-    // without waiting for the contact to message us.
-    const resolveLidsViaUSync = async () => {
+    // Baileys v7 maintains a LID <-> phone mapping store (populated from the
+    // WhatsApp session itself), which can translate a LID directly. That is the
+    // only reliable way to do it: WhatsApp never exposes a bulk "reverse a LID"
+    // API, and LID-only accounts no longer receive phone numbers in contacts.
+    //
+    // Falls back to the phone -> LID USync lookup on older Baileys, which can
+    // still pair up any numbers we happen to know already.
+    const resolveLidsToPhoneNumbers = async () => {
       const store = getStore(key);
-      const unresolvedBefore = store.getUnresolvedLids().length;
-      if (unresolvedBefore === 0) return;
+      const unresolved = store.getUnresolvedLids();
+      if (unresolved.length === 0) return;
 
-      const candidates = store.getUnmappedPhoneJids();
-      if (candidates.length === 0) {
-        console.log(`[Baileys - ${key}] USync: no unmapped phone numbers to look up.`);
-        return;
-      }
-
-      console.log(`[Baileys - ${key}] USync: looking up LIDs for ${candidates.length} known numbers (${unresolvedBefore} unresolved LID chats)...`);
-
-      const BATCH_SIZE = 20;
+      const lidStore = sock.signalRepository?.lidMapping;
       let learned = 0;
 
-      for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
-        const batch = candidates.slice(i, i + BATCH_SIZE);
-        try {
-          const results = await sock.onWhatsApp(...batch);
-          for (const entry of results || []) {
-            // `lid` may come back as a string or a JID-ish object.
-            const lidRaw = typeof entry.lid === 'string' ? entry.lid : entry.lid?.toString?.();
-            if (!lidRaw || !entry.jid) continue;
-            const lid = lidRaw.includes('@') ? lidRaw : `${lidRaw}@lid`;
-            store.addPhoneNumberShare(lid, entry.jid, store.getPendingName(entry.jid));
-            learned++;
+      if (lidStore && typeof lidStore.getPNForLID === 'function') {
+        console.log(`[Baileys - ${key}] Resolving ${unresolved.length} LIDs via the Baileys LID mapping store...`);
+
+        // Prefer the bulk API when available, otherwise resolve one at a time.
+        if (typeof lidStore.getPNsForLIDs === 'function') {
+          const CHUNK = 50;
+          for (let i = 0; i < unresolved.length; i += CHUNK) {
+            const chunk = unresolved.slice(i, i + CHUNK);
+            try {
+              const pairs = await lidStore.getPNsForLIDs(chunk);
+              for (const pair of pairs || []) {
+                if (pair?.lid && pair?.pn) {
+                  store.addPhoneNumberShare(pair.lid, pair.pn);
+                  learned++;
+                }
+              }
+            } catch (err) {
+              console.warn(`[Baileys - ${key}] Bulk LID lookup failed:`, err.message);
+            }
           }
-        } catch (err) {
-          console.warn(`[Baileys - ${key}] USync batch failed:`, err.message);
         }
 
-        // Space out requests; WhatsApp rate-limits bulk lookups.
-        await new Promise(r => setTimeout(r, 1500));
+        // Fill any gaps individually.
+        for (const lid of store.getUnresolvedLids()) {
+          try {
+            const pn = await lidStore.getPNForLID(lid);
+            if (pn) {
+              store.addPhoneNumberShare(lid, pn);
+              learned++;
+            }
+          } catch {
+            // best effort per contact
+          }
+        }
+      } else {
+        // Legacy path: ask WhatsApp for the LID of each number we already know.
+        const candidates = store.getUnmappedPhoneJids();
+        console.log(`[Baileys - ${key}] LID mapping store unavailable; trying USync on ${candidates.length} known numbers.`);
+
+        const BATCH_SIZE = 20;
+        for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
+          const batch = candidates.slice(i, i + BATCH_SIZE);
+          try {
+            const results = await sock.onWhatsApp(...batch);
+            for (const entry of results || []) {
+              const lidRaw = typeof entry.lid === 'string' ? entry.lid : entry.lid?.toString?.();
+              if (!lidRaw || !entry.jid) continue;
+              const lid = lidRaw.includes('@') ? lidRaw : `${lidRaw}@lid`;
+              store.addPhoneNumberShare(lid, entry.jid, store.getPendingName(entry.jid));
+              learned++;
+            }
+          } catch (err) {
+            console.warn(`[Baileys - ${key}] USync batch failed:`, err.message);
+          }
+          await new Promise(r => setTimeout(r, 1500));
+        }
       }
 
-      const unresolvedAfter = store.getUnresolvedLids().length;
-      console.log(`[Baileys - ${key}] USync: learned ${learned} mappings; unresolved LID chats ${unresolvedBefore} -> ${unresolvedAfter}.`);
+      const remaining = store.getUnresolvedLids().length;
+      console.log(`[Baileys - ${key}] LID resolution: learned ${learned} phone numbers; unresolved ${unresolved.length} -> ${remaining}.`);
 
       resolveLidContacts();
     };
@@ -482,13 +514,13 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
     }, 10000);
 
     // Expose the resolver so the REST endpoint can trigger it on demand.
-    activeSessions[key].resolveLids = resolveLidsViaUSync;
+    activeSessions[key].resolveLids = resolveLidsToPhoneNumbers;
 
     // Then look up LIDs for known phone numbers once the history sync has had
     // time to populate contacts. Runs in the background; failures are non-fatal.
     setTimeout(() => {
       if (activeSessions[key]?.status === 'connected') {
-        resolveLidsViaUSync().catch(err => {
+        resolveLidsToPhoneNumbers().catch(err => {
           console.warn(`[Baileys - ${key}] USync LID resolution error:`, err.message);
         });
       }

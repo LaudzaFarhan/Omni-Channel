@@ -177,7 +177,16 @@ class UserStore {
     else if (id.endsWith('@s.whatsapp.net')) pn = id;
 
     if (!lid && typeof contact.lid === 'string' && contact.lid.endsWith('@lid')) lid = contact.lid;
-    if (!pn && typeof contact.jid === 'string' && contact.jid.endsWith('@s.whatsapp.net')) pn = contact.jid;
+
+    // Baileys v6 exposed the phone counterpart as `jid`; v7 renamed it to
+    // `phoneNumber` and may supply a bare number rather than a full JID.
+    if (!pn) {
+      const rawPhone = contact.jid || contact.phoneNumber;
+      if (typeof rawPhone === 'string' && rawPhone) {
+        const digits = rawPhone.split('@')[0].replace(/\D/g, '');
+        if (digits) pn = `${digits}@s.whatsapp.net`;
+      }
+    }
 
     if (!lid) return false;
 
@@ -206,26 +215,34 @@ class UserStore {
     if (m.pn) chat.phoneNumber = '+' + m.pn.split('@')[0];
   }
 
-  // Extract a lid mapping from a message key (incoming messages carry senderPn/pushName).
+  // Extract a lid mapping from a message key.
+  //
+  // Baileys renamed these fields in v7: the phone-number counterpart of a @lid
+  // address moved from senderPn/participantPn to remoteJidAlt/participantAlt.
+  // Accept both so the store works across versions.
   _extractLidMapping(message, persist = true) {
     const key = message?.key;
     if (!key) return;
 
-    // remoteJid is a @lid and the message carries the sender's phone number
-    if (key.remoteJid?.endsWith('@lid') && key.senderPn) {
+    const senderPhone = key.remoteJidAlt || key.senderPn;
+    const participantPhone = key.participantAlt || key.participantPn;
+
+    // remoteJid is a @lid and the message carries the sender's phone number.
+    // Only for incoming messages: on our own messages the counterpart is us.
+    if (key.remoteJid?.endsWith('@lid') && senderPhone && !key.fromMe) {
       this._learnMapping(
         key.remoteJid,
-        key.senderPn,
-        { pushName: !key.fromMe ? message.pushName : undefined },
+        senderPhone,
+        { pushName: message.pushName },
         persist
       );
     }
 
     // Group participant expressed as @lid with an accompanying phone number
-    if (key.participant?.endsWith('@lid') && key.participantPn) {
+    if (key.participant?.endsWith('@lid') && participantPhone) {
       this._learnMapping(
         key.participant,
-        key.participantPn,
+        participantPhone,
         { pushName: !key.fromMe ? message.pushName : undefined },
         persist
       );
@@ -336,9 +353,17 @@ class UserStore {
       }
     };
 
+    const asPhoneJid = (value) => {
+      if (typeof value !== 'string' || !value) return null;
+      const digits = value.split('@')[0].replace(/\D/g, '');
+      return digits ? `${digits}@s.whatsapp.net` : null;
+    };
+
     Object.entries(this.contacts).forEach(([jid, c]) => {
       consider(jid, c);
-      if (typeof c.jid === 'string') consider(c.jid, c);
+      // v6 used `jid`, v7 uses `phoneNumber`.
+      consider(asPhoneJid(c.jid), c);
+      consider(asPhoneJid(c.phoneNumber), c);
     });
     Object.entries(this.chats).forEach(([jid, c]) => consider(jid, c));
 
