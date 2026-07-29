@@ -294,9 +294,60 @@ class UserStore {
     }
   }
 
-  // Explicit lid <-> phone share (from Baileys 'chats.phoneNumberShare' event).
-  addPhoneNumberShare(lid, jid) {
-    this._learnMapping(lid, jid, {}, true);
+  // Explicit lid <-> phone share (from Baileys 'chats.phoneNumberShare' event,
+  // or from a USync phone -> LID lookup).
+  addPhoneNumberShare(lid, jid, name) {
+    this._learnMapping(lid, jid, { savedName: name }, true);
+  }
+
+  /** Phone JIDs we have already paired with a LID. */
+  getMappedPhoneJids() {
+    const set = new Set();
+    Object.values(this.lidMap).forEach(m => {
+      if (m.pn) set.add(m.pn);
+    });
+    return set;
+  }
+
+  /** LIDs that still have no phone number attached. */
+  getUnresolvedLids() {
+    return Object.keys(this.chats).filter(
+      jid => jid.endsWith('@lid') && !this.lidMap[jid]?.pn
+    );
+  }
+
+  /**
+   * Phone JIDs we know about (from contacts or chats) that are not yet paired
+   * with a LID. These are the candidates for a USync phone -> LID lookup, which
+   * lets us fill in the reverse mapping and label @lid chats with real numbers.
+   */
+  getUnmappedPhoneJids() {
+    const mapped = this.getMappedPhoneJids();
+    const candidates = new Set();
+
+    const consider = (jid, record) => {
+      if (!jid || !jid.endsWith('@s.whatsapp.net')) return;
+      if (mapped.has(jid)) return;
+      candidates.add(jid);
+      // Remember any saved name so the lookup can carry it over.
+      if (record?.name && !/^\d+$/.test(String(record.name).trim())) {
+        this._pendingNames = this._pendingNames || {};
+        this._pendingNames[jid] = record.name;
+      }
+    };
+
+    Object.entries(this.contacts).forEach(([jid, c]) => {
+      consider(jid, c);
+      if (typeof c.jid === 'string') consider(c.jid, c);
+    });
+    Object.entries(this.chats).forEach(([jid, c]) => consider(jid, c));
+
+    return [...candidates];
+  }
+
+  /** Saved name previously seen for a phone JID, if any. */
+  getPendingName(phoneJid) {
+    return this._pendingNames?.[phoneJid] || this.contacts[phoneJid]?.name || null;
   }
 
   addContact(contact) {

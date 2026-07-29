@@ -415,12 +415,59 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
         }
       });
 
-      const stillUnresolved = Object.values(store.chats)
-        .filter(c => c.id.endsWith('@lid') && !c.phoneNumber).length;
-
-      console.log(`[Baileys - ${key}] LID resolution pass: ${resolved} chats updated, ${stillUnresolved} still awaiting a live message.`);
+      const stillUnresolved = store.getUnresolvedLids().length;
+      console.log(`[Baileys - ${key}] LID resolution pass: ${resolved} chats updated, ${stillUnresolved} LIDs still without a phone number.`);
       store.save();
       emitSyncComplete(uid, sessionId);
+    };
+
+    // Build the LID -> phone mapping using a USync lookup.
+    //
+    // WhatsApp offers no way to reverse a LID into a phone number, but it will
+    // tell us the LID for a phone number we already know. So we look up every
+    // known number that is not yet paired with a LID and store the reverse
+    // pairing. That turns "WhatsApp User #1234" rows into real numbers/names
+    // without waiting for the contact to message us.
+    const resolveLidsViaUSync = async () => {
+      const store = getStore(key);
+      const unresolvedBefore = store.getUnresolvedLids().length;
+      if (unresolvedBefore === 0) return;
+
+      const candidates = store.getUnmappedPhoneJids();
+      if (candidates.length === 0) {
+        console.log(`[Baileys - ${key}] USync: no unmapped phone numbers to look up.`);
+        return;
+      }
+
+      console.log(`[Baileys - ${key}] USync: looking up LIDs for ${candidates.length} known numbers (${unresolvedBefore} unresolved LID chats)...`);
+
+      const BATCH_SIZE = 20;
+      let learned = 0;
+
+      for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
+        const batch = candidates.slice(i, i + BATCH_SIZE);
+        try {
+          const results = await sock.onWhatsApp(...batch);
+          for (const entry of results || []) {
+            // `lid` may come back as a string or a JID-ish object.
+            const lidRaw = typeof entry.lid === 'string' ? entry.lid : entry.lid?.toString?.();
+            if (!lidRaw || !entry.jid) continue;
+            const lid = lidRaw.includes('@') ? lidRaw : `${lidRaw}@lid`;
+            store.addPhoneNumberShare(lid, entry.jid, store.getPendingName(entry.jid));
+            learned++;
+          }
+        } catch (err) {
+          console.warn(`[Baileys - ${key}] USync batch failed:`, err.message);
+        }
+
+        // Space out requests; WhatsApp rate-limits bulk lookups.
+        await new Promise(r => setTimeout(r, 1500));
+      }
+
+      const unresolvedAfter = store.getUnresolvedLids().length;
+      console.log(`[Baileys - ${key}] USync: learned ${learned} mappings; unresolved LID chats ${unresolvedBefore} -> ${unresolvedAfter}.`);
+
+      resolveLidContacts();
     };
 
     // Run LID resolution 10 seconds after connection to allow sync to complete
@@ -433,6 +480,19 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
         }
       }
     }, 10000);
+
+    // Expose the resolver so the REST endpoint can trigger it on demand.
+    activeSessions[key].resolveLids = resolveLidsViaUSync;
+
+    // Then look up LIDs for known phone numbers once the history sync has had
+    // time to populate contacts. Runs in the background; failures are non-fatal.
+    setTimeout(() => {
+      if (activeSessions[key]?.status === 'connected') {
+        resolveLidsViaUSync().catch(err => {
+          console.warn(`[Baileys - ${key}] USync LID resolution error:`, err.message);
+        });
+      }
+    }, 45000);
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
       if (type === 'notify' || type === 'append') {
@@ -881,6 +941,217 @@ app.post('/api/logout', authMiddleware, (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// =============================================
+// MAYAR PAYMENT GATEWAY INTEGRATION
+// =============================================
+const MAYAR_API_KEY = (process.env.MAYAR_API_KEY || '').trim();
+const MAYAR_WEBHOOK_TOKEN = (process.env.MAYAR_WEBHOOK_TOKEN || '').trim();
+const MAYAR_PAYMENT_LINK = (process.env.MAYAR_PAYMENT_LINK || '').trim();
+
+// Transactions Store Helper (File-backed fallback)
+const transactionsFilePath = path.resolve('sessions/transactions.json');
+
+function loadTransactionsStore() {
+  try {
+    const sessionsDir = path.resolve('sessions');
+    if (!fs.existsSync(sessionsDir)) {
+      fs.mkdirSync(sessionsDir, { recursive: true });
+    }
+    if (fs.existsSync(transactionsFilePath)) {
+      return JSON.parse(fs.readFileSync(transactionsFilePath, 'utf-8')) || [];
+    }
+  } catch (e) {
+    console.error('[Transactions Store] Error reading transactions.json:', e);
+  }
+  return [];
+}
+
+function saveTransactionRecord(record) {
+  try {
+    const list = loadTransactionsStore();
+    const existingIndex = list.findIndex(t => t.transactionId === record.transactionId || (t.id && t.id === record.transactionId));
+    if (existingIndex >= 0) {
+      list[existingIndex] = { ...list[existingIndex], ...record };
+    } else {
+      list.unshift(record);
+    }
+    fs.writeFileSync(transactionsFilePath, JSON.stringify(list, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('[Transactions Store] Error saving transaction:', e);
+  }
+}
+
+app.get('/api/mayar/config', (req, res) => {
+  res.json({
+    configured: Boolean(MAYAR_API_KEY || MAYAR_PAYMENT_LINK),
+    hasWebhookToken: Boolean(MAYAR_WEBHOOK_TOKEN)
+  });
+});
+
+app.get('/api/transactions', authMiddleware, (req, res) => {
+  const uid = req.user.uid;
+  const allTx = loadTransactionsStore();
+  const userTx = allTx.filter(t => t.uid === uid);
+  res.json(userTx);
+});
+
+app.post('/api/mayar/create-checkout', authMiddleware, async (req, res) => {
+  const uid = req.user.uid;
+  const userEmail = req.user.email;
+  const { type, amount, description } = req.body;
+
+  if (!amount || amount <= 0) {
+    return res.status(400).json({ error: 'Invalid amount' });
+  }
+
+  const transactionId = 'MAYAR-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+  const checkoutPayload = {
+    name: userEmail ? userEmail.split('@')[0] : 'Customer',
+    email: userEmail,
+    amount: amount,
+    description: description || (type === 'session' ? 'Device Session License' : 'Premium Subscription Upgrade'),
+    redirectUrl: req.headers.referer || 'https://www.omnireach.my.id'
+  };
+
+  try {
+    let paymentUrl = '';
+    
+    // 1) Use MAYAR_PAYMENT_LINK if set in .env
+    if (MAYAR_PAYMENT_LINK) {
+      const sep = MAYAR_PAYMENT_LINK.includes('?') ? '&' : '?';
+      paymentUrl = `${MAYAR_PAYMENT_LINK}${sep}email=${encodeURIComponent(userEmail || '')}&ref=${transactionId}`;
+    }
+
+    // 2) Call Mayar Headless API if API Key is available
+    if (!paymentUrl && MAYAR_API_KEY) {
+      try {
+        const mayarRes = await fetch('https://api.mayar.id/hl/v1/payment/create', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${MAYAR_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(checkoutPayload)
+        });
+
+        if (mayarRes.ok) {
+          const mayarData = await mayarRes.json();
+          paymentUrl = mayarData.data?.link || mayarData.data?.url || mayarData.paymentUrl || '';
+        } else {
+          console.warn('[Mayar API] Request returned status:', mayarRes.status);
+        }
+      } catch (apiErr) {
+        console.error('[Mayar API] Error reaching Mayar endpoint:', apiErr.message);
+      }
+    }
+
+    // Save transaction to server store
+    const txRecord = {
+      transactionId,
+      uid,
+      email: userEmail || '',
+      item: checkoutPayload.description,
+      type,
+      amount: amount,
+      currency: 'IDR',
+      status: 'PENDING',
+      paymentUrl,
+      createdAt: new Date().toISOString()
+    };
+    saveTransactionRecord(txRecord);
+
+    if (!paymentUrl) {
+      return res.json({
+        success: false,
+        isConfigError: true,
+        transactionId,
+        message: 'Mayar Secret API Key (mayar_sec_...) or MAYAR_PAYMENT_LINK required in .env'
+      });
+    }
+
+    res.json({
+      success: true,
+      transactionId,
+      paymentUrl,
+      amount,
+      type,
+      description: checkoutPayload.description
+    });
+  } catch (err) {
+    console.error('[Mayar Checkout] Error creating checkout:', err);
+    res.status(500).json({ error: 'Failed to create payment checkout link' });
+  }
+});
+
+// Unauthenticated Mayar Webhook receiver endpoint
+app.post('/api/webhooks/mayar', async (req, res) => {
+  const token = req.headers['x-mayar-token'] || req.headers['authorization'] || req.query.token || '';
+  
+  // Verify token if configured
+  if (MAYAR_WEBHOOK_TOKEN && !token.includes(MAYAR_WEBHOOK_TOKEN) && token !== MAYAR_WEBHOOK_TOKEN) {
+    console.warn('[Mayar Webhook] Received webhook with invalid authorization token');
+    return res.status(401).json({ error: 'Unauthorized webhook token' });
+  }
+
+  const payload = req.body || {};
+  console.log('[Mayar Webhook] Processing event:', payload.event || payload.status || 'payment_event');
+
+  try {
+    const status = (payload.status || payload.event || '').toUpperCase();
+    const isPaid = status.includes('PAID') || status.includes('SUCCESS') || status.includes('PAYMENT.RECEIVED');
+
+    if (isPaid) {
+      const email = payload.customerEmail || payload.data?.customerEmail || payload.email;
+      const type = payload.metadata?.type || payload.data?.metadata?.type || 'session';
+      const uid = payload.metadata?.uid || payload.data?.metadata?.uid;
+
+      console.log(`[Mayar Webhook] Payment SUCCESS for ${email || uid || 'customer'}. Fulfilling product...`);
+
+      if (uid) {
+        io.to(uid).emit('payment-success', {
+          transactionId: payload.id || payload.transactionId,
+          type,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+
+    res.json({ success: true, message: 'Webhook processed successfully' });
+  } catch (err) {
+    console.error('[Mayar Webhook] Processing error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Manually trigger LID -> phone resolution for the active session.
+// Useful right after a big history sync, without waiting for a reconnect.
+app.post('/api/resolve-contacts', authMiddleware, async (req, res) => {
+  const uid = req.user.uid;
+  const sid = req.body?.sessionId || req.query.sessionId || 'default';
+  const key = sessionKey(uid, sid);
+  const session = activeSessions[key];
+
+  if (!session || !session.sock || session.status !== 'connected') {
+    return res.status(400).json({ error: 'WhatsApp is not connected' });
+  }
+
+  const store = getStore(key);
+  const before = store.getUnresolvedLids().length;
+
+  // Run in the background: a full lookup can take minutes with rate limiting.
+  if (typeof session.resolveLids === 'function') {
+    session.resolveLids().catch(err =>
+      console.warn(`[Baileys - ${key}] Manual LID resolution failed:`, err.message)
+    );
+  }
+
+  res.json({
+    started: true,
+    unresolvedLids: before,
+    knownUnmappedNumbers: store.getUnmappedPhoneJids().length,
+  });
 });
 
 // Unauthenticated health check for the reverse proxy / uptime monitoring.
