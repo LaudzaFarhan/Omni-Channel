@@ -1,6 +1,6 @@
 {
   "name": "whatsapp-business-dashboard",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "WhatsApp Business Dashboard using Baileys",
   "main": "server/index.js",
   "type": "module",
