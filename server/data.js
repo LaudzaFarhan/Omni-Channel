@@ -401,6 +401,85 @@ export async function revokeAllRefreshTokens(userId) {
 }
 
 // ---------------------------------------------------------------------------
+// chat settings (agent hold)
+// ---------------------------------------------------------------------------
+export function mapChatSettings(row) {
+  if (!row) return null;
+  return {
+    sessionId: row.session_id,
+    chatJid: row.chat_jid,
+    botPaused: row.bot_paused,
+    pausedAt: row.paused_at,
+    pausedBy: row.paused_by,
+    note: row.note,
+  };
+}
+
+// A missing row means "not held", so this returns a synthetic default rather than
+// null. Callers can then treat every chat uniformly.
+export async function getChatSettings(userId, sessionId, chatJid) {
+  const row = await queryOne(
+    `SELECT * FROM chat_settings
+      WHERE user_id = $1 AND session_id = $2 AND chat_jid = $3`,
+    [userId, sessionId, chatJid]
+  );
+
+  return row ? mapChatSettings(row) : {
+    sessionId,
+    chatJid,
+    botPaused: false,
+    pausedAt: null,
+    pausedBy: null,
+    note: null,
+  };
+}
+
+// Only the held chats, for badging the chat list. Returns an array of JIDs.
+export async function listHeldChats(userId, sessionId) {
+  const { rows } = await query(
+    `SELECT chat_jid, paused_at, paused_by, note FROM chat_settings
+      WHERE user_id = $1 AND session_id = $2 AND bot_paused`,
+    [userId, sessionId]
+  );
+  return rows.map(r => ({
+    chatJid: r.chat_jid,
+    pausedAt: r.paused_at,
+    pausedBy: r.paused_by,
+    note: r.note,
+  }));
+}
+
+export async function setChatHold(userId, sessionId, chatJid, { botPaused, pausedBy, note }) {
+  const row = await queryOne(
+    `INSERT INTO chat_settings (user_id, session_id, chat_jid, bot_paused, paused_at, paused_by, note)
+     VALUES ($1, $2, $3, $4, CASE WHEN $4 THEN now() ELSE NULL END, $5, $6)
+     ON CONFLICT (user_id, session_id, chat_jid) DO UPDATE SET
+       bot_paused = EXCLUDED.bot_paused,
+       -- Preserve the original hold time across a note edit; clear it on release.
+       paused_at  = CASE
+                      WHEN NOT EXCLUDED.bot_paused THEN NULL
+                      WHEN chat_settings.bot_paused THEN chat_settings.paused_at
+                      ELSE now()
+                    END,
+       paused_by  = CASE WHEN EXCLUDED.bot_paused THEN EXCLUDED.paused_by ELSE NULL END,
+       note       = CASE WHEN EXCLUDED.bot_paused THEN EXCLUDED.note ELSE NULL END
+     RETURNING *`,
+    [userId, sessionId, chatJid, Boolean(botPaused), pausedBy || null, note || null]
+  );
+  return mapChatSettings(row);
+}
+
+// True when automated replies are currently suppressed for this conversation.
+export async function isChatHeld(userId, sessionId, chatJid) {
+  const row = await queryOne(
+    `SELECT 1 FROM chat_settings
+      WHERE user_id = $1 AND session_id = $2 AND chat_jid = $3 AND bot_paused`,
+    [userId, sessionId, chatJid]
+  );
+  return Boolean(row);
+}
+
+// ---------------------------------------------------------------------------
 // audit log
 // ---------------------------------------------------------------------------
 // Best-effort: a failure to write an audit row must never fail the action it

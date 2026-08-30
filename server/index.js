@@ -17,7 +17,7 @@ import {
 import { assertAuthConfigured, verifyAccessToken } from './auth.js';
 import {
   resolveSessionLimitFor, consumeMessageQuota, saveTransaction,
-  markTransactionStatus, findUserById, recordAudit,
+  markTransactionStatus, findUserById, recordAudit, isChatHeld,
 } from './data.js';
 import { authenticated, approved, admin, clientIp } from './middleware.js';
 import { mountAuthRoutes } from './routes-auth.js';
@@ -744,6 +744,41 @@ app.post('/api/messages/send', approved, async (req, res) => {
   }
   if (!to) {
     return res.status(400).json({ error: 'Missing to (recipient JID)' });
+  }
+
+  // Agent hold.
+  //
+  // A conversation can be put "on hold" so automated replies stop while a human
+  // takes over. Only automated senders are blocked — a person typing in the
+  // dashboard is exactly who the hold exists to make room for.
+  //
+  // A request is treated as automated when it says so, via either
+  // `X-Agent-Source: bot` or `"source": "bot"` in the body. That is cooperative
+  // rather than airtight: any caller could omit it. Making it airtight needs the
+  // bot to authenticate as itself (an API key) instead of borrowing a user's
+  // token, which does not exist yet. The check lives here so that when keys land,
+  // the key can imply the source and nothing else has to move.
+  const declaredSource = String(
+    req.headers['x-agent-source'] || req.body?.source || 'human'
+  ).toLowerCase();
+  const isAutomated = declaredSource === 'bot' || declaredSource === 'agent';
+
+  if (isAutomated) {
+    // Resolve the JID the same way the send path does, so the hold matches the
+    // conversation the operator actually paused.
+    let holdJid = to;
+    if (!holdJid.endsWith('@s.whatsapp.net') && !holdJid.endsWith('@g.us') && !holdJid.endsWith('@lid')) {
+      holdJid = `${to.replace(/\D/g, '')}@s.whatsapp.net`;
+    }
+
+    if (await isChatHeld(uid, sid, holdJid)) {
+      console.log(`[Hold] Suppressed an automated reply to ${holdJid} (${key}) — chat is on hold.`);
+      return res.status(409).json({
+        error: 'This conversation is on hold. A human agent has taken over, so automated replies are suppressed.',
+        code: 'chat_on_hold',
+        chatJid: holdJid,
+      });
+    }
   }
 
   // Quota is now enforced here, atomically, before the message goes out.

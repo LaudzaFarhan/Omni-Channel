@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown } from 'lucide-react';
+import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown, Pause, Play } from 'lucide-react';
 import { fetchWithAuth } from '../utils/api.js';
+import { subscribeSocket } from '../utils/socket.js';
+import { showToast } from '../utils/toastBus.js';
 import { PRESET_TAGS, getTags, toggleTag, clearTags, createCustomTag, loadGlobalCustomTags, addGlobalCustomTag, deleteGlobalCustomTag } from '../utils/contactTags.js';
 import { getChatDisplayName, getInitials } from '../utils/displayName.js';
 
@@ -249,6 +251,101 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+
+  // Agent hold: when a conversation is held, automated replies are suppressed so
+  // a human can take over. Server-enforced; see /api/messages/send.
+  const [holdState, setHoldState] = useState(null);
+  const [holdBusy, setHoldBusy] = useState(false);
+
+  // Load the hold state for whichever chat is open, and follow changes made in
+  // another tab through the socket.
+  useEffect(() => {
+    if (!activeChat?.id) {
+      setHoldState(null);
+      return;
+    }
+
+    let cancelled = false;
+    const jid = activeChat.id;
+
+    (async () => {
+      try {
+        const res = await fetchWithAuth(
+          `/api/chats/${encodeURIComponent(jid)}/hold?sessionId=${encodeURIComponent(activeSessionId)}`
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setHoldState(data);
+      } catch (err) {
+        console.info('Could not read hold state:', err.message);
+      }
+    })();
+
+    const handleHoldUpdate = (settings) => {
+      if (settings.chatJid === jid && settings.sessionId === activeSessionId) {
+        setHoldState(settings);
+      }
+    };
+
+    let attached = null;
+    const unsubscribe = subscribeSocket((socket) => {
+      if (attached) attached.off('chat-hold-updated', handleHoldUpdate);
+      attached = null;
+      if (socket) {
+        socket.on('chat-hold-updated', handleHoldUpdate);
+        attached = socket;
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      if (attached) attached.off('chat-hold-updated', handleHoldUpdate);
+    };
+  }, [activeChat?.id, activeSessionId]);
+
+  const isHeld = Boolean(holdState?.botPaused);
+
+  const handleToggleHold = async () => {
+    if (!activeChat?.id || holdBusy) return;
+    setHoldBusy(true);
+    const next = !isHeld;
+
+    try {
+      const res = await fetchWithAuth(`/api/chats/${encodeURIComponent(activeChat.id)}/hold`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botPaused: next, sessionId: activeSessionId }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Server returned ${res.status}`);
+      }
+
+      // The socket event will also arrive, but applying the response directly
+      // keeps the button responsive if the socket is down.
+      setHoldState(await res.json());
+
+      showToast({
+        type: next ? 'info' : 'success',
+        title: next ? 'Agent on hold' : 'Agent resumed',
+        message: next
+          ? 'Automated replies are paused for this conversation.'
+          : 'Automated replies are active again for this conversation.',
+      });
+    } catch (err) {
+      console.error('Failed to toggle hold:', err);
+      showToast({
+        type: 'error',
+        title: 'Could not change hold state',
+        message: err.message || 'Please try again.',
+        duration: 5000,
+      });
+    } finally {
+      setHoldBusy(false);
+    }
+  };
 
   // Tag state
   const [currentTags, setCurrentTags] = useState([]);
@@ -580,6 +677,35 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
             </div>
           </div>
           <div className="header-actions" style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+            {/* Agent hold: suppresses automated replies for this conversation */}
+            <button
+              onClick={handleToggleHold}
+              disabled={holdBusy}
+              aria-pressed={isHeld}
+              title={isHeld
+                ? 'Automated replies are paused for this chat. Click to let the agent resume.'
+                : 'Pause automated replies so you can take over this conversation.'}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 12px',
+                marginRight: '4px',
+                borderRadius: '8px',
+                fontSize: '0.78rem',
+                fontWeight: '600',
+                cursor: holdBusy ? 'wait' : 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.2s',
+                opacity: holdBusy ? 0.6 : 1,
+                background: isHeld ? 'rgba(245,158,11,0.12)' : 'transparent',
+                border: `1px solid ${isHeld ? 'rgba(245,158,11,0.35)' : 'var(--border-color)'}`,
+                color: isHeld ? '#f59e0b' : 'var(--text-muted)',
+              }}
+            >
+              {isHeld ? <><Play size={13} /> Resume Agent</> : <><Pause size={13} /> Hold Agent</>}
+            </button>
+
             {/* Tag Selector */}
             <div style={{ position: 'relative' }} ref={tagDropdownRef}>
               <button 
@@ -936,6 +1062,48 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
               style={{ background: 'none', border: 'none', color: 'var(--text-dimmed)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
             >
               <X size={16} />
+            </button>
+          </div>
+        )}
+
+        {/* On-hold banner. Sits above the composer because the point of holding
+            is that YOU reply — the human composer stays fully enabled. */}
+        {isHeld && (
+          <div
+            role="status"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '10px 16px',
+              background: 'rgba(245,158,11,0.08)',
+              borderTop: '1px solid rgba(245,158,11,0.25)',
+              color: '#f59e0b',
+              fontSize: '0.82rem',
+            }}
+          >
+            <Pause size={14} style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1 }}>
+              <strong>Agent on hold.</strong> Automated replies are paused for this conversation
+              {holdState?.pausedBy ? <> by <strong>{holdState.pausedBy}</strong></> : null}
+              . You can reply normally.
+            </span>
+            <button
+              onClick={handleToggleHold}
+              disabled={holdBusy}
+              style={{
+                background: 'transparent',
+                border: '1px solid rgba(245,158,11,0.4)',
+                color: '#f59e0b',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                fontSize: '0.75rem',
+                fontWeight: '600',
+                cursor: holdBusy ? 'wait' : 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Resume
             </button>
           </div>
         )}

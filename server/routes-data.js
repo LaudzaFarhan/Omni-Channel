@@ -15,6 +15,7 @@ import {
   listPlans, findPlanById, upsertPlan, setDefaultPlan, deletePlan, countUsersOnPlan,
   listTransactionsForUser, listAllTransactions,
   listAudit, recordAudit, revokeAllRefreshTokens,
+  getChatSettings, listHeldChats, setChatHold,
 } from './data.js';
 import { authenticated, admin, clientIp } from './middleware.js';
 
@@ -313,6 +314,66 @@ export function mountDataRoutes(app, io) {
     } catch (err) {
       console.error('[Admin] User delete failed:', err);
       res.status(500).json({ error: 'Could not delete the user.' });
+    }
+  });
+
+  // =========================================================================
+  // chat hold (suppress automated replies for one conversation)
+  // =========================================================================
+  // Every chat held in a session, for badging the chat list.
+  app.get('/api/chats/hold', authenticated, async (req, res) => {
+    try {
+      const sessionId = String(req.query.sessionId || 'default');
+      res.json({ held: await listHeldChats(req.profile.uid, sessionId) });
+    } catch (err) {
+      console.error('[Hold] List failed:', err);
+      res.status(500).json({ error: 'Could not load hold state.' });
+    }
+  });
+
+  // State of one conversation. Absence of a row means not held, so this always
+  // returns an object rather than a 404.
+  app.get('/api/chats/:jid/hold', authenticated, async (req, res) => {
+    try {
+      const sessionId = String(req.query.sessionId || 'default');
+      res.json(await getChatSettings(req.profile.uid, sessionId, req.params.jid));
+    } catch (err) {
+      console.error('[Hold] Read failed:', err);
+      res.status(500).json({ error: 'Could not read hold state.' });
+    }
+  });
+
+  // Hold or release. The chat JID is whatever the WhatsApp store already knows,
+  // so it is not validated against a whitelist — but it is scoped to the caller's
+  // own user id, so one customer cannot read or change another's chats.
+  app.put('/api/chats/:jid/hold', authenticated, async (req, res) => {
+    try {
+      const sessionId = String(req.body?.sessionId || req.query.sessionId || 'default');
+      const chatJid = req.params.jid;
+
+      if (!chatJid || chatJid.length > 200) {
+        return res.status(400).json({ error: 'Invalid chat id.' });
+      }
+
+      const botPaused = Boolean(req.body?.botPaused);
+      const note = req.body?.note ? String(req.body.note).slice(0, 300) : null;
+
+      const settings = await setChatHold(req.profile.uid, sessionId, chatJid, {
+        botPaused,
+        pausedBy: req.profile.name || req.profile.email,
+        note,
+      });
+
+      // Keep the operator's other tabs, and anyone else watching this account,
+      // in step with the change.
+      if (io) {
+        io.to(req.profile.uid).emit('chat-hold-updated', settings);
+      }
+
+      res.json(settings);
+    } catch (err) {
+      console.error('[Hold] Update failed:', err);
+      res.status(500).json({ error: 'Could not update hold state.' });
     }
   });
 
