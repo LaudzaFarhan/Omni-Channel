@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { db } from '../../utils/firebase.js';
-import { doc, updateDoc, deleteDoc, deleteField } from 'firebase/firestore';
+import { adminUpdateUser, adminDeleteUser } from '../../utils/api.js';
 import {
   Users, UserCheck, UserX, Shield, Search, Clock, Download, Filter, X,
   AlertTriangle, CheckCircle2, Sliders, Layers, RotateCcw, Trash2, Link2Off,
@@ -52,7 +51,7 @@ function SourceBadge({ source }) {
   );
 }
 
-export default function UsersTab({ currentUser, users, loading, error, plans, plansLoading }) {
+export default function UsersTab({ currentUser, users, loading, error, plans, plansLoading, onRefresh }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'pending' | 'approved'
   const [planFilter, setPlanFilter] = useState('all');
@@ -68,8 +67,11 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
 
   const isPending = (uid) => pendingUids.includes(uid);
 
-  // Wrap every Firestore mutation: marks the row busy, reports success or the
-  // real error through the toast bus, and always clears the busy flag.
+  // Wraps every mutation: marks the row busy, reports success or the real error
+  // through the toast bus, refreshes the registry, and always clears the flag.
+  //
+  // The server validates each of these too (see routes-data.js), so a rejection
+  // arrives as a readable message rather than a permissions error.
   const runMutation = async (uid, label, mutate) => {
     if (isPending(uid)) return;
     setPendingUids(prev => [...prev, uid]);
@@ -77,12 +79,13 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
       await mutate();
       showToast({ type: 'success', title: label, message: 'Change saved.' });
       setActiveModal(null);
+      if (onRefresh) await onRefresh();
     } catch (err) {
       console.error(`[Admin] ${label} failed:`, err);
       showToast({
         type: 'error',
         title: `${label} failed`,
-        message: err?.message || 'Check your admin permissions and try again.',
+        message: err?.message || 'The server rejected the change. Please try again.',
         duration: 5200,
       });
     } finally {
@@ -90,12 +93,10 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
     }
   };
 
-  const userRef = (uid) => doc(db, 'users', uid);
-
   // --- Approval -------------------------------------------------------------
   const handleToggleApproval = (targetUid, currentApproval) =>
     runMutation(targetUid, currentApproval ? 'Access revoked' : 'Account approved', () =>
-      updateDoc(userRef(targetUid), { isApproved: !currentApproval })
+      adminUpdateUser(targetUid, { isApproved: !currentApproval })
     );
 
   // --- Role -----------------------------------------------------------------
@@ -126,10 +127,7 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
   const confirmRoleChange = () => {
     const { userObj, targetRole } = activeModal;
     return runMutation(userObj.uid, 'Role updated', () =>
-      updateDoc(userRef(userObj.uid), {
-        role: targetRole,
-        isApproved: targetRole === 'admin' ? true : false,
-      })
+      adminUpdateUser(userObj.uid, { role: targetRole })
     );
   };
 
@@ -144,12 +142,7 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
     const { userObj } = activeModal;
     const nextPlan = findPlan(plans, modalInputValue);
     return runMutation(userObj.uid, 'Plan updated', () =>
-      updateDoc(userRef(userObj.uid), {
-        planId: nextPlan.id,
-        // `tier` predates plans and is still read by the customer dashboard for
-        // free-tier gating, so keep the two in sync rather than forking state.
-        tier: nextPlan.id,
-      })
+      adminUpdateUser(userObj.uid, { planId: nextPlan.id })
     );
   };
 
@@ -168,7 +161,7 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
       return;
     }
     return runMutation(userObj.uid, 'Message quota updated', () =>
-      updateDoc(userRef(userObj.uid), { messageLimit: newLimit })
+      adminUpdateUser(userObj.uid, { messageLimit: newLimit })
     );
   };
 
@@ -186,35 +179,35 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
       return;
     }
     return runMutation(userObj.uid, 'Device limit updated', () =>
-      updateDoc(userRef(userObj.uid), { sessionLimit: newLimit })
+      adminUpdateUser(userObj.uid, { sessionLimit: newLimit })
     );
   };
 
   // Removing the field makes the user track their plan again.
   const clearOverride = (userObj, field, label) =>
     runMutation(userObj.uid, `${label} reset to plan`, () =>
-      updateDoc(userRef(userObj.uid), { [field]: deleteField() })
+      adminUpdateUser(userObj.uid, { [field]: null })
     );
 
   // --- Usage counter --------------------------------------------------------
   const confirmResetUsage = () => {
     const { userObj } = activeModal;
     return runMutation(userObj.uid, 'Usage counter reset', () =>
-      updateDoc(userRef(userObj.uid), { messagesSent: 0 })
+      adminUpdateUser(userObj.uid, { messagesSent: 0 })
     );
   };
 
   // --- Trial ----------------------------------------------------------------
   const handleToggleTrialExpired = (userObj) =>
     runMutation(userObj.uid, 'Trial status updated', () =>
-      updateDoc(userRef(userObj.uid), { trialExpired: !(userObj.trialExpired || false) })
+      adminUpdateUser(userObj.uid, { trialExpired: !(userObj.trialExpired || false) })
     );
 
   // --- Delete ---------------------------------------------------------------
   const confirmDeleteUser = () => {
     const { userObj } = activeModal;
     return runMutation(userObj.uid, 'Profile deleted', () =>
-      deleteDoc(userRef(userObj.docId || userObj.uid))
+      adminDeleteUser(userObj.uid)
     );
   };
 
@@ -845,11 +838,13 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
 
             {activeModal.type === 'deleteUser' && (
               <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                Permanently delete this profile document?
+                Permanently delete this account?
                 <div style={{ marginTop: '10px', padding: '10px 12px', background: 'rgba(239,68,68,0.08)', borderLeft: '3px solid #ef4444', borderRadius: '6px', fontSize: '0.8rem' }}>
-                  This removes the Firestore profile only. The Firebase Auth account still exists and
-                  signing in again recreates a default profile, so revoke access instead if you only
-                  want to block the user. WhatsApp session files on the server are not removed.
+                  The account, its password and its active sessions are removed, and the email becomes
+                  available for a new signup. Their transactions are kept but no longer linked to a
+                  user. WhatsApp credentials under <code>sessions/</code> are not deleted — disconnect
+                  the device from the Live Sessions tab first if that matters. Revoke access instead if
+                  you only want to block the user.
                 </div>
               </div>
             )}

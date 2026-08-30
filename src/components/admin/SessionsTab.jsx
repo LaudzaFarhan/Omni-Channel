@@ -3,7 +3,7 @@ import {
   Activity, RefreshCw, Power, Smartphone, AlertTriangle, HardDrive,
   Clock, Server, X, Users as UsersIcon, MessageSquare, QrCode,
 } from 'lucide-react';
-import { fetchWithAuth } from '../../utils/firebase.js';
+import { fetchWithAuth } from '../../utils/api.js';
 import { showToast } from '../../utils/toastBus.js';
 
 const REFRESH_MS = 10000;

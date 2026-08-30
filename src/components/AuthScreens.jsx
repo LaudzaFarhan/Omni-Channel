@@ -1,10 +1,6 @@
 import React, { useState } from 'react';
-import { auth, db } from '../utils/firebase.js';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { login as apiLogin, register as apiRegister } from '../utils/api.js';
 import { MessageSquare, Mail, Lock, User, ArrowLeft, Eye, EyeOff } from 'lucide-react';
-import { isAdminEmail } from '../utils/adminAccess.js';
-import { defaultPlanForSignup } from '../utils/plans.js';
 
 export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSuccess }) {
   const [email, setEmail] = useState('');
@@ -25,49 +21,26 @@ export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSu
     setLoading(true);
 
     try {
-      if (type === 'login') {
-        const credential = await signInWithEmailAndPassword(auth, email, password);
-        onAuthSuccess(credential.user);
-      } else {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const user = userCredential.user;
+      // The server owns account creation now: it assigns the role from the
+      // ADMIN_EMAILS allow-list, places the account on the default plan, and
+      // decides approval. The client no longer writes any of that, which is what
+      // let a crafted signup grant itself privileges under the old rules.
+      const user = type === 'login'
+        ? await apiLogin({ email, password })
+        : await apiRegister({ name, email, password });
 
-        // Admin status comes from the shared allow-list, which matches
-        // isAdminEmail() in firestore.rules. The old "any @admin.com address"
-        // wildcard disagreed with the rules, so those signups built a profile
-        // the rules then refused to write.
-        const isAdmin = isAdminEmail(email);
-
-        // New accounts inherit their limits from the default plan rather than
-        // storing a copy of them, so raising a plan's quota later applies here
-        // too. messageLimit / sessionLimit are written only as admin overrides.
-        const plan = await defaultPlanForSignup();
-        const planId = isAdmin ? 'premium' : plan.id;
-
-        // Create user document in Firestore
-        await setDoc(doc(db, 'users', user.uid), {
-          uid: user.uid,
-          name: name,
-          email: email,
-          role: isAdmin ? 'admin' : 'customer',
-          isApproved: isAdmin ? true : false,
-          planId,
-          // `tier` predates plans and is still read for free-tier gating in the
-          // customer dashboard, so it is kept in sync with planId.
-          tier: planId,
-          messagesSent: 0,
-          createdAt: serverTimestamp(),
-        });
-
-        onAuthSuccess(user);
-      }
+      onAuthSuccess(user);
     } catch (err) {
       console.error('Auth error:', err);
-      if (err.code === 'auth/email-already-in-use') {
-        setError('This email is already in use.');
-      } else if (err.code === 'auth/weak-password') {
-        setError('Password should be at least 6 characters.');
-      } else if (err.code === 'auth/invalid-credential') {
+
+      // The API returns a human-readable message with an appropriate status, so
+      // prefer it over inventing one. Codes are only used where the wording
+      // should differ from the server's.
+      if (err.code === 'password_reset_required') {
+        setError('This account was migrated and needs a new password. Ask an administrator to reset it.');
+      } else if (err.status === 429) {
+        setError(err.message || 'Too many attempts. Please wait a moment and try again.');
+      } else if (err.status === 401) {
         setError('Invalid email or password.');
       } else {
         setError(err.message || 'An error occurred during authentication.');

@@ -1,13 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { db } from '../../utils/firebase.js';
-import { doc, setDoc, deleteDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { adminSavePlan, adminSetDefaultPlan, adminDeletePlan } from '../../utils/api.js';
 import {
   Layers, Plus, Pencil, Trash2, Archive, ArchiveRestore, Star, X,
   AlertTriangle, Users as UsersIcon, Sparkles,
 } from 'lucide-react';
 import { showToast } from '../../utils/toastBus.js';
 import {
-  PLANS_COLLECTION, FALLBACK_PLANS, normalizePlan, sortPlans,
+  FALLBACK_PLANS, normalizePlan, sortPlans,
   resolveUserPlanId, planPriceLabel, formatQuota,
 } from '../../utils/plans.js';
 
@@ -68,7 +67,7 @@ const inputStyle = {
 
 const labelStyle = { fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px', display: 'block' };
 
-export default function PlansTab({ plans, loading, error, users }) {
+export default function PlansTab({ plans, loading, error, users, onPlansChanged, onRefresh }) {
   // { mode: 'create' | 'edit', form } — null when closed
   const [editor, setEditor] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
@@ -86,11 +85,19 @@ export default function PlansTab({ plans, loading, error, users }) {
     return counts;
   }, [users]);
 
+  // Each admin plan endpoint returns the full catalogue after the write, so the
+  // UI updates from the server's view rather than a locally guessed one. The
+  // server also broadcasts 'plans-updated' to every other client.
   const run = async (label, mutate) => {
     if (busy) return;
     setBusy(true);
     try {
-      await mutate();
+      const nextPlans = await mutate();
+      if (Array.isArray(nextPlans) && onPlansChanged) {
+        onPlansChanged(sortPlans(nextPlans.map(p => normalizePlan(p.id, p))));
+      } else if (onRefresh) {
+        await onRefresh();
+      }
       showToast({ type: 'success', title: label, message: 'Change saved.' });
       setEditor(null);
       setConfirmAction(null);
@@ -99,7 +106,7 @@ export default function PlansTab({ plans, loading, error, users }) {
       showToast({
         type: 'error',
         title: `${label} failed`,
-        message: err?.message || 'Check your admin permissions and try again.',
+        message: err?.message || 'The server rejected the change. Please try again.',
         duration: 5200,
       });
     } finally {
@@ -109,22 +116,26 @@ export default function PlansTab({ plans, loading, error, users }) {
 
   // Write the built-in catalogue on first use, so a fresh deployment has
   // something to assign instead of falling back to hardcoded numbers.
+  //
+  // Migration 001_init.sql already seeds Free and Premium, so this is only
+  // reached if they were later deleted.
   const handleSeedDefaults = async () => {
     setSeeding(true);
     try {
-      const batch = writeBatch(db);
-      FALLBACK_PLANS.forEach((plan) => {
-        const { id, ...rest } = normalizePlan(plan.id, plan);
-        batch.set(doc(db, PLANS_COLLECTION, id), { ...rest, id, updatedAt: serverTimestamp() });
-      });
-      await batch.commit();
+      let latest = [];
+      for (const plan of FALLBACK_PLANS) {
+        latest = await adminSavePlan(normalizePlan(plan.id, plan));
+      }
+      if (onPlansChanged) {
+        onPlansChanged(sortPlans(latest.map(p => normalizePlan(p.id, p))));
+      }
       showToast({ type: 'success', title: 'Default plans created', message: 'Free and Premium are ready to assign.' });
     } catch (err) {
       console.error('[Admin] Seeding plans failed:', err);
       showToast({
         type: 'error',
         title: 'Could not create default plans',
-        message: err?.message || 'Check your admin permissions.',
+        message: err?.message || 'The server rejected the request.',
         duration: 5200,
       });
     } finally {
@@ -156,47 +167,27 @@ export default function PlansTab({ plans, loading, error, users }) {
 
     const payload = formToPlan({ ...form, id });
 
-    return run(mode === 'create' ? 'Plan created' : 'Plan updated', async () => {
-      // Only one plan may be the signup default, so clear the flag elsewhere in
-      // the same batch to avoid a window with two defaults.
-      const batch = writeBatch(db);
-      batch.set(doc(db, PLANS_COLLECTION, id), {
+    // Only one plan may be the signup default. That is enforced by a partial
+    // unique index in Postgres and applied in a transaction server-side, so the
+    // client no longer has to clear the flag on the others itself.
+    return run(mode === 'create' ? 'Plan created' : 'Plan updated', () =>
+      adminSavePlan({
         ...payload,
         archived: mode === 'edit' ? plans.find(p => p.id === id)?.archived || false : false,
-        updatedAt: serverTimestamp(),
-      });
-
-      if (payload.isDefault) {
-        plans
-          .filter(p => p.id !== id && p.isDefault)
-          .forEach(p => batch.update(doc(db, PLANS_COLLECTION, p.id), { isDefault: false }));
-      }
-
-      await batch.commit();
-    });
+      })
+    );
   };
 
   const handleSetDefault = (plan) =>
-    run('Default plan updated', async () => {
-      const batch = writeBatch(db);
-      batch.update(doc(db, PLANS_COLLECTION, plan.id), { isDefault: true, archived: false });
-      plans
-        .filter(p => p.id !== plan.id && p.isDefault)
-        .forEach(p => batch.update(doc(db, PLANS_COLLECTION, p.id), { isDefault: false }));
-      await batch.commit();
-    });
+    run('Default plan updated', () => adminSetDefaultPlan(plan.id));
 
   const handleToggleArchive = (plan) =>
     run(plan.archived ? 'Plan restored' : 'Plan archived', () =>
-      setDoc(
-        doc(db, PLANS_COLLECTION, plan.id),
-        { archived: !plan.archived, isDefault: false, updatedAt: serverTimestamp() },
-        { merge: true }
-      )
+      adminSavePlan({ ...plan, archived: !plan.archived, isDefault: false })
     );
 
   const handleDeletePlan = (plan) =>
-    run('Plan deleted', () => deleteDoc(doc(db, PLANS_COLLECTION, plan.id)));
+    run('Plan deleted', () => adminDeletePlan(plan.id));
 
   const ordered = sortPlans(plans);
   const defaultPlanId = ordered.find(p => p.isDefault && !p.archived)?.id;

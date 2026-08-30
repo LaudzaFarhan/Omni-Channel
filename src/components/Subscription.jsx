@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Send, Hash, Zap, Smartphone, Plus, CreditCard, ExternalLink, CheckCircle2, Clock, X, AlertCircle } from 'lucide-react';
-import { db, fetchWithAuth } from '../utils/firebase.js';
-import { doc, setDoc, collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
+import { fetchWithAuth } from '../utils/api.js';
+import { subscribeSocket } from '../utils/socket.js';
 
 export default function Subscription({ userProfile, activeSessionCount }) {
   const [buying, setBuying] = useState(false);
@@ -30,39 +30,32 @@ export default function Subscription({ userProfile, activeSessionCount }) {
     }
   };
 
-  // Listener for user's transactions (API endpoint + Firestore fallback)
+  // Transactions now come from Postgres through the API. The Firestore listener
+  // that used to mirror them is gone; the payment webhook emits 'payment-success'
+  // to this user, which is the cue to refetch.
   useEffect(() => {
     if (!userProfile?.uid) return;
 
-    // Load from backend server API
     loadServerTransactions();
 
-    // Real-time listener fallback via Firestore
-    let unsubscribe = () => {};
-    try {
-      const q = query(
-        collection(db, 'transactions'),
-        where('uid', '==', userProfile.uid)
-      );
+    const handlePaymentSuccess = () => {
+      loadServerTransactions();
+    };
 
-      unsubscribe = onSnapshot(q, (snapshot) => {
-        const list = [];
-        snapshot.forEach((docSnap) => {
-          list.push({ id: docSnap.id, ...docSnap.data() });
-        });
-        list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-        setTransactions(list);
-        setLoadingTx(false);
-      }, (err) => {
-        // Silent catch: fallback to server API if Firestore rules are un-deployed
-        console.info('Firestore transaction listener inactive, using server API');
-        setLoadingTx(false);
-      });
-    } catch (e) {
-      setLoadingTx(false);
-    }
+    let attached = null;
+    const unsubscribe = subscribeSocket((socket) => {
+      if (attached) attached.off('payment-success', handlePaymentSuccess);
+      attached = null;
+      if (socket) {
+        socket.on('payment-success', handlePaymentSuccess);
+        attached = socket;
+      }
+    });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (attached) attached.off('payment-success', handlePaymentSuccess);
+    };
   }, [userProfile?.uid]);
 
   // Initiate real Mayar Payment Checkout

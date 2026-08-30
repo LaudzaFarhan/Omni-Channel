@@ -21,8 +21,7 @@
 // number, because the dashboard renders these values directly and an Infinity
 // would leak into the UI. Use a large number instead.
 
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from './firebase.js';
+import { fetchPlans } from './api.js';
 
 export const PLANS_COLLECTION = 'plans';
 export const DEFAULT_PLAN_ID = 'free';
@@ -170,10 +169,8 @@ export function resolveEffectiveLimits(user = {}, plans = []) {
 // live subscription (signup, profile repair). Falls back to the built-in list so
 // a missing or unreadable collection never blocks account creation.
 export async function loadPlansOnce() {
-  const snapshot = await getDocs(collection(db, PLANS_COLLECTION));
-  const list = [];
-  snapshot.forEach((docSnap) => list.push(normalizePlan(docSnap.id, docSnap.data() || {})));
-  return sortPlans(list);
+  const plans = await fetchPlans();
+  return sortPlans(plans.map(plan => normalizePlan(plan.id, plan)));
 }
 
 export async function defaultPlanForSignup() {

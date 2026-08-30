@@ -7,13 +7,11 @@ import StatsPanel from './components/StatsPanel.jsx';
 import LandingPage from './components/LandingPage.jsx';
 import AuthScreens from './components/AuthScreens.jsx';
 import AdminDashboard from './components/AdminDashboard.jsx';
-import { auth, db, fetchWithAuth } from './utils/firebase.js';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, onSnapshot, setDoc, collection } from 'firebase/firestore';
-import { isAdminEmail } from './utils/adminAccess.js';
 import {
-  PLANS_COLLECTION, normalizePlan, sortPlans, defaultPlanForSignup, resolveEffectiveLimits,
-} from './utils/plans.js';
+  fetchWithAuth, subscribeAuth, restoreSession, logout as apiLogout,
+  getAccessToken, applyProfileUpdate,
+} from './utils/api.js';
+import { normalizePlan, sortPlans, loadPlansOnce, resolveEffectiveLimits } from './utils/plans.js';
 import { MessageSquare, Clock, AlertTriangle, Bell, X } from 'lucide-react';
 
 import Sidebar from './components/Sidebar.jsx';
@@ -188,102 +186,105 @@ export default function App() {
     }
   };
 
-  // Monitor Firebase Auth state
+  // Auth state.
+  //
+  // Replaces onAuthStateChanged plus the onSnapshot listener on the user's
+  // Firestore document. The profile is fetched once on load and then kept
+  // current by the 'profile-updated' socket event the server emits after any
+  // change, so an admin approving an account or raising a quota still lands
+  // live without polling.
   useEffect(() => {
-    let unsubscribeProfile = () => {};
+    let cancelled = false;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-        
-        // Listen to Firestore profile changes
-        unsubscribeProfile = onSnapshot(doc(db, 'users', currentUser.uid), async (docSnap) => {
-          if (docSnap.exists()) {
-            const profile = docSnap.data();
-            setUserProfile(profile);
-
-            // Connect socket if approved
-            if (profile.isApproved) {
-              try {
-                const token = await currentUser.getIdToken();
-                const ws = connectSocket(token);
-                setupSocketListeners(ws);
-              } catch (e) {
-                console.error('[App] Failed to establish dynamic socket:', e);
-              }
-            } else {
-              disconnectSocket();
-            }
-          } else {
-            console.warn('[App] Profile document not found in Firestore. Auto-creating default profile...');
-            
-            // Same shape as the signup path in AuthScreens.jsx: admin status from
-            // the shared allow-list, limits inherited from the default plan.
-            const isAdmin = isAdminEmail(currentUser.email);
-            const plan = await defaultPlanForSignup();
-            const planId = isAdmin ? 'premium' : plan.id;
-
-            const defaultProfile = {
-              uid: currentUser.uid,
-              name: currentUser.displayName || currentUser.email.split('@')[0],
-              email: currentUser.email,
-              role: isAdmin ? 'admin' : 'customer',
-              isApproved: isAdmin ? true : false,
-              planId,
-              tier: planId,
-              messagesSent: 0,
-              createdAt: new Date(),
-            };
-
-            try {
-              // Creating Firestore document for user
-              await setDoc(doc(db, 'users', currentUser.uid), defaultProfile);
-            } catch (err) {
-              console.error('[App] Failed to auto-create missing user profile:', err);
-              setUserProfile(null);
-            }
-          }
-          setLoading(false);
-        });
-      } else {
-        setUser(null);
-        setUserProfile(null);
-        disconnectSocket();
-        unsubscribeProfile();
-        setLoading(false);
-      }
+    const unsubscribeAuth = subscribeAuth((nextUser) => {
+      if (cancelled) return;
+      setUser(nextUser);
+      setUserProfile(nextUser);
+      if (!nextUser) disconnectSocket();
     });
 
+    // Validate any stored token against the server before trusting it.
+    restoreSession()
+      .catch((err) => console.error('[App] Session restore failed:', err))
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
     return () => {
+      cancelled = true;
       unsubscribeAuth();
-      unsubscribeProfile();
     };
   }, []);
 
-  // Subscribe to the plan catalogue so a limit raised in the admin console is
-  // reflected here without a reload. A read failure is non-fatal: the resolver
-  // falls back to the built-in defaults.
+  // Open the socket once we have an approved account, and keep the profile in
+  // step with what the server pushes.
+  useEffect(() => {
+    if (!userProfile) return;
+
+    const canConnect = userProfile.isApproved || userProfile.role === 'admin';
+    if (!canConnect) {
+      disconnectSocket();
+      return;
+    }
+
+    const token = getAccessToken();
+    if (!token) return;
+
+    let ws;
+    try {
+      ws = connectSocket(token);
+      setupSocketListeners(ws);
+    } catch (e) {
+      console.error('[App] Failed to establish socket:', e);
+      return;
+    }
+
+    const handleProfile = (profile) => {
+      applyProfileUpdate(profile);
+      setUserProfile(prev => (prev && prev.uid === profile.uid ? { ...prev, ...profile } : prev));
+    };
+
+    // Sent after the server increments the counter on a successful send, so the
+    // quota bar reflects the authoritative value rather than a local guess.
+    const handleQuota = ({ messagesSent }) => {
+      setUserProfile(prev => (prev ? { ...prev, messagesSent } : prev));
+    };
+
+    const handlePlans = (nextPlans) => {
+      setPlans(sortPlans((nextPlans || []).map(p => normalizePlan(p.id, p))));
+    };
+
+    ws.on('profile-updated', handleProfile);
+    ws.on('quota-updated', handleQuota);
+    ws.on('plans-updated', handlePlans);
+
+    return () => {
+      ws.off('profile-updated', handleProfile);
+      ws.off('quota-updated', handleQuota);
+      ws.off('plans-updated', handlePlans);
+    };
+  }, [userProfile?.uid, userProfile?.isApproved, userProfile?.role]);
+
+  // Load the plan catalogue once signed in, so limits resolve from the plan
+  // rather than the built-in fallbacks. Updates arrive via 'plans-updated'.
   useEffect(() => {
     if (!user) {
       setPlans([]);
       return;
     }
 
-    const unsubscribe = onSnapshot(
-      collection(db, PLANS_COLLECTION),
-      (snapshot) => {
-        const list = [];
-        snapshot.forEach((docSnap) => list.push(normalizePlan(docSnap.id, docSnap.data() || {})));
-        setPlans(sortPlans(list));
-      },
-      (err) => {
+    let cancelled = false;
+    loadPlansOnce()
+      .then((list) => {
+        if (!cancelled) setPlans(list);
+      })
+      .catch((err) => {
         console.warn('[App] Plan catalogue unavailable, using built-in defaults:', err.message);
-        setPlans([]);
-      }
-    );
+        if (!cancelled) setPlans([]);
+      });
 
-    return () => unsubscribe();
-  }, [user]);
+    return () => { cancelled = true; };
+  }, [user?.uid]);
 
   // Handle page focus or tab visibility changes to auto-sync background tabs
   useEffect(() => {
@@ -609,12 +610,15 @@ export default function App() {
     const confirmLogout = window.confirm('Are you sure you want to sign out of the dashboard?');
     if (!confirmLogout) return;
 
-    // Capture the email before signOut clears the user object.
-    const signedOutEmail = auth.currentUser?.email || user?.email;
+    // Capture the email before the sign-out clears the user object.
+    const signedOutEmail = user?.email;
 
     try {
       setLoading(true);
-      await signOut(auth);
+      // Revokes the refresh token server-side, so the session cannot be resumed
+      // from another tab that still has it cached.
+      await apiLogout();
+      disconnectSocket();
       navigateTo('/');
       showToast({
         type: 'logout',
@@ -713,7 +717,7 @@ export default function App() {
           </div>
           <button className="logout-button" onClick={() => {
             setIsSessionBlocked(false);
-            signOut(auth);
+            apiLogout();
             navigateTo('/login');
           }} style={{ width: '100%', padding: '12px' }}>
             Back to Sign In

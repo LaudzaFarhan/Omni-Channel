@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown } from 'lucide-react';
-import { fetchWithAuth, db } from '../utils/firebase.js';
-import { doc, updateDoc, increment } from 'firebase/firestore';
+import { fetchWithAuth } from '../utils/api.js';
 import { PRESET_TAGS, getTags, toggleTag, clearTags, createCustomTag, loadGlobalCustomTags, addGlobalCustomTag, deleteGlobalCustomTag } from '../utils/contactTags.js';
 import { getChatDisplayName, getInitials } from '../utils/displayName.js';
 
@@ -436,18 +435,15 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
         if (!textToSend) setInputText(''); // clear input if not quick reply
         setSelectedFile(null); // clear file attachment
         if (fileInputRef.current) fileInputRef.current.value = '';
-        
-        // Increment message limit in Firestore
-        if (user && userProfile && userProfile.role !== 'admin') {
-          try {
-            const userRef = doc(db, 'users', user.uid);
-            await updateDoc(userRef, {
-              messagesSent: increment(1)
-            });
-          } catch (e) {
-            console.error('Failed to increment message usage:', e);
-          }
-        }
+
+        // The usage counter is no longer incremented here. The server consumes
+        // the quota atomically as part of sending and pushes the new total over
+        // the socket as 'quota-updated', so the browser cannot miscount or be
+        // modified to skip the increment.
+      } else if (res.status === 429) {
+        // Server-side quota rejection. The local check above is only a courtesy;
+        // this is the authoritative one.
+        alert(data.error || 'Message quota reached. Upgrade your plan to send more messages.');
       } else {
         alert(`Failed to send: ${data.error || 'Unknown error'}`);
       }

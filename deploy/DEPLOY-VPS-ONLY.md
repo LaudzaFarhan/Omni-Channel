@@ -74,12 +74,13 @@ dig +short omnireach.my.id
 If `omnireach.my.id` currently points at Vercel or the old VPS, this is the
 cutover moment — change the A record now and continue once it propagates.
 
-**c. Firebase authorized domains.** Console → project `whatsapp-omni-f2918` →
-Authentication → Settings → **Authorized domains** → add `omnireach.my.id`.
+**c. Postgres.** Authentication and all application data now live in Postgres,
+not Firebase. Work through **`deploy/POSTGRES.md`** to install it and create the
+role and database before continuing — the server will not start without a
+reachable `DATABASE_URL` and a `JWT_SECRET`.
 
-Skipping this is the most common failure mode: the app loads perfectly and then
-login dies with `auth/unauthorized-domain`. Leave any existing Vercel domain in
-the list until you have decommissioned it.
+There is no Firebase console step any more, and no domain to authorise: the
+hostname you serve from is entirely your own concern now.
 
 ---
 
@@ -122,36 +123,37 @@ The frontend and backend share this one file, because pm2 loads it via
 `--env-file` and Vite reads it at build time. Set:
 
 ```bash
-# --- backend ---
+# --- required: the server exits without these ---
+DATABASE_URL=postgres://wa_app:PASSWORD@127.0.0.1:5432/wa_app
+
+# Generate with:
+#   node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+# Changing it later signs every user out, so keep it stable.
+JWT_SECRET=
+
+# --- server ---
 PORT=5000
 HOST=127.0.0.1
-FIREBASE_PROJECT_ID=whatsapp-omni-f2918
+NODE_ENV=production
 CORS_ORIGIN=https://omnireach.my.id
 PUBLIC_URL=https://omnireach.my.id
-NODE_ENV=production
 
-# Admin console (/api/admin/* — live sessions, force logout, overview).
-# A caller must ALSO have role "admin" in Firestore.
+# Addresses given the admin role at registration. The FIRST account registered
+# becomes an approved admin regardless, so a fresh deployment is usable
+# immediately. Admin API access is decided by the stored role, read from Postgres
+# on every request.
 ADMIN_EMAILS=your-admin@example.com
 
 # --- frontend, read only at build time ---
 # MUST be empty for single-origin: the app then calls /api on its own host.
+# No Firebase values are needed any more.
 VITE_API_URL=
-
-VITE_FIREBASE_API_KEY=...
-VITE_FIREBASE_AUTH_DOMAIN=whatsapp-omni-f2918.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=whatsapp-omni-f2918
-VITE_FIREBASE_STORAGE_BUCKET=whatsapp-omni-f2918.firebasestorage.app
-VITE_FIREBASE_MESSAGING_SENDER_ID=...
-VITE_FIREBASE_APP_ID=...
-VITE_ADMIN_EMAILS=your-admin@example.com
 ```
 
-Copy the `VITE_FIREBASE_*` values from your local `.env` or the Vercel dashboard.
-**No trailing spaces or newlines inside values** — a stray newline in the Firebase
-key produces `identitytoolkit` 400 errors that are painful to diagnose.
+**No trailing spaces or newlines inside values.** A stray newline in
+`DATABASE_URL` produces a confusing connection failure.
 
-Then lock the file down, since it holds credentials:
+Then lock the file down, since it holds the database password and the signing key:
 
 ```bash
 chmod 600 .env
@@ -279,13 +281,27 @@ sudo certbot --nginx -d omnireach.my.id -d www.omnireach.my.id
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-## 8. Publish the Firestore rules
+## 8. Import existing Firebase data (only if migrating)
 
-Separate from the VPS and easy to forget. Firebase Console → Firestore Database →
-Rules → paste the contents of `firestore.rules` → **Publish**.
+Skip this on a fresh deployment.
 
-Without it the admin console's Plans tab errors and the app silently falls back to
-the built-in limits of 500 messages / 1 device.
+Export your Firestore `users`, `plans` and `transactions` collections to a single
+JSON file, copy it to the server, then:
+
+```bash
+cd /root/wa-backend
+node server/migrate-from-firestore.js /root/firestore-export.json --dry-run
+node server/migrate-from-firestore.js /root/firestore-export.json
+```
+
+Always run `--dry-run` first: it reports what it would import and flags plan
+mismatches without writing anything.
+
+Each account keeps its Firebase UID as its primary key, so already-connected
+WhatsApp devices keep working. **Passwords do not carry over** — Firebase's
+scrypt hashes are derived with its own signer key and cannot be verified here, so
+imported accounts are flagged and must set a new password before signing in. The
+script prints how many are affected and how to clear the flag.
 
 ## 9. Verify end to end
 
@@ -300,27 +316,45 @@ curl.exe -sI https://omnireach.my.id/
 Then in a browser at `https://omnireach.my.id`:
 
 1. Landing page renders, no 404s in the Network tab.
-2. Sign in — this is what proves step 0c was done.
-3. DevTools → Network → WS shows `/socket.io/` at status **101**.
-4. Scan the WhatsApp QR; the session connects and survives a page reload.
-5. Sign in as an admin: the console shows Customers, Plans and Live Sessions.
-   Live Sessions must return data, not a 403.
-6. Plans tab → seed the default plans if the catalogue is empty.
+2. **Register an account.** On a fresh database the first one becomes an approved
+   admin automatically.
+3. Sign out and back in — this proves password hashing and token issuance work.
+4. DevTools → Network → WS shows `/socket.io/` at status **101**.
+5. Scan the WhatsApp QR; the session connects and survives a page reload.
+6. Admin console shows Customers, Plans and Live Sessions, all returning data
+   rather than a 403.
+7. Plans tab lists Free and Premium (seeded by the migration).
+8. Change a plan's message quota and confirm the Customers tab updates without a
+   reload — that proves the `plans-updated` socket event replaced the Firestore
+   subscription correctly.
 
-A 403 on Live Sessions means the address is missing from `ADMIN_EMAILS` in `.env`
-(then `pm2 restart wa-backend`), or that account's Firestore `role` is not
-`admin`.
+A 403 on the admin tabs means that account's `role` is not `admin`:
+
+```bash
+sudo -u postgres psql -d wa_app -c "SELECT email, role, is_approved FROM users;"
+sudo -u postgres psql -d wa_app -c "UPDATE users SET role='admin', is_approved=true WHERE email='you@example.com';"
+```
 
 ## 10. Decommission Vercel
 
 Only after step 9 passes, and after watching it for a day.
 
-1. Vercel dashboard → project `omni-channel` → Settings → **Pause** (reversible)
+**Move DNS off Vercel first.** The nameservers are `ns1/ns2.vercel-dns.com`, so
+deleting the project while DNS still points there stops the domain resolving
+altogether — site, API and email. Recreate every record at the new provider
+(Cloudflare's free tier, or your registrar), switch the nameservers, confirm
+resolution, and only then touch the project.
+
+1. Move DNS, and verify `dig +short NS omnireach.my.id` shows the new provider.
+2. Vercel dashboard → project `omni-channel` → Settings → **Pause** (reversible)
    rather than delete.
-2. Record the Firebase env values somewhere safe first — that dashboard is
-   currently one of the places they live.
 3. Delete the project once you are confident. Optionally drop `.vercel/` and
    `vercel.json` from the repo.
+
+Firebase can be shut down at the same time — nothing in the app calls it any
+more. Export anything you want to keep from Firestore before you do, and note
+that deleting the Firebase project makes the old passwords unrecoverable, so
+complete step 8 first if you are migrating accounts.
 
 ---
 
@@ -376,7 +410,11 @@ free -h
 
 | Symptom | Cause |
 |---|---|
-| `auth/unauthorized-domain` on login | Step 0c not done. |
+| Server exits at boot, `JWT_SECRET is not set` | Missing from `.env`. Generate one; see step 3. |
+| Server exits at boot, `DATABASE_URL is not set` | Missing from `.env`, or pm2 started before it was added: `pm2 restart wa-backend --update-env`. |
+| `ECONNREFUSED 127.0.0.1:5432` | Postgres is not running: `systemctl status postgresql`. |
+| Everyone signed out after a deploy | `JWT_SECRET` changed. It must stay stable across restarts. |
+| Imported users cannot sign in | Expected: Firebase passwords do not carry over. See step 8. |
 | Blank page, 404s on `/assets/*` | No build. Check pm2 logs for `Serving frontend build`. |
 | `Unexpected token '<'` in console | An API call hit the SPA fallback. With the `/api` 404 guard this returns JSON now — check the path. |
 | Socket.IO stuck on polling | The `/socket.io/` block is missing or below `location /`. Order matters. |
@@ -385,6 +423,6 @@ free -h
 | nginx won't reload, "duplicate map" | Another site defines `$connection_upgrade`. Ours uses `$wa_connection_upgrade` to avoid this. |
 | QR on every restart | `sessions/` not persisting. Confirm pm2's `cwd` is `/root/wa-backend` and the dir is writable. |
 | Both servers keep logging out | Two backends share one `sessions/`. Stop the old one. |
-| Plans tab errors | `firestore.rules` not published (step 8). |
-| Live Sessions 403 | Address missing from `ADMIN_EMAILS`, or Firestore `role` is not `admin`. |
-| 401 on every API call | `FIREBASE_PROJECT_ID` on the server differs from the frontend's project. |
+| Plans tab empty | Migrations did not run. Check the boot log for `[DB] Applied migration`. |
+| Admin tabs 403 | That account's `role` in Postgres is not `admin`. See step 9. |
+| 401 on every API call | The access token expired and refresh failed. Sign out and in again; check the browser console. |

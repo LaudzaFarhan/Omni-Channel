@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { db } from '../utils/firebase.js';
-import { collection, onSnapshot } from 'firebase/firestore';
+import React, { useState, useEffect, useCallback } from 'react';
+import { adminListUsers, fetchPlans } from '../utils/api.js';
+import { subscribeSocket } from '../utils/socket.js';
 import { Shield, LogOut, Users, Layers, Activity } from 'lucide-react';
-import { PLANS_COLLECTION, normalizePlan, sortPlans } from '../utils/plans.js';
+import { normalizePlan, sortPlans } from '../utils/plans.js';
 import UsersTab from './admin/UsersTab.jsx';
 import PlansTab from './admin/PlansTab.jsx';
 import SessionsTab from './admin/SessionsTab.jsx';
@@ -32,60 +32,78 @@ export default function AdminDashboard({ user, onLogout }) {
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [plansError, setPlansError] = useState(null);
 
-  useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, 'users'),
-      (snapshot) => {
-        const userList = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data() || {};
-          userList.push({ uid: data.uid || docSnap.id, ...data, docId: docSnap.id });
-        });
+  // The registry is fetched rather than subscribed to. The tabs call
+  // refreshUsers() after a mutation, and the socket events below cover changes
+  // made by another admin in a different browser.
+  const refreshUsers = useCallback(async () => {
+    try {
+      const list = await adminListUsers();
+      // The API already orders by created_at DESC.
+      setUsers(list);
+      setUsersError(null);
+    } catch (err) {
+      console.error('[Admin] Error fetching users:', err);
+      setUsersError(
+        err.status === 403
+          ? 'This account is not an administrator. Ask an existing admin to promote it.'
+          : err.message || 'Could not read the user registry.'
+      );
+    } finally {
+      setLoadingUsers(false);
+    }
+  }, []);
 
-        const toMillis = (value) => {
-          if (!value) return 0;
-          if (typeof value.toMillis === 'function') return value.toMillis();
-          if (typeof value.seconds === 'number') return value.seconds * 1000;
-          const parsed = new Date(value).getTime();
-          return Number.isFinite(parsed) ? parsed : 0;
-        };
-
-        userList.sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
-
-        setUsers(userList);
-        setUsersError(null);
-        setLoadingUsers(false);
-      },
-      (error) => {
-        console.error('[Admin] Error fetching users:', error);
-        setUsersError(error.message || 'Could not read the user registry.');
-        setLoadingUsers(false);
-      }
-    );
-
-    return () => unsubscribe();
+  const refreshPlans = useCallback(async () => {
+    try {
+      const list = await fetchPlans();
+      setPlans(sortPlans(list.map(plan => normalizePlan(plan.id, plan))));
+      setPlansError(null);
+    } catch (err) {
+      console.error('[Admin] Error fetching plans:', err);
+      setPlansError(err.message || 'Could not read the plan catalogue.');
+    } finally {
+      setLoadingPlans(false);
+    }
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, PLANS_COLLECTION),
-      (snapshot) => {
-        const list = [];
-        snapshot.forEach((docSnap) => {
-          list.push(normalizePlan(docSnap.id, docSnap.data() || {}));
-        });
-        setPlans(sortPlans(list));
-        setPlansError(null);
-        setLoadingPlans(false);
-      },
-      (error) => {
-        console.error('[Admin] Error fetching plans:', error);
-        setPlansError(error.message || 'Could not read the plan catalogue.');
-        setLoadingPlans(false);
-      }
-    );
+    refreshUsers();
+    refreshPlans();
+  }, [refreshUsers, refreshPlans]);
 
-    return () => unsubscribe();
+  // Keep the console live without polling: the server broadcasts plan changes and
+  // pushes a profile update to the affected user, and an admin watching this
+  // screen wants to see both.
+  useEffect(() => {
+    const handlePlans = (nextPlans) => {
+      setPlans(sortPlans((nextPlans || []).map(plan => normalizePlan(plan.id, plan))));
+    };
+
+    const handleProfile = (profile) => {
+      setUsers(prev => prev.map(u => (u.uid === profile.uid ? { ...u, ...profile } : u)));
+    };
+
+    let attached = null;
+    const unsubscribe = subscribeSocket((socket) => {
+      if (attached) {
+        attached.off('plans-updated', handlePlans);
+        attached.off('profile-updated', handleProfile);
+        attached = null;
+      }
+      if (socket) {
+        socket.on('plans-updated', handlePlans);
+        socket.on('profile-updated', handleProfile);
+        attached = socket;
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      if (attached) {
+        attached.off('plans-updated', handlePlans);
+        attached.off('profile-updated', handleProfile);
+      }
+    };
   }, []);
 
   return (
@@ -157,6 +175,7 @@ export default function AdminDashboard({ user, onLogout }) {
             error={usersError}
             plans={plans}
             plansLoading={loadingPlans}
+            onRefresh={refreshUsers}
           />
         )}
 
@@ -166,6 +185,8 @@ export default function AdminDashboard({ user, onLogout }) {
             loading={loadingPlans}
             error={plansError}
             users={users}
+            onPlansChanged={setPlans}
+            onRefresh={refreshPlans}
           />
         )}
 

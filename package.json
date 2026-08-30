@@ -15,7 +15,6 @@
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "firebase": "^12.15.0",
     "lucide-react": "^0.395.0",
     "pg": "8.13.1",
     "pino": "^9.2.0",
