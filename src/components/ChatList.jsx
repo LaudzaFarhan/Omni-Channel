@@ -3,7 +3,7 @@ import { Search, Plus, Check, CheckCheck } from 'lucide-react';
 import { loadAllTags } from '../utils/contactTags.js';
 import { getChatDisplayName, getInitials } from '../utils/displayName.js';
 
-export default function ChatList({ chats, setChats, searchQuery, setSearchQuery, activeChatJid, setActiveChatJid, userInfo, selectedTagFilter }) {
+export default function ChatList({ chats, setChats, searchQuery, setSearchQuery, activeChatJid, setActiveChatJid, userInfo, selectedTagFilter, savedNames = {} }) {
   // Load contact tags (reactively updated via custom event)
   const [contactTags, setContactTags] = React.useState(loadAllTags);
 
@@ -32,18 +32,22 @@ export default function ChatList({ chats, setChats, searchQuery, setSearchQuery,
     return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   };
 
-  // Naming/initials come from the shared helper so every view agrees.
-  const getDisplayName = (chat) => getChatDisplayName(chat, userInfo);
+  // Naming/initials come from the shared helper so every view agrees. A name from
+  // the operator's own contacts outranks whatever WhatsApp reported.
+  const getDisplayName = (chat) => getChatDisplayName(chat, userInfo, savedNames[chat.id]);
 
   // Filter chats by name or JID (phone number) and selected tag filter
   const filteredChats = chats.filter(chat => {
     const name = (chat.name || '').toLowerCase();
     const id = (chat.id || '').toLowerCase();
     const phoneNumber = (chat.phoneNumber || '').toLowerCase();
+    // Searching for a customer by the name YOU saved has to work, otherwise the
+    // contact list and the chat list disagree about who this is.
+    const saved = (savedNames[chat.id] || '').toLowerCase();
     const query = searchQuery.toLowerCase().trim();
     
     // Check match by raw query (case-insensitive name, id, or phone number)
-    let isMatched = name.includes(query) || id.includes(query) || phoneNumber.includes(query);
+    let isMatched = name.includes(query) || id.includes(query) || phoneNumber.includes(query) || saved.includes(query);
     
     // Also support matching by cleaned digits if the query contains numbers
     const queryDigits = query.replace(/\D/g, ''); // Extract only digits

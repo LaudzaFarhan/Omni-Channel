@@ -337,6 +337,50 @@ class UserStore {
     return normalized;
   }
 
+  // Index of phone digits -> the chat for that number, built in one pass.
+  //
+  // The contacts list needs "last message" for every saved number, and a saved
+  // number is a phone while the chat is very often keyed by @lid. Calling
+  // expandHoldJids() per contact would walk lidMap once per contact — O(contacts
+  // x lidMap). Walking the chats once instead is O(chats), and the result is
+  // reused for the whole response.
+  //
+  // Digits are bare and international (no '+'), matching the contacts table.
+  chatsByPhoneDigits() {
+    const index = {};
+
+    const digitsOf = (value) => {
+      if (typeof value !== 'string' || !value) return null;
+      const d = value.split('@')[0].split(':')[0].replace(/\D/g, '');
+      return d || null;
+    };
+
+    for (const [jid, chat] of Object.entries(this.chats)) {
+      // Groups have no single phone number behind them.
+      if (jid.endsWith('@g.us')) continue;
+
+      let digits = null;
+      if (jid.endsWith('@lid')) {
+        // Only knowable through the LID mapping, or a phone the store already
+        // resolved onto the chat.
+        digits = digitsOf(this.lidMap[jid]?.pn) || digitsOf(chat.phoneNumber);
+      } else {
+        digits = digitsOf(jid) || digitsOf(chat.phoneNumber);
+      }
+
+      if (!digits) continue;
+
+      // A number can appear as both a phone JID and an @lid chat. Keep whichever
+      // conversation is more recent, since that is the one worth showing.
+      const existing = index[digits];
+      if (!existing || (chat.lastMessageTimestamp || 0) > (existing.lastMessageTimestamp || 0)) {
+        index[digits] = chat;
+      }
+    }
+
+    return index;
+  }
+
   // Debounced persistence: the API always serves from the in-memory copy, so we
   // coalesce the many writes triggered during a bulk sync into a single disk write.
   save() {

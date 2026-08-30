@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getSocket, connectSocket, disconnectSocket } from './utils/socket.js';
 import ChatList from './components/ChatList.jsx';
 import ChatWindow from './components/ChatWindow.jsx';
@@ -9,7 +9,7 @@ import AuthScreens from './components/AuthScreens.jsx';
 import AdminDashboard from './components/AdminDashboard.jsx';
 import {
   fetchWithAuth, subscribeAuth, restoreSession, logout as apiLogout,
-  getAccessToken, applyProfileUpdate,
+  getAccessToken, applyProfileUpdate, fetchContacts,
 } from './utils/api.js';
 import { normalizePlan, sortPlans, loadPlansOnce, resolveEffectiveLimits } from './utils/plans.js';
 import { MessageSquare, Clock, AlertTriangle, Bell, X } from 'lucide-react';
@@ -22,6 +22,7 @@ import MessageDashboard from './components/MessageDashboard.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import TopBar from './components/TopBar.jsx';
 import NotificationsView from './components/NotificationsView.jsx';
+import Contacts from './components/Contacts.jsx';
 import { showToast } from './utils/toastBus.js';
 
 export default function App() {
@@ -81,6 +82,10 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeChatJid, setActiveChatJid] = useState(null);
   const [messages, setMessages] = useState([]);
+
+  // Saved contacts. Held here rather than only inside the Contacts view because a
+  // saved name has to beat WhatsApp's pushName everywhere a chat is labelled.
+  const [contacts, setContacts] = useState([]);
 
   const activeChatJidRef = useRef(null);
   const activeSessionIdRef = useRef('default');
@@ -285,6 +290,76 @@ export default function App() {
 
     return () => { cancelled = true; };
   }, [user?.uid]);
+
+  // Saved contacts, reloaded when the account or the active WhatsApp session
+  // changes. The session matters because the server resolves each contact to the
+  // conversation it maps to in that session, which is what lets a saved name be
+  // matched to an @lid-keyed chat.
+  const loadContacts = useCallback(async (sessionId) => {
+    if (!user || !(userProfile?.isApproved || userProfile?.role === 'admin')) return;
+    try {
+      setContacts(await fetchContacts(sessionId || activeSessionIdRef.current));
+    } catch (err) {
+      // A contact list that fails to load must not break the dashboard; names
+      // simply fall back to whatever WhatsApp reported.
+      console.warn('[App] Could not load contacts:', err.message);
+    }
+  }, [user?.uid, userProfile?.isApproved, userProfile?.role]);
+
+  useEffect(() => {
+    if (!user) {
+      setContacts([]);
+      return;
+    }
+    loadContacts(activeSessionId);
+  }, [user?.uid, activeSessionId, loadContacts]);
+
+  // Another tab saving a contact should rename the chat here too.
+  useEffect(() => {
+    const ws = getSocket();
+    if (!ws) return;
+
+    const handleContacts = () => loadContacts(activeSessionIdRef.current);
+    ws.on('contacts-updated', handleContacts);
+    return () => ws.off('contacts-updated', handleContacts);
+  }, [userProfile?.uid, loadContacts]);
+
+  // Saved name for a chat, keyed by every JID the contact could appear under: the
+  // conversation the server resolved (often an @lid) and the plain phone JID.
+  //
+  // Only names are indexed. The chat list needs a label, not the whole record, and
+  // keeping the map to strings means a re-render of the list does not depend on
+  // anything else about the contact changing.
+  const savedNames = useMemo(() => {
+    const map = {};
+    contacts.forEach((contact) => {
+      const name = (contact.name || '').trim();
+      if (!name) return;
+      if (contact.chatJid) map[contact.chatJid] = name;
+      if (contact.phone) map[`${contact.phone}@s.whatsapp.net`] = name;
+    });
+    return map;
+  }, [contacts]);
+
+  // The full record, keyed the same way. Only the chat window needs this — it lets
+  // the "Save contact" button know whether to create or edit, and prefill the form.
+  const savedContacts = useMemo(() => {
+    const map = {};
+    contacts.forEach((contact) => {
+      if (contact.chatJid) map[contact.chatJid] = contact;
+      if (contact.phone) map[`${contact.phone}@s.whatsapp.net`] = contact;
+    });
+    return map;
+  }, [contacts]);
+
+  // Open a conversation from somewhere other than the chat list (the contacts
+  // table). A number with no synced history still works: the messages view creates
+  // a draft chat for a JID it has not seen.
+  const handleOpenChatFor = (jid) => {
+    if (!jid) return;
+    setActiveChatJid(jid);
+    setActiveTab('messages');
+  };
 
   // Handle page focus or tab visibility changes to auto-sync background tabs
   useEffect(() => {
@@ -920,6 +995,7 @@ export default function App() {
                       userInfo={userInfo}
                       waSessions={waSessions}
                       messages={messages}
+                      savedNames={savedNames}
                     />
                   )}
 
@@ -939,9 +1015,18 @@ export default function App() {
                       user={user}
                       onLogout={handleWhatsAppLogout}
                       activeSessionId={activeSessionId}
+                      savedNames={savedNames}
+                      savedContacts={savedContacts}
                     />
                   )}
                 </>
+              )}
+
+              {activeTab === 'contacts' && (
+                <Contacts
+                  activeSessionId={activeSessionId}
+                  onOpenChat={handleOpenChatFor}
+                />
               )}
 
               {activeTab === 'notifications' && (

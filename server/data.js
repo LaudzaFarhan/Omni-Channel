@@ -498,6 +498,227 @@ export async function revokeAllRefreshTokens(userId) {
 }
 
 // ---------------------------------------------------------------------------
+// contacts (the operator's own address book)
+// ---------------------------------------------------------------------------
+export function mapContact(row) {
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    phone: row.phone,
+    name: row.name || '',
+    email: row.email || null,
+    company: row.company || null,
+    tags: Array.isArray(row.tags) ? row.tags : [],
+    note: row.note || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// Tags arrive from a form, so they are cleaned here rather than trusting the
+// client: strings only, trimmed, de-duplicated case-insensitively, capped.
+function cleanTags(tags) {
+  if (!Array.isArray(tags)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const tag of tags) {
+    const label = String(tag ?? '').trim().slice(0, 40);
+    if (!label) continue;
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(label);
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
+export async function listContacts(userId) {
+  const { rows } = await query(
+    'SELECT * FROM contacts WHERE user_id = $1 ORDER BY name = \'\', lower(name), phone',
+    [userId]
+  );
+  return rows.map(mapContact);
+}
+
+export async function findContactById(userId, id) {
+  return mapContact(await queryOne(
+    'SELECT * FROM contacts WHERE user_id = $1 AND id = $2',
+    [userId, id]
+  ));
+}
+
+export async function findContactByPhone(userId, phone) {
+  return mapContact(await queryOne(
+    'SELECT * FROM contacts WHERE user_id = $1 AND phone = $2',
+    [userId, phone]
+  ));
+}
+
+export async function countContacts(userId) {
+  const row = await queryOne('SELECT count(*)::int AS n FROM contacts WHERE user_id = $1', [userId]);
+  return row.n;
+}
+
+// Create, or update the existing row for this number.
+//
+// Keyed on (user_id, phone) so saving the same number twice edits one contact
+// instead of producing a duplicate — the same reason a CSV re-import is an
+// update. The phone must already be normalised; the route does that.
+export async function upsertContact(userId, { phone, name, email, company, tags, note }) {
+  const row = await queryOne(
+    `INSERT INTO contacts (user_id, phone, name, email, company, tags, note)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+     ON CONFLICT (user_id, phone) DO UPDATE SET
+       name    = EXCLUDED.name,
+       email   = EXCLUDED.email,
+       company = EXCLUDED.company,
+       tags    = EXCLUDED.tags,
+       note    = EXCLUDED.note
+     RETURNING *`,
+    [
+      userId, phone,
+      String(name ?? '').trim().slice(0, 120),
+      email ? String(email).trim().slice(0, 200) : null,
+      company ? String(company).trim().slice(0, 120) : null,
+      JSON.stringify(cleanTags(tags)),
+      note ? String(note).trim().slice(0, 1000) : null,
+    ]
+  );
+  return mapContact(row);
+}
+
+// Fields a contact's owner may change. `phone` is included: correcting a typo is
+// a legitimate edit, and the unique index still stops it colliding with another
+// row (the route turns that into a 409).
+const CONTACT_WRITABLE = {
+  phone: 'phone',
+  name: 'name',
+  email: 'email',
+  company: 'company',
+  tags: 'tags',
+  note: 'note',
+};
+
+export async function updateContact(userId, id, patch) {
+  const sets = [];
+  const values = [];
+
+  for (const [key, column] of Object.entries(CONTACT_WRITABLE)) {
+    if (!Object.prototype.hasOwnProperty.call(patch, key)) continue;
+
+    if (key === 'tags') {
+      values.push(JSON.stringify(cleanTags(patch.tags)));
+      sets.push(`${column} = $${values.length}::jsonb`);
+      continue;
+    }
+
+    values.push(patch[key]);
+    sets.push(`${column} = $${values.length}`);
+  }
+
+  if (sets.length === 0) return findContactById(userId, id);
+
+  values.push(userId, id);
+  const row = await queryOne(
+    `UPDATE contacts SET ${sets.join(', ')}
+      WHERE user_id = $${values.length - 1} AND id = $${values.length}
+      RETURNING *`,
+    values
+  );
+  return mapContact(row);
+}
+
+export async function deleteContact(userId, id) {
+  const { rowCount } = await query(
+    'DELETE FROM contacts WHERE user_id = $1 AND id = $2',
+    [userId, id]
+  );
+  return rowCount > 0;
+}
+
+// Scoped to the caller either way, so the worst a bad id list can do is delete
+// the caller's own contacts. An empty list is a no-op rather than "everything".
+export async function deleteContactsBulk(userId, ids) {
+  const clean = (Array.isArray(ids) ? ids : [])
+    .map(id => String(id).trim())
+    .filter(id => /^\d+$/.test(id));
+
+  if (clean.length === 0) return 0;
+
+  const { rowCount } = await query(
+    'DELETE FROM contacts WHERE user_id = $1 AND id = ANY($2::bigint[])',
+    [userId, clean]
+  );
+  return rowCount;
+}
+
+/**
+ * Bulk upsert for a CSV import.
+ *
+ * One transaction, so a spreadsheet either lands completely or not at all — a
+ * partial import is worse than none, because the operator cannot tell which rows
+ * made it. `xmax = 0` distinguishes an insert from an update on a conflicting
+ * row, which is how the created/updated counts are reported back.
+ *
+ * Rows must already be normalised and de-duplicated by the caller: Postgres
+ * cannot upsert the same key twice in one statement, and doing it row by row here
+ * keeps the error message tied to a specific number.
+ */
+export async function importContacts(userId, rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { created: 0, updated: 0 };
+  }
+
+  return withTransaction(async (client) => {
+    let created = 0;
+    let updated = 0;
+
+    for (const row of rows) {
+      const result = await client.query(
+        `INSERT INTO contacts (user_id, phone, name, email, company, tags, note)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+         ON CONFLICT (user_id, phone) DO UPDATE SET
+           -- A blank cell in the spreadsheet must not wipe a name that is
+           -- already saved, so each field falls back to the stored value.
+           name    = CASE WHEN EXCLUDED.name = '' THEN contacts.name ELSE EXCLUDED.name END,
+           email   = COALESCE(EXCLUDED.email, contacts.email),
+           company = COALESCE(EXCLUDED.company, contacts.company),
+           tags    = CASE WHEN EXCLUDED.tags = '[]'::jsonb THEN contacts.tags ELSE EXCLUDED.tags END,
+           note    = COALESCE(EXCLUDED.note, contacts.note)
+         RETURNING (xmax = 0) AS inserted`,
+        [
+          userId, row.phone,
+          String(row.name ?? '').trim().slice(0, 120),
+          row.email ? String(row.email).trim().slice(0, 200) : null,
+          row.company ? String(row.company).trim().slice(0, 120) : null,
+          JSON.stringify(cleanTags(row.tags)),
+          row.note ? String(row.note).trim().slice(0, 1000) : null,
+        ]
+      );
+
+      if (result.rows[0]?.inserted) created++;
+      else updated++;
+    }
+
+    return { created, updated };
+  });
+}
+
+/** Every distinct tag this user has applied, for the filter dropdown. */
+export async function listContactTags(userId) {
+  const { rows } = await query(
+    `SELECT t.tag, count(*)::int AS n
+       FROM contacts c, jsonb_array_elements_text(c.tags) AS t(tag)
+      WHERE c.user_id = $1
+      GROUP BY t.tag
+      ORDER BY n DESC, lower(t.tag)`,
+    [userId]
+  );
+  return rows.map(r => ({ tag: r.tag, count: r.n }));
+}
+
+// ---------------------------------------------------------------------------
 // chat settings (agent hold)
 // ---------------------------------------------------------------------------
 export function mapChatSettings(row) {

@@ -18,7 +18,12 @@ export default function MessageDashboard({
   userProfile,
   user,
   onLogout,
-  activeSessionId
+  activeSessionId,
+  // Saved contact names keyed by chat JID, so the chat list and the conversation
+  // header agree with the contacts page. `savedContacts` carries the whole record
+  // for the chat window's save/edit button.
+  savedNames = {},
+  savedContacts = {}
 }) {
   const [selectedTagFilter, setSelectedTagFilter] = useState(null);
   const [contactTags, setContactTags] = useState(loadAllTags());
@@ -184,6 +189,7 @@ export default function MessageDashboard({
             setActiveChatJid={setActiveChatJid}
             userInfo={userInfo}
             selectedTagFilter={selectedTagFilter}
+            savedNames={savedNames}
           />
         </div>
       </div>
@@ -196,6 +202,8 @@ export default function MessageDashboard({
           user={user}
           activeSessionId={activeSessionId}
           userInfo={userInfo}
+          savedNames={savedNames}
+          savedContacts={savedContacts}
         />
       ) : (
         <div className="empty-chat-window" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-main)' }}>

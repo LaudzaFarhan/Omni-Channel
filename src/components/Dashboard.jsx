@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { Send, MessageCircle, Users, Phone, TrendingUp, Clock, MessageSquare } from 'lucide-react';
 import { getChatDisplayName, getInitials } from '../utils/displayName.js';
 
-export default function Dashboard({ chats, userProfile, userInfo, waSessions, messages }) {
+export default function Dashboard({ chats, userProfile, userInfo, waSessions, messages, savedNames = {} }) {
   // Calculate stats from real data
   const totalContacts = Array.isArray(chats) ? chats.length : 0;
   const activeNumbers = Array.isArray(waSessions) 
@@ -78,8 +78,9 @@ export default function Dashboard({ chats, userProfile, userInfo, waSessions, me
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  // Naming/initials come from the shared helper so every view agrees.
-  const getDisplayName = (chat) => getChatDisplayName(chat, userInfo);
+  // Naming/initials come from the shared helper so every view agrees. A saved
+  // contact name beats the pushName WhatsApp reports.
+  const getDisplayName = (chat) => getChatDisplayName(chat, userInfo, savedNames[chat.id]);
 
   // Stable avatar color per chat ID
   const getAvatarColor = (jid) => {

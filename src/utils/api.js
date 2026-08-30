@@ -336,6 +336,45 @@ export async function fetchPlans() {
 }
 
 // ---------------------------------------------------------------------------
+// contacts (the operator's saved address book)
+// ---------------------------------------------------------------------------
+// sessionId only affects the derived columns (which conversation a contact maps
+// to, and its last message). The contacts themselves are shared across sessions.
+export async function fetchContacts(sessionId = 'default') {
+  const data = await apiFetch(`/api/contacts?sessionId=${encodeURIComponent(sessionId)}`);
+  return data.contacts || [];
+}
+
+export async function fetchContactTags() {
+  const data = await apiFetch('/api/contacts/tags');
+  return data.tags || [];
+}
+
+/** Create, or update the contact already saved under this number. */
+export async function saveContact(contact) {
+  const data = await apiJson('/api/contacts', 'POST', contact);
+  return data.contact;
+}
+
+export async function updateContact(id, patch) {
+  const data = await apiJson(`/api/contacts/${encodeURIComponent(id)}`, 'PATCH', patch);
+  return data.contact;
+}
+
+export async function deleteContact(id) {
+  return apiJson(`/api/contacts/${encodeURIComponent(id)}`, 'DELETE');
+}
+
+export async function deleteContactsBulk(ids) {
+  return apiJson('/api/contacts/delete-bulk', 'POST', { ids });
+}
+
+/** Returns { created, updated, skipped, invalid }. */
+export async function importContacts(contacts) {
+  return apiJson('/api/contacts/import', 'POST', { contacts });
+}
+
+// ---------------------------------------------------------------------------
 // admin
 // ---------------------------------------------------------------------------
 export async function adminListUsers() {

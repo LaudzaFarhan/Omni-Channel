@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, MessageSquare, CreditCard, User, Settings, LogOut, Bell } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, BookUser, CreditCard, User, Settings, LogOut, Bell } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab, onLogout, collapsed, notifications = [] }) {
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -28,6 +28,15 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout, collapsed, 
         >
           <MessageSquare size={22} />
           {!collapsed && <span className="nav-label">Messages</span>}
+        </button>
+
+        <button 
+          className={`nav-item ${activeTab === 'contacts' ? 'active' : ''}`}
+          onClick={() => setActiveTab('contacts')}
+          title="Contacts"
+        >
+          <BookUser size={22} />
+          {!collapsed && <span className="nav-label">Contacts</span>}
         </button>
 
         <button 

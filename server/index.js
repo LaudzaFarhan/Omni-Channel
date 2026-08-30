@@ -32,6 +32,7 @@ import {
 import { authenticated, approved, admin, clientIp } from './middleware.js';
 import { mountAuthRoutes } from './routes-auth.js';
 import { mountDataRoutes } from './routes-data.js';
+import { mountContactRoutes } from './routes-contacts.js';
 
 const PORT = process.env.PORT || 5000;
 // Bind to loopback by default so a VPS only exposes the app through its reverse
@@ -1009,6 +1010,11 @@ const PUBLIC_URL = (process.env.PUBLIC_URL || 'https://www.omnireach.my.id').tri
 // Firestore. Mounted before the /api 404 guard at the bottom of this file.
 mountAuthRoutes(app);
 mountDataRoutes(app, io);
+
+// The operator's saved address book. Separate from routes-data.js because it is
+// the customer's own data rather than account administration, and it reaches into
+// the WhatsApp store to resolve each contact to a conversation.
+mountContactRoutes(app, io);
 
 // Reports whether the payment gateway is configured. Unauthenticated by design:
 // it exposes booleans only, never the key itself.

@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown, Pause, Play } from 'lucide-react';
-import { fetchWithAuth } from '../utils/api.js';
+import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown, Pause, Play, UserPlus, UserCheck } from 'lucide-react';
+import { fetchWithAuth, saveContact, updateContact } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
 import { showToast } from '../utils/toastBus.js';
 import { PRESET_TAGS, getTags, toggleTag, clearTags, createCustomTag, loadGlobalCustomTags, addGlobalCustomTag, deleteGlobalCustomTag } from '../utils/contactTags.js';
 import { getChatDisplayName, getInitials } from '../utils/displayName.js';
+import { jidToPhone } from '../utils/phone.js';
+import ContactEditor from './contacts/ContactEditor.jsx';
 
 const DEFAULT_QUICK_REPLIES = [
   { id: 'welcome', title: '👋 Welcome Message', text: 'Hello! Thank you for contacting us. How can we assist you today?' },
@@ -239,7 +241,11 @@ function hasMedia(msg) {
   return !!(content.imageMessage || content.videoMessage || content.audioMessage || content.documentMessage || content.stickerMessage);
 }
 
-export default function ChatWindow({ activeChat, messages, setMessages, userProfile, user, activeSessionId, userInfo }) {
+export default function ChatWindow({ activeChat, messages, setMessages, userProfile, user, activeSessionId, userInfo, savedNames = {}, savedContacts = {} }) {
+  // Saving the person you are talking to is the main way contacts get created —
+  // expecting the operator to copy a number over to the contacts page instead
+  // would mean the address book stays empty.
+  const [editingContact, setEditingContact] = useState(false);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
   const [showQuickReplies, setShowQuickReplies] = useState(true);
@@ -485,8 +491,36 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
     return <Check size={14} style={{ color: 'rgba(255, 255, 255, 0.6)', marginLeft: '4px', display: 'inline-block', verticalAlign: 'middle' }} />;
   };
 
-  // Naming comes from the shared helper so every view agrees.
-  const getDisplayName = (chat) => (chat ? getChatDisplayName(chat, userInfo) : '');
+  // Naming comes from the shared helper so every view agrees. A saved contact name
+  // beats the pushName WhatsApp reports.
+  const getDisplayName = (chat) => (chat ? getChatDisplayName(chat, userInfo, savedNames[chat.id]) : '');
+
+  // Whether this conversation is already in the address book, and the number to
+  // pre-fill if it is not.
+  //
+  // A chat keyed by @lid only yields a phone number once WhatsApp has told us the
+  // mapping (store.phoneNumber). Until then there is nothing to save, so the
+  // button is hidden rather than opening a form the operator cannot complete.
+  const savedContact = activeChat ? savedContacts[activeChat.id] : null;
+  const contactPhone = activeChat
+    ? (jidToPhone(activeChat.phoneNumber) || jidToPhone(activeChat.id))
+    : null;
+  const canSaveContact = Boolean(activeChat)
+    && !activeChat.id.endsWith('@g.us')
+    && Boolean(savedContact || contactPhone);
+
+  const handleSaveContact = async (payload) => {
+    if (savedContact?.id) {
+      await updateContact(savedContact.id, payload);
+      showToast({ type: 'success', title: 'Contact updated', message: payload.name || payload.phone });
+    } else {
+      await saveContact(payload);
+      showToast({ type: 'success', title: 'Contact saved', message: payload.name || payload.phone });
+    }
+    // App reloads the list off the 'contacts-updated' socket event, so the header
+    // and chat list pick the new name up without any local state here.
+    setEditingContact(false);
+  };
 
   // Format message timestamps (Epoch in seconds -> readable)
   const formatMsgTime = (timestamp) => {
@@ -677,6 +711,36 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
             </div>
           </div>
           <div className="header-actions" style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+            {/* Save this person to the operator's own contact list */}
+            {canSaveContact && (
+              <button
+                onClick={() => setEditingContact(true)}
+                title={savedContact
+                  ? 'Edit this customer in your contact list'
+                  : 'Save this customer to your contact list'}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  marginRight: '4px',
+                  borderRadius: '8px',
+                  fontSize: '0.78rem',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.2s',
+                  background: savedContact ? 'rgba(0,168,132,0.12)' : 'transparent',
+                  border: `1px solid ${savedContact ? 'rgba(0,168,132,0.35)' : 'var(--border-color)'}`,
+                  color: savedContact ? 'var(--primary)' : 'var(--text-muted)',
+                }}
+              >
+                {savedContact
+                  ? <><UserCheck size={13} /> Saved</>
+                  : <><UserPlus size={13} /> Save Contact</>}
+              </button>
+            )}
+
             {/* Agent hold: suppresses automated replies for this conversation */}
             <button
               onClick={handleToggleHold}
@@ -1244,6 +1308,21 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
           ))}
         </div>
       </div>
+
+      {/* Save / edit this customer in the operator's own contact list. Prefilled
+          with the number so the common case is one field and one click. */}
+      {editingContact && (
+        <ContactEditor
+          contact={savedContact || (contactPhone ? {
+            phone: contactPhone,
+            // Prefill with WhatsApp's name only when it is a name. A numeric
+            // pushName is just the number again and is noise in the form.
+            name: /^\d+$/.test(String(activeChat.name || '').trim()) ? '' : (activeChat.name || ''),
+          } : null)}
+          onSave={handleSaveContact}
+          onClose={() => setEditingContact(false)}
+        />
+      )}
     </div>
   );
 }

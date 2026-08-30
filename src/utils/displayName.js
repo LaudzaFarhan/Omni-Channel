@@ -5,9 +5,10 @@
 //
 // Resolution order (best identity first):
 //   1. "(YOU)"          - the chat with your own number
-//   2. Real name        - saved contact name or the contact's own pushName
-//   3. Phone number     - resolved from the LID mapping, or from the JID itself
-//   4. LID short form   - last resort, kept distinguishable per contact
+//   2. Saved contact    - a name the operator typed into their address book
+//   3. Real name        - the contact's WhatsApp name or pushName
+//   4. Phone number     - resolved from the LID mapping, or from the JID itself
+//   5. LID short form   - last resort, kept distinguishable per contact
 //
 // Background on step 4: WhatsApp addresses many chats by an anonymous "@lid"
 // instead of a phone number. The phone number is only knowable when WhatsApp
@@ -27,18 +28,28 @@ export function isSelfChat(chat, userInfo) {
   return mine === theirs;
 }
 
-/** Display label for a chat row / conversation header. */
-export function getChatDisplayName(chat, userInfo) {
+/**
+ * Display label for a chat row / conversation header.
+ *
+ * `savedName` is the name from the operator's own contacts, when they have saved
+ * this number. It outranks everything WhatsApp reports: the operator typed it
+ * deliberately, whereas `chat.name` is often a pushName the other party chose and
+ * can change at will.
+ */
+export function getChatDisplayName(chat, userInfo, savedName) {
   if (!chat || !chat.id) return 'Unknown';
 
   if (isSelfChat(chat, userInfo)) return '(YOU)';
 
   const rawId = chat.id.split('@')[0];
 
-  // 2. A real (non-numeric) name always wins.
+  // 2. The operator's own label for this person.
+  if (isRealName(savedName)) return savedName;
+
+  // 3. A real (non-numeric) name from WhatsApp.
   if (isRealName(chat.name)) return chat.name;
 
-  // 3. A resolved phone number, normalized with a leading '+'.
+  // 4. A resolved phone number, normalized with a leading '+'.
   if (chat.phoneNumber) {
     return chat.phoneNumber.startsWith('+') ? chat.phoneNumber : `+${chat.phoneNumber}`;
   }
@@ -51,7 +62,7 @@ export function getChatDisplayName(chat, userInfo) {
   // Groups without a fetched subject.
   if (chat.id.endsWith('@g.us')) return 'Group Chat';
 
-  // 4. Unresolved LID: keep rows distinguishable instead of all reading the
+  // 5. Unresolved LID: keep rows distinguishable instead of all reading the
   // same. The suffix is not a phone number, so it is not formatted like one.
   if (chat.id.endsWith('@lid')) {
     const suffix = rawId.slice(-4);
