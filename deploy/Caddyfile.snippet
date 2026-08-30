@@ -30,3 +30,30 @@ api.omnireach.my.id {
 		-Server
 	}
 }
+
+# -----------------------------------------------------------------------------
+# SINGLE-ORIGIN SETUP (frontend + API from the VPS, no Vercel)
+# -----------------------------------------------------------------------------
+# Use this instead of the block above when the Node process also serves the
+# built frontend from dist/. One block covers everything, because static assets,
+# /api and /socket.io are all handled by the same Express process.
+#
+# Requirements:
+#   - DNS A records for both names -> 43.157.208.221
+#   - dist/ present on the server (see deploy/DEPLOY-VPS-ONLY.md)
+#
+# Keeping the api.* name as well means an older frontend build that still has
+# VITE_API_URL baked in keeps working during the cutover.
+
+# app.omnireach.my.id {
+# 	reverse_proxy 127.0.0.1:5000
+#
+# 	header {
+# 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+# 		X-Content-Type-Options "nosniff"
+# 		Referrer-Policy "strict-origin-when-cross-origin"
+# 		-Server
+# 	}
+#
+# 	encode gzip zstd
+# }
