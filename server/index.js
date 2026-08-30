@@ -792,7 +792,16 @@ app.post('/api/messages/send', approved, async (req, res) => {
       holdJid = `${to.replace(/\D/g, '')}@s.whatsapp.net`;
     }
 
-    if (await isChatHeld(uid, sid, holdJid)) {
+    // Expand to every equivalent form before checking.
+    //
+    // A hold is written under one canonical JID (preferring @lid), but a bot
+    // usually addresses the conversation by phone JID. Passing the single
+    // resolved JID matched only that exact value, so a chat held by the dashboard
+    // under its @lid form did not block a reply sent to 628...@s.whatsapp.net —
+    // enforcement silently disagreed with what the UI showed as held.
+    const holdJids = getStore(key).expandHoldJids(holdJid);
+
+    if (await isChatHeld(uid, sid, holdJids)) {
       console.log(`[Hold] Suppressed an automated reply to ${holdJid} (${key}) — chat is on hold.`);
       return res.status(409).json({
         error: 'This conversation is on hold. A human agent has taken over, so automated replies are suppressed.',
