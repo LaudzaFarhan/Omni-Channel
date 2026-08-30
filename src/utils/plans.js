@@ -83,11 +83,13 @@ export function normalizePlan(id, raw = {}) {
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
   };
 
+  const price = num(raw.price, 0);
+
   return {
     id: raw.id || id,
     name: raw.name || id,
     description: raw.description || '',
-    price: num(raw.price, 0),
+    price,
     currency: raw.currency || 'IDR',
     messageLimit: num(raw.messageLimit, HARD_FALLBACK.messageLimit),
     sessionLimit: Math.max(1, num(raw.sessionLimit, HARD_FALLBACK.sessionLimit)),
@@ -96,6 +98,20 @@ export function normalizePlan(id, raw = {}) {
     isDefault: Boolean(raw.isDefault),
     archived: Boolean(raw.archived),
     sortOrder: num(raw.sortOrder, 100),
+
+    // Agent pricing. These must survive normalisation: the plan editor reads them
+    // back from the normalised object, so dropping them here silently reset an
+    // admin's add-on price to zero on the next save.
+    //
+    // basePrice falls back to the flat price so plans created before agent pricing
+    // still show a figure.
+    basePrice: num(raw.basePrice, price),
+    includedAgents: Math.max(1, num(raw.includedAgents, 1)),
+    addonAgentPrice: num(raw.addonAgentPrice, 0),
+    // null is meaningful: unlimited. Only undefined falls back.
+    maxAgents: raw.maxAgents === null || raw.maxAgents === undefined
+      ? null
+      : Math.max(1, num(raw.maxAgents, 1)),
   };
 }
 
@@ -145,12 +161,40 @@ function hasOverride(value) {
 
 // Resolve the limits that actually apply to a user, and report where each value
 // came from so the admin panel can distinguish "inherited" from "overridden".
+//
+// The agent (session) limit mirrors `resolveSessionLimitFor` in server/data.js:
+//
+//   users.session_limit    admin granted it explicitly
+//   > users.purchased_agents  the customer paid for it
+//   > plans.included_agents   what the plan comes with
+//   > plans.session_limit     legacy column, for plans predating agent pricing
+//   > 1
+//
+// Both sides must agree, otherwise a customer who buys 8 agents still sees
+// "Allowed: 1" while the server happily lets 8 connect.
 export function resolveEffectiveLimits(user = {}, plans = []) {
   const planId = resolveUserPlanId(user);
   const plan = findPlan(plans, planId);
 
   const messageOverridden = hasOverride(user.messageLimit);
   const sessionOverridden = hasOverride(user.sessionLimit);
+  const agentsPurchased = hasOverride(user.purchasedAgents);
+
+  let sessionLimit;
+  let sessionLimitSource;
+  if (sessionOverridden) {
+    sessionLimit = Number(user.sessionLimit);
+    sessionLimitSource = 'override';
+  } else if (agentsPurchased) {
+    sessionLimit = Number(user.purchasedAgents);
+    sessionLimitSource = 'purchased';
+  } else if (plan.includedAgents) {
+    sessionLimit = plan.includedAgents;
+    sessionLimitSource = 'plan';
+  } else {
+    sessionLimit = plan.sessionLimit;
+    sessionLimitSource = 'plan';
+  }
 
   return {
     planId: plan.id,
@@ -158,10 +202,10 @@ export function resolveEffectiveLimits(user = {}, plans = []) {
     planName: plan.name,
     planMissing: plan.id !== planId,
     messageLimit: messageOverridden ? Number(user.messageLimit) : plan.messageLimit,
-    sessionLimit: Math.max(1, sessionOverridden ? Number(user.sessionLimit) : plan.sessionLimit),
+    sessionLimit: Math.max(1, sessionLimit),
     trialDays: plan.trialDays,
     messageLimitSource: messageOverridden ? 'override' : 'plan',
-    sessionLimitSource: sessionOverridden ? 'override' : 'plan',
+    sessionLimitSource,
   };
 }
 

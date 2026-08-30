@@ -955,6 +955,7 @@ export default function App() {
                 <Subscription 
                   userProfile={activeProfile} 
                   activeSessionCount={activeSessionCount} 
+                  plans={plans}
                 />
               )}
 

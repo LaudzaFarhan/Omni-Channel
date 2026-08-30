@@ -1222,55 +1222,66 @@ app.post('/api/webhooks/mayar', async (req, res) => {
     let appliedPlan = null;
     let appliedAgents = null;
 
+    let localTx = null;
     if (event.localTransactionId) {
-      const updated = await markTransactionStatus(event.localTransactionId, 'PAID');
-      if (!updated) {
+      localTx = await markTransactionStatus(event.localTransactionId, 'PAID');
+      if (!localTx) {
         console.warn(`[Mayar Webhook] No local transaction ${event.localTransactionId}; recording the event only.`);
       }
     }
 
-    // Automatic fulfilment, now possible because extraData carried the plan
-    // through the payment. Both ids come from data WE attached at checkout, not
-    // from anything the payer controls.
-    if (event.uid && event.planId) {
-      const plan = await findPlanById(event.planId);
-      const user = await findUserById(event.uid);
+    // What was bought. extraData is the primary source, but the row we wrote
+    // before calling the gateway is the authority if extraData did not survive
+    // the round trip — relying on the gateway echoing it back meant a stripped
+    // field silently downgraded the purchase to the plan's included agents.
+    //
+    // Neither source is payer-controlled: both are values WE recorded at checkout.
+    const uid = event.uid || localTx?.uid || null;
+    const planId = event.planId || localTx?.planId || null;
+    const requestedAgents = Number.isFinite(event.agents) && event.agents > 0
+      ? event.agents
+      : (Number(localTx?.agents) > 0 ? Number(localTx.agents) : null);
+
+    if (uid && planId) {
+      const plan = await findPlanById(planId);
+      const user = await findUserById(uid);
 
       if (!plan) {
-        console.error(`[Mayar Webhook] Paid for unknown plan "${event.planId}" — needs manual review.`);
+        console.error(`[Mayar Webhook] Paid for unknown plan "${planId}" — needs manual review.`);
       } else if (!user) {
-        console.error(`[Mayar Webhook] Paid for unknown user "${event.uid}" — needs manual review.`);
+        console.error(`[Mayar Webhook] Paid for unknown user "${uid}" — needs manual review.`);
       } else {
-        await updateUser(event.uid, { planId: plan.id });
+        await updateUser(uid, { planId: plan.id });
         appliedPlan = plan.id;
 
         // Grant the agents that were paid for. Falls back to the plan's included
         // count for a payment made before agent pricing existed.
-        const agentsPaidFor = Number.isFinite(event.agents) && event.agents > 0
-          ? clampAgents(plan, event.agents)
-          : plan.includedAgents;
+        const agentsPaidFor = requestedAgents === null
+          ? plan.includedAgents
+          : clampAgents(plan, requestedAgents);
 
-        await setPurchasedAgents(event.uid, agentsPaidFor);
+        await setPurchasedAgents(uid, agentsPaidFor);
         appliedAgents = agentsPaidFor;
 
         console.log(`[Mayar Webhook] Upgraded ${user.email} to ${plan.name} with ${agentsPaidFor} agent(s).`);
 
-        const fresh = await findUserById(event.uid);
-        io.to(event.uid).emit('profile-updated', fresh);
+        const fresh = await findUserById(uid);
+        io.to(uid).emit('profile-updated', fresh);
       }
     } else {
-      console.warn('[Mayar Webhook] Payment carried no uid/planId in extraData — fulfil manually from the admin console.');
+      console.warn('[Mayar Webhook] Payment carried no uid/planId in extraData and no local record — fulfil manually from the admin console.');
     }
 
     await recordAudit({
       actorUserId: null,
       actorEmail: 'mayar-webhook',
       action: 'payment.received',
-      targetUserId: event.uid || null,
+      targetUserId: uid || null,
       detail: {
         localTransactionId: event.localTransactionId,
         mayarTransactionId: event.mayarTransactionId,
-        planId: event.planId,
+        planId,
+        agents: requestedAgents,
         amount: event.amount,
         status: event.status,
         appliedPlan,
@@ -1279,8 +1290,8 @@ app.post('/api/webhooks/mayar', async (req, res) => {
       ip: clientIp(req),
     });
 
-    if (event.uid) {
-      io.to(event.uid).emit('payment-success', {
+    if (uid) {
+      io.to(uid).emit('payment-success', {
         transactionId: event.localTransactionId,
         planId: appliedPlan,
         agents: appliedAgents,

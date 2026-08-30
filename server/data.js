@@ -81,6 +81,11 @@ export function mapTransaction(row) {
     status: row.status,
     paymentUrl: row.payment_url,
     createdAt: row.created_at,
+
+    // What the checkout was for. Recorded locally so fulfilment does not depend
+    // on the gateway echoing our extraData back to us.
+    planId: row.plan_id ?? null,
+    agents: row.agents ?? null,
   };
 }
 
@@ -379,22 +384,74 @@ export async function listAllTransactions(limit = 500) {
 
 export async function saveTransaction(tx) {
   const row = await queryOne(
-    `INSERT INTO transactions (id, user_id, email, item, type, amount, currency, status, payment_url, raw)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+    `INSERT INTO transactions (id, user_id, email, item, type, amount, currency, status, payment_url, raw, plan_id, agents)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12)
      ON CONFLICT (id) DO UPDATE SET
        status = EXCLUDED.status,
        payment_url = COALESCE(EXCLUDED.payment_url, transactions.payment_url),
        amount = EXCLUDED.amount,
-       raw = COALESCE(EXCLUDED.raw, transactions.raw)
+       raw = COALESCE(EXCLUDED.raw, transactions.raw),
+       plan_id = COALESCE(EXCLUDED.plan_id, transactions.plan_id),
+       agents = COALESCE(EXCLUDED.agents, transactions.agents)
      RETURNING *`,
     [
       tx.transactionId, tx.uid || null, tx.email || null, tx.item || null,
       tx.type || null, tx.amount || 0, tx.currency || 'IDR',
       tx.status || 'PENDING', tx.paymentUrl || null,
       tx.raw ? JSON.stringify(tx.raw) : null,
+      // The plan and agent count the customer chose. Without these, a webhook
+      // whose extraData was stripped has nothing to fulfil against and quietly
+      // grants only the plan's included agents.
+      tx.planId || null,
+      Number.isFinite(Number(tx.agents)) && Number(tx.agents) > 0 ? Math.floor(Number(tx.agents)) : null,
     ]
   );
   return mapTransaction(row);
+}
+
+export async function deleteTransaction(id) {
+  const { rowCount } = await query('DELETE FROM transactions WHERE id = $1', [id]);
+  return rowCount > 0;
+}
+
+// Bulk cleanup. Abandoned checkouts accumulate because a PENDING row is written
+// before the gateway is called, so every attempt leaves a record whether or not
+// the customer ever paid.
+//
+// `status` restricts the delete; `olderThanDays` protects recent rows a customer
+// may still be paying. Nothing is deleted without at least one filter, so a bare
+// call cannot wipe the table.
+export async function deleteTransactionsBulk({ status, olderThanDays } = {}) {
+  const conditions = [];
+  const values = [];
+
+  if (status) {
+    values.push(String(status).toUpperCase());
+    conditions.push(`upper(status) = $${values.length}`);
+  }
+
+  if (Number.isFinite(Number(olderThanDays))) {
+    values.push(Number(olderThanDays));
+    conditions.push(`created_at < now() - ($${values.length} || ' days')::interval`);
+  }
+
+  if (conditions.length === 0) {
+    throw new Error('Refusing to delete every transaction: pass a status or an age filter.');
+  }
+
+  const { rowCount } = await query(
+    `DELETE FROM transactions WHERE ${conditions.join(' AND ')}`,
+    values
+  );
+  return rowCount;
+}
+
+export async function countTransactionsBy(status) {
+  const row = await queryOne(
+    'SELECT count(*)::int AS n FROM transactions WHERE upper(status) = upper($1)',
+    [status]
+  );
+  return row.n;
 }
 
 export async function markTransactionStatus(id, status) {

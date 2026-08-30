@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { adminListUsers, fetchPlans } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
-import { Shield, LogOut, Users, Layers, Activity } from 'lucide-react';
+import { Shield, LogOut, Users, Layers, Activity, CreditCard } from 'lucide-react';
 import { normalizePlan, sortPlans } from '../utils/plans.js';
 import VersionBadge from './VersionBadge.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
 import UsersTab from './admin/UsersTab.jsx';
 import PlansTab from './admin/PlansTab.jsx';
 import SessionsTab from './admin/SessionsTab.jsx';
+import TransactionsTab from './admin/TransactionsTab.jsx';
 
 const TABS = [
   { id: 'users', label: 'Customers', icon: Users },
   { id: 'plans', label: 'Plans', icon: Layers },
   { id: 'sessions', label: 'Live Sessions', icon: Activity },
+  { id: 'transactions', label: 'Transactions', icon: CreditCard },
 ];
 
 // Admin console shell.
@@ -195,6 +197,8 @@ export default function AdminDashboard({ user, onLogout }) {
         )}
 
         {activeTab === 'sessions' && <SessionsTab users={users} />}
+
+        {activeTab === 'transactions' && <TransactionsTab users={users} />}
       </div>
     </div>
   );

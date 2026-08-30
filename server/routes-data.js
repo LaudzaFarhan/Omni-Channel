@@ -13,7 +13,7 @@
 import {
   listUsers, findUserById, updateUser, deleteUser, countAdmins,
   listPlans, findPlanById, upsertPlan, setDefaultPlan, deletePlan, countUsersOnPlan,
-  listTransactionsForUser, listAllTransactions,
+  listTransactionsForUser, listAllTransactions, deleteTransaction, deleteTransactionsBulk,
   listAudit, recordAudit, revokeAllRefreshTokens,
   getChatSettings, listHeldChats, setChatHold, clearChatHold,
 } from './data.js';
@@ -427,6 +427,58 @@ export function mountDataRoutes(app, io) {
     } catch (err) {
       console.error('[Transactions] Admin list failed:', err);
       res.status(500).json({ error: 'Could not load transactions.' });
+    }
+  });
+
+  // Delete one transaction.
+  app.delete('/api/admin/transactions/:id', admin, async (req, res) => {
+    try {
+      const deleted = await deleteTransaction(req.params.id);
+      if (!deleted) return res.status(404).json({ error: 'Transaction not found.' });
+
+      await recordAudit({
+        actorUserId: req.profile.uid, actorEmail: req.profile.email,
+        action: 'transaction.delete', detail: { transactionId: req.params.id }, ip: clientIp(req),
+      });
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error('[Transactions] Delete failed:', err);
+      res.status(500).json({ error: 'Could not delete the transaction.' });
+    }
+  });
+
+  // Bulk cleanup, for the abandoned-checkout rows that build up because a PENDING
+  // record is written before the gateway is called.
+  //
+  // Requires a filter: without `status` or `olderThanDays` the data layer refuses,
+  // so this cannot be used to wipe the table by accident. PAID rows are the
+  // revenue record, so deleting those is possible but deliberate.
+  app.post('/api/admin/transactions/purge', admin, async (req, res) => {
+    try {
+      const status = req.body?.status ? String(req.body.status) : null;
+      const olderThanDays = req.body?.olderThanDays;
+
+      if (!status && olderThanDays === undefined) {
+        return res.status(400).json({
+          error: 'Pass a status (e.g. "PENDING") or olderThanDays so this cannot delete everything.',
+          code: 'filter_required',
+        });
+      }
+
+      const removed = await deleteTransactionsBulk({ status, olderThanDays });
+
+      await recordAudit({
+        actorUserId: req.profile.uid, actorEmail: req.profile.email,
+        action: 'transaction.purge',
+        detail: { status, olderThanDays, removed }, ip: clientIp(req),
+      });
+
+      console.log(`[Transactions] ${req.profile.email} purged ${removed} transaction(s) (status=${status || 'any'}, olderThanDays=${olderThanDays ?? 'any'}).`);
+      res.json({ success: true, removed });
+    } catch (err) {
+      console.error('[Transactions] Purge failed:', err);
+      res.status(500).json({ error: err.message || 'Could not purge transactions.' });
     }
   });
 

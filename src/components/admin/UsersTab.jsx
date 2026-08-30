@@ -28,12 +28,21 @@ function formatDate(value) {
   return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-// Small pill marking whether a limit comes from the plan or a per-user override.
+// Small pill marking where a limit came from: the plan, agents the customer paid
+// for, or an explicit per-user override.
+const SOURCE_LABEL = {
+  override: { label: 'Custom', title: 'Custom value set for this user; plan changes will not affect it' },
+  purchased: { label: 'Paid', title: 'Agents the customer purchased; sits above the plan but below an admin override' },
+  plan: { label: 'Plan', title: 'Inherited from the assigned plan' },
+};
+
 function SourceBadge({ source }) {
-  const isOverride = source === 'override';
+  const meta = SOURCE_LABEL[source] || SOURCE_LABEL.plan;
+  const accent = source === 'override' ? '#f59e0b' : source === 'purchased' ? 'var(--primary)' : null;
+
   return (
     <span
-      title={isOverride ? 'Custom value set for this user; plan changes will not affect it' : 'Inherited from the assigned plan'}
+      title={meta.title}
       style={{
         fontSize: '0.65rem',
         fontWeight: '700',
@@ -41,12 +50,16 @@ function SourceBadge({ source }) {
         textTransform: 'uppercase',
         padding: '1px 6px',
         borderRadius: '4px',
-        background: isOverride ? 'rgba(245,158,11,0.12)' : 'rgba(255,255,255,0.06)',
-        color: isOverride ? '#f59e0b' : 'var(--text-dimmed)',
-        border: `1px solid ${isOverride ? 'rgba(245,158,11,0.25)' : 'var(--border-color)'}`,
+        background: source === 'override' ? 'rgba(245,158,11,0.12)'
+          : source === 'purchased' ? 'rgba(0,168,132,0.12)'
+          : 'rgba(255,255,255,0.06)',
+        color: accent || 'var(--text-dimmed)',
+        border: `1px solid ${source === 'override' ? 'rgba(245,158,11,0.25)'
+          : source === 'purchased' ? 'rgba(0,168,132,0.25)'
+          : 'var(--border-color)'}`,
       }}
     >
-      {isOverride ? 'Custom' : 'Plan'}
+      {meta.label}
     </span>
   );
 }

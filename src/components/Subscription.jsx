@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Send, Hash, Zap, Smartphone, Plus, CreditCard, ExternalLink, CheckCircle2, Clock, X, AlertCircle } from 'lucide-react';
+import { Send, Hash, Zap, Smartphone, Layers, CreditCard, ExternalLink, X, AlertCircle } from 'lucide-react';
 import { fetchWithAuth } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
+import PlanPicker from './PlanPicker.jsx';
 
-export default function Subscription({ userProfile, activeSessionCount }) {
+export default function Subscription({ userProfile, activeSessionCount, plans = [] }) {
   const [buying, setBuying] = useState(false);
   const [transactions, setTransactions] = useState([]);
   const [loadingTx, setLoadingTx] = useState(true);
@@ -13,6 +14,12 @@ export default function Subscription({ userProfile, activeSessionCount }) {
   const sent = userProfile?.messagesSent || 0;
   const percent = limit > 0 ? Math.min((sent / limit) * 100, 100) : 0;
   const sessionLimit = userProfile?.sessionLimit ?? 1;
+
+  // `tier` predates the plans table and still holds 'free'/'premium' on older
+  // accounts, so it doubles as the plan id until the customer is reassigned.
+  const currentPlanId = userProfile?.planId || userProfile?.tier || 'free';
+  const currentPlan = plans.find(p => p.id === currentPlanId);
+  const currentPlanName = currentPlan?.name || currentPlanId;
 
   const loadServerTransactions = async () => {
     try {
@@ -60,10 +67,10 @@ export default function Subscription({ userProfile, activeSessionCount }) {
 
   // Start a Mayar checkout for a plan.
   //
-  // Only the plan id is sent. The price comes from the plans table server-side —
-  // this used to post an `amount`, which meant the payload could be edited to buy
-  // a paid plan for a token sum.
-  const handleInitiateMayarCheckout = async (planId) => {
+  // Only the plan id and the chosen agent count are sent. The price comes from the
+  // plans table server-side — this used to post an `amount`, which meant the
+  // payload could be edited to buy a paid plan for a token sum.
+  const handleInitiateMayarCheckout = async (planId, agents) => {
     if (buying || !userProfile?.uid) return;
     setBuying(true);
 
@@ -71,7 +78,9 @@ export default function Subscription({ userProfile, activeSessionCount }) {
       const res = await fetchWithAuth('/api/mayar/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId })
+        body: JSON.stringify(
+          agents === undefined ? { planId } : { planId, agents }
+        )
       });
 
       const data = await res.json().catch(() => ({}));
@@ -84,6 +93,13 @@ export default function Subscription({ userProfile, activeSessionCount }) {
             isConfigError: true,
             message: data.error || 'Payments are not configured on this server yet.',
           });
+          return;
+        }
+        // Rejections the customer can understand and act on: already subscribed,
+        // free plan, agent count out of range. These are not faults, so they get
+        // the same panel rather than a browser alert.
+        if (data.code === 'already_on_plan' || data.code === 'plan_is_free' || data.code === 'agents_out_of_range') {
+          setActivePaymentModal({ isNotice: true, message: data.error });
           return;
         }
         throw new Error(data.error || `Server returned status ${res.status}`);
@@ -137,11 +153,11 @@ export default function Subscription({ userProfile, activeSessionCount }) {
                 <h3 style={{ margin: 0, fontSize: '1.2rem' }}>Message Quota Usage</h3>
                 <span style={{ 
                   fontSize: '0.75rem', 
-                  color: (userProfile?.tier || 'free') === 'premium' ? 'var(--primary)' : '#f59e0b',
+                  color: currentPlanId === 'free' ? '#f59e0b' : 'var(--primary)',
                   fontWeight: '700',
                   textTransform: 'uppercase'
                 }}>
-                  {(userProfile?.tier || 'free')} Tier
+                  {currentPlanName} plan
                 </span>
               </div>
             </div>
@@ -174,18 +190,6 @@ export default function Subscription({ userProfile, activeSessionCount }) {
                 {percent.toFixed(1)}% of quota used
               </p>
             </div>
-
-            <div style={{ marginTop: '24px' }}>
-              <button 
-                className="upgrade-btn" 
-                onClick={() => handleInitiateMayarCheckout('premium')}
-                disabled={buying || userProfile?.tier === 'premium'}
-                style={{ width: '100%', display: 'inline-flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
-              >
-                <CreditCard size={16} /> 
-                {userProfile?.tier === 'premium' ? 'Premium Tier Active' : 'Upgrade to Premium (299k IDR)'}
-              </button>
-            </div>
           </div>
 
           {/* Device Sessions Card */}
@@ -195,8 +199,8 @@ export default function Subscription({ userProfile, activeSessionCount }) {
                 <Smartphone size={24} />
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.2rem' }}>Device Session Licenses</h3>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-dimmed)' }}>Multi-session WhatsApp connectivity</span>
+                <h3 style={{ margin: 0, fontSize: '1.2rem' }}>Agent Access Slots</h3>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-dimmed)' }}>Devices that can be signed in at the same time</span>
               </div>
             </div>
 
@@ -217,18 +221,31 @@ export default function Subscription({ userProfile, activeSessionCount }) {
               </div>
             </div>
 
-            <div style={{ marginTop: '24px' }}>
-              <button 
-                className="upgrade-btn" 
-                onClick={() => handleInitiateMayarCheckout('premium')}
-                disabled={buying}
-                style={{ width: '100%', display: 'inline-flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
-              >
-                <Plus size={16} /> Buy Session License (200k IDR)
-              </button>
-            </div>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-dimmed)', margin: '18px 0 0', lineHeight: '1.5' }}>
+              Need more? Pick a plan below and choose how many agents you want — extra
+              agents are billed on the same invoice.
+            </p>
           </div>
 
+        </div>
+
+        {/* Purchasable plans.
+            These are read from the plan catalogue an admin maintains, so a plan
+            created in the admin panel is immediately buyable. This used to be two
+            buttons hardcoded to 'premium', which meant any other plan an admin
+            added was invisible to customers. */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+            <Layers size={20} style={{ color: 'var(--primary)' }} />
+            <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '700' }}>Available Plans</h3>
+          </div>
+
+          <PlanPicker
+            plans={plans}
+            userProfile={userProfile}
+            onCheckout={handleInitiateMayarCheckout}
+            buying={buying}
+          />
         </div>
 
         {/* Transaction History Section */}
@@ -322,7 +339,7 @@ export default function Subscription({ userProfile, activeSessionCount }) {
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: '36px', color: 'var(--text-dimmed)', fontSize: '0.9rem' }}>
-              No Mayar transaction records found yet. Click <strong>Upgrade Plan</strong> or <strong>Buy Session License</strong> above to start a checkout.
+              No transaction records yet. Choose a plan under <strong>Available Plans</strong> above to start a checkout.
             </div>
           )}
         </div>
@@ -369,7 +386,27 @@ export default function Subscription({ userProfile, activeSessionCount }) {
               </button>
             </div>
 
-            {activePaymentModal.isConfigError ? (
+            {activePaymentModal.isNotice ? (
+              <>
+                <div style={{ padding: '16px', borderRadius: '12px', background: 'var(--overlay-subtle)', border: '1px solid var(--border-color)', fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.55' }}>
+                  {activePaymentModal.message}
+                </div>
+                <button
+                  onClick={() => setActivePaymentModal(null)}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--border-color)',
+                    color: 'var(--text-muted)',
+                    padding: '10px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  Close
+                </button>
+              </>
+            ) : activePaymentModal.isConfigError ? (
               <>
                 <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', color: '#f59e0b' }}>
                   <div style={{ fontWeight: '700', fontSize: '0.95rem', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
