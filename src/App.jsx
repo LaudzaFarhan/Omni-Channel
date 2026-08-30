@@ -996,6 +996,8 @@ export default function App() {
                       waSessions={waSessions}
                       messages={messages}
                       savedNames={savedNames}
+                      activeSessionId={activeSessionId}
+                      connectionStatus={connectionStatus}
                     />
                   )}
 

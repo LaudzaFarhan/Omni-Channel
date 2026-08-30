@@ -1,8 +1,12 @@
 import React, { useMemo } from 'react';
 import { Send, MessageCircle, Users, Phone, TrendingUp, Clock, MessageSquare } from 'lucide-react';
 import { getChatDisplayName, getInitials } from '../utils/displayName.js';
+import InteractionHeatmap from './dashboard/InteractionHeatmap.jsx';
 
-export default function Dashboard({ chats, userProfile, userInfo, waSessions, messages, savedNames = {} }) {
+export default function Dashboard({
+  chats, userProfile, userInfo, waSessions, messages, savedNames = {},
+  activeSessionId = 'default', connectionStatus,
+}) {
   // Calculate stats from real data
   const totalContacts = Array.isArray(chats) ? chats.length : 0;
   const activeNumbers = Array.isArray(waSessions) 
@@ -170,6 +174,13 @@ export default function Dashboard({ chats, userProfile, userInfo, waSessions, me
           );
         })}
       </div>
+
+      {/* When conversations actually happen. Full width because 24 hourly columns
+          need the room; it collapses to a horizontal scroll below ~570px. */}
+      <InteractionHeatmap
+        activeSessionId={activeSessionId}
+        connected={connectionStatus === 'connected'}
+      />
 
       {/* Bottom Section */}
       <div className="dashboard-bottom-row">

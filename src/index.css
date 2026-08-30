@@ -36,6 +36,16 @@
   --scrollbar-thumb: rgba(0, 0, 0, 0.18);
   --shadow-card: 0 1px 3px rgba(11, 20, 26, 0.08);
 
+  /* Heatmap intensity ramp. Named separately from --overlay-* because the empty
+   * cell has to be visible enough to read as a grid, and because the ramp runs
+   * light-to-dark here but dark-to-bright in the dark theme — against a dark
+   * background the busiest cell has to be the brightest one, not the deepest. */
+  --heat-0: #eceff3;
+  --heat-1: rgba(0, 168, 132, 0.28);
+  --heat-2: rgba(0, 168, 132, 0.52);
+  --heat-3: rgba(0, 168, 132, 0.76);
+  --heat-4: #00654f;
+
   /* Translucent nav bar (landing page and admin console header). */
   --nav-bg: rgba(255, 255, 255, 0.8);
   /* Floating panels that sit above the page: toasts, popovers. */
@@ -74,6 +84,14 @@
   --overlay-subtle: rgba(255, 255, 255, 0.04);
   --overlay-medium: rgba(255, 255, 255, 0.08);
   --scrollbar-thumb: rgba(255, 255, 255, 0.16);
+
+  /* Inverted ramp: busiest = brightest, so the peak still stands out against a
+   * dark surface. The light theme's #00654f would read as an empty cell here. */
+  --heat-0: rgba(255, 255, 255, 0.06);
+  --heat-1: rgba(0, 168, 132, 0.30);
+  --heat-2: rgba(0, 168, 132, 0.52);
+  --heat-3: rgba(37, 211, 102, 0.78);
+  --heat-4: #25d366;
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
 
   --nav-bg: rgba(17, 27, 33, 0.85);
@@ -2459,6 +2477,202 @@ input:checked + .slider:before {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Interaction heatmap (weekday x hour)
+   ---------------------------------------------------------------------------
+   Real CSS classes rather than inline styles, because the grid needs :hover and
+   :focus-visible states on 168 cells and inline styles cannot express either. */
+
+.heatmap-panel {
+  margin-bottom: 24px;
+}
+
+.heatmap-panel .dashboard-panel-header {
+  justify-content: space-between;
+}
+
+/* The toggle sits in the header, so it must not inherit the header's bold. */
+.heatmap-view-toggle {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  font-weight: 500;
+}
+
+.heatmap-view-btn {
+  padding: 4px 11px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.heatmap-view-btn:hover {
+  color: var(--text-main);
+  border-color: var(--text-dimmed);
+}
+
+.heatmap-view-btn.active {
+  background: rgba(0, 168, 132, 0.12);
+  border-color: rgba(0, 168, 132, 0.35);
+  color: var(--primary);
+}
+
+/* The body is centred for empty states; the populated grid wants the full width. */
+.heatmap-body {
+  align-items: stretch;
+  overflow-x: auto;
+}
+
+.heatmap-wrap {
+  flex: 1;
+  min-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.heatmap-grid {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.heatmap-hours,
+.heatmap-row {
+  display: grid;
+  /* One fixed label column, then 24 equal cells. minmax(0, 1fr) keeps the cells
+     from being forced wider than their share by their own min-content. */
+  grid-template-columns: 34px repeat(24, minmax(0, 1fr));
+  gap: 4px;
+  align-items: center;
+}
+
+.heatmap-daylabel {
+  font-size: 0.72rem;
+  color: var(--text-dimmed);
+  text-align: right;
+  padding-right: 6px;
+  white-space: nowrap;
+}
+
+.heatmap-hour {
+  font-size: 0.7rem;
+  color: var(--text-dimmed);
+  /* Labels are every third hour and are wider than one cell, so they overflow
+     their own column rather than squeezing the grid. */
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.heatmap-cell {
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.1s, border-color 0.1s;
+}
+
+.heatmap-cell.level-0 { background: var(--heat-0); }
+.heatmap-cell.level-1 { background: var(--heat-1); }
+.heatmap-cell.level-2 { background: var(--heat-2); }
+.heatmap-cell.level-3 { background: var(--heat-3); }
+.heatmap-cell.level-4 { background: var(--heat-4); }
+
+.heatmap-cell:hover,
+.heatmap-cell.is-active {
+  border-color: var(--primary);
+  transform: scale(1.12);
+}
+
+.heatmap-cell:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/* A pinned cell keeps its ring after the pointer leaves. */
+.heatmap-cell.is-pinned {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(0, 168, 132, 0.25);
+}
+
+.heatmap-tooltip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 9px));
+  background: #1e293b;
+  color: #fff;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 6px 11px;
+  border-radius: 7px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+/* Arrow, pointing down at the cell. */
+.heatmap-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #1e293b;
+}
+
+.heatmap-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.heatmap-summary {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.heatmap-summary strong {
+  color: var(--text-main);
+}
+
+.heatmap-range {
+  color: var(--text-dimmed);
+}
+
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  color: var(--text-dimmed);
+  margin-left: auto;
+}
+
+/* Legend swatches reuse the cell colours but are not interactive. */
+.heatmap-legend .heatmap-cell {
+  width: 15px;
+  height: 15px;
+  cursor: default;
+}
+
+.heatmap-legend .heatmap-cell:hover {
+  transform: none;
+  border-color: transparent;
 }
 
 /* Responsive Dashboard */

@@ -742,6 +742,73 @@ app.get('/api/chats', approved, (req, res) => {
   res.json(sortedChats);
 });
 
+// When conversations actually happen, as a 7x24 (weekday x hour) grid.
+//
+// Aggregated here rather than in the browser because the raw material is every
+// stored message across every chat — on a busy account that is tens of thousands
+// of objects the client has no other reason to hold. What comes back is 336
+// integers.
+//
+// Bucketing needs the VIEWER's clock, not the server's: this box runs UTC, so
+// bucketing by its own local time would report a WIB operator's 14:00 rush as
+// 07:00. The client sends its Date#getTimezoneOffset() and the shift is applied
+// to the epoch before the day and hour are read back out in UTC, which also
+// handles the half-hour zones a whole-hour rotation would get wrong.
+app.get('/api/stats/activity', approved, (req, res) => {
+  const uid = req.user.uid;
+  const sid = req.query.sessionId || 'default';
+  const store = getStore(sessionKey(uid, sid));
+
+  // Same sign convention as the browser: minutes to ADD to local time to reach
+  // UTC, so UTC+7 sends -420. Clamped to the real range of world offsets.
+  const rawOffset = Number(req.query.tzOffset);
+  const tzOffset = Number.isFinite(rawOffset) ? Math.max(-900, Math.min(900, rawOffset)) : 0;
+
+  const blank = () => Array.from({ length: 7 }, () => new Array(24).fill(0));
+  const incoming = blank();
+  const outgoing = blank();
+
+  let total = 0;
+  let earliest = null;
+  let latest = null;
+
+  for (const messages of Object.values(store.messages)) {
+    for (const message of messages) {
+      // messageTimestamp is in seconds, and history sync has been seen to deliver
+      // nulls and Long objects, so anything that is not a sane epoch is skipped
+      // rather than landing in the Thursday-1970 cell.
+      const seconds = Number(message?.messageTimestamp);
+      if (!Number.isFinite(seconds) || seconds <= 0) continue;
+
+      const ms = seconds * 1000;
+      if (ms > Date.now() + 86400000) continue; // clock-skewed junk
+
+      const shifted = new Date(ms - tzOffset * 60000);
+      const day = shifted.getUTCDay();
+      const hour = shifted.getUTCHours();
+
+      if (message.key?.fromMe) outgoing[day][hour]++;
+      else incoming[day][hour]++;
+
+      total++;
+      if (earliest === null || ms < earliest) earliest = ms;
+      if (latest === null || ms > latest) latest = ms;
+    }
+  }
+
+  res.json({
+    incoming,
+    outgoing,
+    total,
+    // The window the numbers actually cover. The store keeps only the last 100
+    // messages per chat, so this is not "all time" and the UI should not imply
+    // it is.
+    from: earliest,
+    to: latest,
+    chatsCounted: Object.keys(store.messages).length,
+  });
+});
+
 app.get('/api/chats/:jid/messages', approved, (req, res) => {
   const uid = req.user.uid;
   const sid = req.query.sessionId || 'default';
