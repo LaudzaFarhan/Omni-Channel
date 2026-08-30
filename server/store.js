@@ -269,6 +269,74 @@ class UserStore {
     return null;
   }
 
+  // Expand a recipient JID into every form a hold might be stored under.
+  //
+  // The dashboard holds a chat under whichever JID Baileys exposed for it. On the
+  // main account personal chats are now keyed by @lid (e.g. 243529024561281@lid),
+  // while an automated sender typically addresses the same conversation by phone
+  // JID (628...@s.whatsapp.net). The send-path hold check must therefore match in
+  // either direction, or holding a chat silently no-ops.
+  expandHoldJids(jid) {
+    if (!jid) return [];
+    const candidates = new Set();
+
+    // Same normalisation the send path applies to bare numbers.
+    let normalized = String(jid);
+    if (
+      !normalized.endsWith('@s.whatsapp.net') &&
+      !normalized.endsWith('@g.us') &&
+      !normalized.endsWith('@lid')
+    ) {
+      const digits = normalized.replace(/\D/g, '');
+      normalized = digits ? `${digits}@s.whatsapp.net` : normalized;
+    }
+
+    candidates.add(normalized);
+    if (normalized !== String(jid)) candidates.add(String(jid));
+
+    if (normalized.endsWith('@lid')) {
+      // @lid -> its phone JID.
+      const phone = this.lidMap[normalized]?.pn;
+      if (phone) candidates.add(phone);
+    } else if (normalized.endsWith('@s.whatsapp.net')) {
+      // Phone JID -> any @lid that maps back to it.
+      for (const [lid, m] of Object.entries(this.lidMap)) {
+        if (m && m.pn === normalized) candidates.add(lid);
+      }
+    }
+
+    return [...candidates];
+  }
+
+  // The single JID a hold should be stored under, so the dashboard (which keys
+  // personal chats by @lid) and an automated sender (which addresses them by
+  // phone JID) read and write the SAME chat_settings row.
+  //
+  // Prefer the @lid when one is known — that is the identity the chat list uses
+  // on the main account. Fall back to the phone JID otherwise (accounts that key
+  // chats by @s.whatsapp.net and have no LID mapping).
+  canonicalHoldJid(jid) {
+    if (!jid) return jid;
+
+    let normalized = String(jid);
+    if (
+      !normalized.endsWith('@s.whatsapp.net') &&
+      !normalized.endsWith('@g.us') &&
+      !normalized.endsWith('@lid')
+    ) {
+      const digits = normalized.replace(/\D/g, '');
+      normalized = digits ? `${digits}@s.whatsapp.net` : normalized;
+    }
+
+    if (normalized.endsWith('@lid')) return normalized;
+    if (normalized.endsWith('@s.whatsapp.net')) {
+      for (const [lid, m] of Object.entries(this.lidMap)) {
+        if (m && m.pn === normalized) return lid;
+      }
+    }
+    return normalized;
+  }
+
   // Debounced persistence: the API always serves from the in-memory copy, so we
   // coalesce the many writes triggered during a bulk sync into a single disk write.
   save() {

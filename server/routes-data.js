@@ -15,9 +15,10 @@ import {
   listPlans, findPlanById, upsertPlan, setDefaultPlan, deletePlan, countUsersOnPlan,
   listTransactionsForUser, listAllTransactions,
   listAudit, recordAudit, revokeAllRefreshTokens,
-  getChatSettings, listHeldChats, setChatHold,
+  getChatSettings, listHeldChats, setChatHold, clearChatHold,
 } from './data.js';
 import { authenticated, admin, clientIp } from './middleware.js';
+import { getStore } from './store.js';
 
 // Notify a specific user's open tabs that their profile changed, replacing the
 // onSnapshot listener on their user document.
@@ -332,11 +333,14 @@ export function mountDataRoutes(app, io) {
   });
 
   // State of one conversation. Absence of a row means not held, so this always
-  // returns an object rather than a 404.
+  // returns an object rather than a 404. The JID is expanded to its @lid/phone
+  // equivalents so reading by either form finds the same hold.
   app.get('/api/chats/:jid/hold', authenticated, async (req, res) => {
     try {
       const sessionId = String(req.query.sessionId || 'default');
-      res.json(await getChatSettings(req.profile.uid, sessionId, req.params.jid));
+      const store = getStore(`${req.profile.uid}_${sessionId}`);
+      const jids = store.expandHoldJids(req.params.jid);
+      res.json(await getChatSettings(req.profile.uid, sessionId, jids));
     } catch (err) {
       console.error('[Hold] Read failed:', err);
       res.status(500).json({ error: 'Could not read hold state.' });
@@ -346,6 +350,10 @@ export function mountDataRoutes(app, io) {
   // Hold or release. The chat JID is whatever the WhatsApp store already knows,
   // so it is not validated against a whitelist — but it is scoped to the caller's
   // own user id, so one customer cannot read or change another's chats.
+  //
+  // The JID is canonicalised (preferring @lid) so the dashboard and a bot that
+  // addresses the conversation by phone JID write the SAME row, and any duplicate
+  // @lid/phone row is collapsed.
   app.put('/api/chats/:jid/hold', authenticated, async (req, res) => {
     try {
       const sessionId = String(req.body?.sessionId || req.query.sessionId || 'default');
@@ -358,11 +366,35 @@ export function mountDataRoutes(app, io) {
       const botPaused = Boolean(req.body?.botPaused);
       const note = req.body?.note ? String(req.body.note).slice(0, 300) : null;
 
-      const settings = await setChatHold(req.profile.uid, sessionId, chatJid, {
+      const store = getStore(`${req.profile.uid}_${sessionId}`);
+      const canonical = store.canonicalHoldJid(chatJid);
+      const aliases = store.expandHoldJids(chatJid);
+
+      const settings = await setChatHold(req.profile.uid, sessionId, canonical, {
         botPaused,
         pausedBy: req.profile.name || req.profile.email,
         note,
       });
+
+      // Collapse any duplicate @lid/phone row into the canonical one, so a
+      // release cannot leave a stale held row behind.
+      for (const alias of aliases) {
+        if (alias !== canonical) await clearChatHold(req.profile.uid, sessionId, alias);
+      }
+
+      // Push the change to the external agent (Alvi) so it suppresses its own
+      // automated replies for this conversation. Fire-and-forget: a down webhook
+      // receiver must never fail the hold itself (the state is already durable).
+      const webhookUrl = (process.env.AGENT_HOLD_WEBHOOK_URL || '').trim();
+      if (webhookUrl) {
+        fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, chatJid: canonical, aliases, botPaused }),
+        }).catch((err) => {
+          console.warn('[Hold] Webhook notify failed:', err.message);
+        });
+      }
 
       // Keep the operator's other tabs, and anyone else watching this account,
       // in step with the change.
