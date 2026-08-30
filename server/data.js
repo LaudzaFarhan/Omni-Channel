@@ -457,16 +457,25 @@ export function mapChatSettings(row) {
 
 // A missing row means "not held", so this returns a synthetic default rather than
 // null. Callers can then treat every chat uniformly.
-export async function getChatSettings(userId, sessionId, chatJid) {
-  const row = await queryOne(
-    `SELECT * FROM chat_settings
-      WHERE user_id = $1 AND session_id = $2 AND chat_jid = $3`,
-    [userId, sessionId, chatJid]
-  );
+//
+// Accepts one JID or an array of equivalent JIDs (@lid and phone form). The hold
+// is stored under a single canonical JID, but reading should match whichever
+// alias the caller happens to know.
+export async function getChatSettings(userId, sessionId, chatJids) {
+  const jids = (Array.isArray(chatJids) ? chatJids : [chatJids]).filter(Boolean);
+  const row = jids.length
+    ? await queryOne(
+        `SELECT * FROM chat_settings
+          WHERE user_id = $1 AND session_id = $2 AND chat_jid = ANY($3::text[])`,
+        [userId, sessionId, jids]
+      )
+    : null;
 
-  return row ? mapChatSettings(row) : {
+  if (row) return mapChatSettings(row);
+
+  return {
     sessionId,
-    chatJid,
+    chatJid: jids[0] || null,
     botPaused: false,
     pausedAt: null,
     pausedBy: null,
@@ -509,12 +518,30 @@ export async function setChatHold(userId, sessionId, chatJid, { botPaused, pause
   return mapChatSettings(row);
 }
 
+// Remove a hold row entirely. Used to collapse a duplicate @lid/phone row into
+// the single canonical row after a hold or release write, so one conversation
+// never carries two chat_settings rows that could disagree.
+export async function clearChatHold(userId, sessionId, chatJid) {
+  await query(
+    `DELETE FROM chat_settings
+      WHERE user_id = $1 AND session_id = $2 AND chat_jid = $3`,
+    [userId, sessionId, chatJid]
+  );
+}
+
 // True when automated replies are currently suppressed for this conversation.
-export async function isChatHeld(userId, sessionId, chatJid) {
+//
+// Accepts one JID or an array of them. A held chat is stored under whichever JID
+// the dashboard happened to show (@lid on the main account), while the sender
+// addresses it by phone JID (or vice versa) — so callers pass every equivalent
+// form and we match any.
+export async function isChatHeld(userId, sessionId, chatJids) {
+  const jids = (Array.isArray(chatJids) ? chatJids : [chatJids]).filter(Boolean);
+  if (jids.length === 0) return false;
   const row = await queryOne(
     `SELECT 1 FROM chat_settings
-      WHERE user_id = $1 AND session_id = $2 AND chat_jid = $3 AND bot_paused`,
-    [userId, sessionId, chatJid]
+      WHERE user_id = $1 AND session_id = $2 AND chat_jid = ANY($3::text[]) AND bot_paused`,
+    [userId, sessionId, jids]
   );
   return Boolean(row);
 }
