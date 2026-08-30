@@ -1540,6 +1540,105 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 // =============================================
+// SESSION RESTORE
+// =============================================
+// Bring previously-paired WhatsApp devices back online at boot.
+//
+// activeSessions is in-memory, and nothing else calls getOrInitWASocket except
+// the socket's init-session event, /api/status and /api/sync — all of which need
+// a client to act first. So after a restart WhatsApp stayed offline until someone
+// opened the dashboard, even though valid credentials were on disk. An automated
+// caller would get 503 wa_not_initialized with no way to fix it itself.
+//
+// Credentials live in sessions/auth_info_<uid>_<sessionId>. Neither a generated
+// user id (32 hex) nor a legacy Firebase UID contains an underscore, so the first
+// underscore after the prefix separates the two parts. A session id may itself
+// contain underscores (session_1783331699425), hence splitting only once.
+async function restoreSessionsOnBoot() {
+  if ((process.env.RESTORE_SESSIONS || '').trim().toLowerCase() === 'false') {
+    console.log('[Restore] Disabled by RESTORE_SESSIONS=false.');
+    return;
+  }
+
+  const sessionsDir = path.resolve('sessions');
+  if (!fs.existsSync(sessionsDir)) return;
+
+  let candidates;
+  try {
+    candidates = fs.readdirSync(sessionsDir, { withFileTypes: true })
+      .filter(entry => entry.isDirectory() && entry.name.startsWith('auth_info_'))
+      .map(entry => entry.name);
+  } catch (err) {
+    console.error('[Restore] Could not read the sessions directory:', err.message);
+    return;
+  }
+
+  if (candidates.length === 0) return;
+
+  let restored = 0;
+  let skipped = 0;
+
+  for (const dirName of candidates) {
+    const key = dirName.slice('auth_info_'.length);
+    const separator = key.indexOf('_');
+
+    if (separator <= 0) {
+      console.warn(`[Restore] Skipping ${dirName}: cannot separate uid from session id.`);
+      skipped += 1;
+      continue;
+    }
+
+    const uid = key.slice(0, separator);
+    const sessionId = key.slice(separator + 1);
+
+    // Without creds.json the folder holds no usable login — usually a partially
+    // completed QR scan. Re-initialising it would just emit a fresh QR nobody is
+    // watching.
+    if (!fs.existsSync(path.join(sessionsDir, dirName, 'creds.json'))) {
+      skipped += 1;
+      continue;
+    }
+
+    // Don't resurrect sessions for accounts that no longer exist.
+    try {
+      const owner = await findUserById(uid);
+      if (!owner) {
+        console.warn(`[Restore] Skipping ${dirName}: no such user.`);
+        skipped += 1;
+        continue;
+      }
+      if (owner.role !== 'admin' && !owner.isApproved) {
+        console.warn(`[Restore] Skipping ${dirName}: ${owner.email} is not approved.`);
+        skipped += 1;
+        continue;
+      }
+    } catch (err) {
+      console.error(`[Restore] Could not check the owner of ${dirName}:`, err.message);
+      skipped += 1;
+      continue;
+    }
+
+    // Stagger the connections. Opening many WhatsApp sockets at once invites
+    // rate limiting, and each one does its own history sync.
+    setTimeout(() => {
+      console.log(`[Restore] Reconnecting ${uid}/${sessionId}`);
+      try {
+        getOrInitWASocket(uid, sessionId);
+      } catch (err) {
+        console.error(`[Restore] Failed to reconnect ${uid}/${sessionId}:`, err.message);
+      }
+    }, restored * 3000);
+
+    restored += 1;
+  }
+
+  console.log(
+    `[Restore] ${restored} session${restored === 1 ? '' : 's'} queued for reconnect` +
+    `${skipped ? `, ${skipped} skipped` : ''}.`
+  );
+}
+
+// =============================================
 // STARTUP
 // =============================================
 // The database and signing key are checked before the port is opened. Starting
@@ -1577,6 +1676,11 @@ async function start() {
       console.log(`[Config] CORS allowed origins: ${allowedOrigins.join(', ')}`);
     }
     reportMayarConfig();
+
+    // After the port is open, so a slow reconnect never delays readiness.
+    restoreSessionsOnBoot().catch(err =>
+      console.error('[Restore] Session restore failed:', err.message)
+    );
   });
 }
 
