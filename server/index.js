@@ -736,12 +736,6 @@ app.post('/api/messages/send', approved, async (req, res) => {
   const { to, text, file } = req.body;
   const session = activeSessions[key];
 
-  if (!session || !session.sock) {
-    return res.status(500).json({ error: 'WhatsApp client is not initialized' });
-  }
-  if (session.status !== 'connected') {
-    return res.status(400).json({ error: 'WhatsApp is not connected' });
-  }
   if (!to) {
     return res.status(400).json({ error: 'Missing to (recipient JID)' });
   }
@@ -781,7 +775,26 @@ app.post('/api/messages/send', approved, async (req, res) => {
     }
   }
 
-  // Quota is now enforced here, atomically, before the message goes out.
+  // WhatsApp connectivity is checked after the hold, so a held conversation
+  // reports as held whether or not a device happens to be connected, and before
+  // the quota, so a message that cannot physically be sent never consumes quota.
+  if (!session || !session.sock) {
+    return res.status(503).json({
+      error: 'WhatsApp is not connected for this session. Scan the QR code first.',
+      code: 'wa_not_initialized',
+      sessionId: sid,
+    });
+  }
+  if (session.status !== 'connected') {
+    return res.status(503).json({
+      error: `WhatsApp session is "${session.status}", not connected.`,
+      code: 'wa_not_connected',
+      sessionId: sid,
+      status: session.status,
+    });
+  }
+
+  // Quota is enforced here, atomically, before the message goes out.
   //
   // Previously the limit was checked in the browser and the browser incremented
   // its own counter, which made it advisory: a modified client, or two tabs
