@@ -9,7 +9,11 @@ import AuthScreens from './components/AuthScreens.jsx';
 import AdminDashboard from './components/AdminDashboard.jsx';
 import { auth, db, fetchWithAuth } from './utils/firebase.js';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, collection } from 'firebase/firestore';
+import { isAdminEmail } from './utils/adminAccess.js';
+import {
+  PLANS_COLLECTION, normalizePlan, sortPlans, defaultPlanForSignup, resolveEffectiveLimits,
+} from './utils/plans.js';
 import { MessageSquare, Clock, AlertTriangle, Bell, X } from 'lucide-react';
 
 import Sidebar from './components/Sidebar.jsx';
@@ -26,6 +30,9 @@ export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
+  // Plan catalogue, used to resolve the quota and device limit that actually
+  // apply to this customer. Readable only once signed in.
+  const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('messages');
   const [isSessionBlocked, setIsSessionBlocked] = useState(false);
@@ -94,29 +101,25 @@ export default function App() {
   const handleSyncHistory = async () => {
     if (isSyncing) return;
     setIsSyncing(true);
+    // Instantly refresh local chat list from server memory
+    fetchChats(activeSessionIdRef.current);
     try {
       const res = await fetchWithAuth(`/api/sync?sessionId=${activeSessionId}`, {
         method: 'POST',
       });
       if (!res.ok) {
         const errText = await res.text();
-        alert(`Sync failed: ${errText || res.statusText}`);
+        console.warn(`Sync warning: ${errText || res.statusText}`);
         return;
       }
       const text = await res.text();
-      if (!text) {
-        alert('Sync triggered, but server returned empty response. Please wait for reconnection.');
-        return;
-      }
+      if (!text) return;
       const data = JSON.parse(text);
       if (data.success) {
-        alert('Re-synchronizing chat history. Your connection will reload momentarily.');
-      } else {
-        alert(`Sync failed: ${data.error || 'Unknown error'}`);
+        showToast('Refreshing chats and WhatsApp history sync...', 'info');
       }
     } catch (e) {
       console.error('Failed to sync history:', e);
-      alert('Failed to trigger history sync.');
     } finally {
       setIsSyncing(false);
     }
@@ -138,6 +141,52 @@ export default function App() {
       window.removeEventListener('popstate', handleLocationChange);
     };
   }, []);
+
+  const fetchChats = async (sessionId) => {
+    const sid = sessionId || activeSessionIdRef.current;
+    if (!sid) return;
+    try {
+      const res = await fetchWithAuth(`/api/chats?sessionId=${encodeURIComponent(sid)}`);
+      if (!res.ok) {
+        console.info(`fetchChats: server status ${res.status} (session initializing or reconnecting)`);
+        return;
+      }
+      const text = await res.text();
+      if (!text) return;
+      const data = JSON.parse(text);
+      if (sid === activeSessionIdRef.current) {
+        setChats(prevChats => {
+          if (!Array.isArray(data)) return prevChats;
+          // Retain draft chats that user hasn't sent a message to yet
+          const serverJids = new Set(data.map(c => c.id));
+          const draftChats = (prevChats || []).filter(c => c.isDraft && !serverJids.has(c.id));
+          return [...draftChats, ...data];
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching chats:', err);
+    }
+  };
+
+  const fetchMessages = async (sessionId, jid) => {
+    const sid = sessionId || activeSessionIdRef.current;
+    if (!jid) return;
+    try {
+      const res = await fetchWithAuth(`/api/chats/${encodeURIComponent(jid)}/messages?sessionId=${encodeURIComponent(sid)}`);
+      if (!res.ok) {
+        console.warn(`fetchMessages: server returned ${res.status}`);
+        return;
+      }
+      const text = await res.text();
+      if (!text) return;
+      const data = JSON.parse(text);
+      if (sid === activeSessionIdRef.current) {
+        setMessages(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Error fetching messages:', err);
+    }
+  };
 
   // Monitor Firebase Auth state
   useEffect(() => {
@@ -168,21 +217,21 @@ export default function App() {
           } else {
             console.warn('[App] Profile document not found in Firestore. Auto-creating default profile...');
             
-            const emailLower = (currentUser.email || '').toLowerCase();
-            const isAdmin = emailLower.endsWith('@admin.com') || 
-                            emailLower === 'adminthelab@gmail.com' || 
-                            emailLower === import.meta.env.VITE_ADMIN_EMAIL?.toLowerCase();
-            
+            // Same shape as the signup path in AuthScreens.jsx: admin status from
+            // the shared allow-list, limits inherited from the default plan.
+            const isAdmin = isAdminEmail(currentUser.email);
+            const plan = await defaultPlanForSignup();
+            const planId = isAdmin ? 'premium' : plan.id;
+
             const defaultProfile = {
               uid: currentUser.uid,
               name: currentUser.displayName || currentUser.email.split('@')[0],
               email: currentUser.email,
               role: isAdmin ? 'admin' : 'customer',
               isApproved: isAdmin ? true : false,
-              tier: isAdmin ? 'premium' : 'free',
-              messageLimit: 500,
+              planId,
+              tier: planId,
               messagesSent: 0,
-              sessionLimit: 1,
               createdAt: new Date(),
             };
 
@@ -210,6 +259,31 @@ export default function App() {
       unsubscribeProfile();
     };
   }, []);
+
+  // Subscribe to the plan catalogue so a limit raised in the admin console is
+  // reflected here without a reload. A read failure is non-fatal: the resolver
+  // falls back to the built-in defaults.
+  useEffect(() => {
+    if (!user) {
+      setPlans([]);
+      return;
+    }
+
+    const unsubscribe = onSnapshot(
+      collection(db, PLANS_COLLECTION),
+      (snapshot) => {
+        const list = [];
+        snapshot.forEach((docSnap) => list.push(normalizePlan(docSnap.id, docSnap.data() || {})));
+        setPlans(sortPlans(list));
+      },
+      (err) => {
+        console.warn('[App] Plan catalogue unavailable, using built-in defaults:', err.message);
+        setPlans([]);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user]);
 
   // Handle page focus or tab visibility changes to auto-sync background tabs
   useEffect(() => {
@@ -528,46 +602,7 @@ export default function App() {
     }
   };
 
-  const fetchChats = async (sessionId) => {
-    const sid = sessionId || activeSessionIdRef.current;
-    try {
-      const res = await fetchWithAuth(`/api/chats?sessionId=${sid}`);
-      if (!res.ok) {
-        console.warn(`fetchChats: server returned ${res.status}`);
-        return;
-      }
-      const text = await res.text();
-      if (!text) {
-        // Empty response body — session likely not ready
-        return;
-      }
-      const data = JSON.parse(text);
-      if (sid === activeSessionIdRef.current) {
-        setChats(Array.isArray(data) ? data : []);
-      }
-    } catch (err) {
-      console.error('Error fetching chats:', err);
-    }
-  };
 
-  const fetchMessages = async (sessionId, jid) => {
-    const sid = sessionId || activeSessionIdRef.current;
-    try {
-      const res = await fetchWithAuth(`/api/chats/${jid}/messages?sessionId=${sid}`);
-      if (!res.ok) {
-        console.warn(`fetchMessages: server returned ${res.status}`);
-        return;
-      }
-      const text = await res.text();
-      if (!text) return;
-      const data = JSON.parse(text);
-      if (sid === activeSessionIdRef.current) {
-        setMessages(data);
-      }
-    } catch (err) {
-      console.error('Error fetching messages:', err);
-    }
-  };
 
   // Handle Website Logout
   const handleWebsiteLogout = async () => {
@@ -770,10 +805,27 @@ export default function App() {
     );
   }
 
-  // Calculate trial status
+  // Resolve the limits that apply to this customer from their plan, then hand
+  // the enriched profile to the dashboard. Children keep reading
+  // `userProfile.messageLimit` / `.sessionLimit` as before; those values are now
+  // plan-derived unless an admin set an explicit override on the account.
+  const effectiveLimits = userProfile ? resolveEffectiveLimits(userProfile, plans) : null;
+  const activeProfile = userProfile
+    ? {
+        ...userProfile,
+        planId: effectiveLimits.planId,
+        planName: effectiveLimits.planName,
+        messageLimit: effectiveLimits.messageLimit,
+        sessionLimit: effectiveLimits.sessionLimit,
+      }
+    : userProfile;
+
+  // Calculate trial status. The trial length comes from the plan, so a plan with
+  // trialDays of 0 has no countdown at all.
+  const trialDays = effectiveLimits?.trialDays ?? 0;
   let isTrialExpired = userProfile?.trialExpired || false;
-  let trialDaysLeft = 7;
-  if (userProfile && userProfile.role !== 'admin' && (userProfile.tier || 'free') === 'free') {
+  let trialDaysLeft = trialDays;
+  if (userProfile && userProfile.role !== 'admin' && trialDays > 0) {
     let createdAtDate = new Date();
     if (userProfile.createdAt) {
       if (typeof userProfile.createdAt.toDate === 'function') {
@@ -786,10 +838,10 @@ export default function App() {
     }
     const differenceMs = Date.now() - createdAtDate.getTime();
     const differenceDays = differenceMs / (1000 * 60 * 60 * 24);
-    if (differenceDays >= 7) {
+    if (differenceDays >= trialDays) {
       isTrialExpired = true;
     } else {
-      trialDaysLeft = Math.max(0, 7 - Math.floor(differenceDays));
+      trialDaysLeft = Math.max(0, trialDays - Math.floor(differenceDays));
     }
   }
 
@@ -814,7 +866,7 @@ export default function App() {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
           <TopBar 
             user={user} 
-            userProfile={userProfile} 
+            userProfile={activeProfile} 
             connectionStatus={connectionStatus}
             userInfo={userInfo}
             onWhatsAppLogout={handleWhatsAppLogout}
@@ -860,7 +912,7 @@ export default function App() {
                   {activeTab === 'dashboard' && (
                     <Dashboard 
                       chats={chats}
-                      userProfile={userProfile}
+                      userProfile={activeProfile}
                       userInfo={userInfo}
                       waSessions={waSessions}
                       messages={messages}
@@ -870,6 +922,7 @@ export default function App() {
                   {activeTab === 'messages' && (
                     <MessageDashboard 
                       chats={chats}
+                      setChats={setChats}
                       searchQuery={searchQuery}
                       setSearchQuery={setSearchQuery}
                       activeChatJid={activeChatJid}
@@ -878,7 +931,7 @@ export default function App() {
                       messages={messages}
                       setMessages={setMessages}
                       userInfo={userInfo}
-                      userProfile={userProfile}
+                      userProfile={activeProfile}
                       user={user}
                       onLogout={handleWhatsAppLogout}
                       activeSessionId={activeSessionId}
@@ -896,13 +949,13 @@ export default function App() {
 
               {activeTab === 'subscription' && (
                 <Subscription 
-                  userProfile={userProfile} 
+                  userProfile={activeProfile} 
                   activeSessionCount={activeSessionCount} 
                 />
               )}
 
               {activeTab === 'profile' && (
-                <Profile user={user} userProfile={userProfile} />
+                <Profile user={user} userProfile={activeProfile} />
               )}
 
               {activeTab === 'settings' && (

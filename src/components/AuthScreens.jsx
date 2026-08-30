@@ -3,6 +3,8 @@ import { auth, db } from '../utils/firebase.js';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { MessageSquare, Mail, Lock, User, ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { isAdminEmail } from '../utils/adminAccess.js';
+import { defaultPlanForSignup } from '../utils/plans.js';
 
 export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSuccess }) {
   const [email, setEmail] = useState('');
@@ -30,11 +32,17 @@ export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSu
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
 
-        // Auto-approve emails containing @admin.com or specific test accounts as admin role
-        const emailLower = email.toLowerCase();
-        const isAdmin = emailLower.endsWith('@admin.com') || 
-                        emailLower === 'adminthelab@gmail.com' || 
-                        emailLower === import.meta.env.VITE_ADMIN_EMAIL?.toLowerCase();
+        // Admin status comes from the shared allow-list, which matches
+        // isAdminEmail() in firestore.rules. The old "any @admin.com address"
+        // wildcard disagreed with the rules, so those signups built a profile
+        // the rules then refused to write.
+        const isAdmin = isAdminEmail(email);
+
+        // New accounts inherit their limits from the default plan rather than
+        // storing a copy of them, so raising a plan's quota later applies here
+        // too. messageLimit / sessionLimit are written only as admin overrides.
+        const plan = await defaultPlanForSignup();
+        const planId = isAdmin ? 'premium' : plan.id;
 
         // Create user document in Firestore
         await setDoc(doc(db, 'users', user.uid), {
@@ -43,10 +51,11 @@ export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSu
           email: email,
           role: isAdmin ? 'admin' : 'customer',
           isApproved: isAdmin ? true : false,
-          tier: isAdmin ? 'premium' : 'free',
-          messageLimit: 500,
+          planId,
+          // `tier` predates plans and is still read for free-tier gating in the
+          // customer dashboard, so it is kept in sync with planId.
+          tier: planId,
           messagesSent: 0,
-          sessionLimit: 1,
           createdAt: serverTimestamp(),
         });
 

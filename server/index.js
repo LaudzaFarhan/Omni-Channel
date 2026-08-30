@@ -149,6 +149,9 @@ async function authMiddleware(req, res, next) {
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
   req.user = decoded;
+  // Kept so downstream middleware can read Firestore as the caller (see
+  // adminMiddleware), rather than needing a service account.
+  req.idToken = token;
   next();
 }
 
@@ -619,12 +622,16 @@ function logoutSession(uid, sessionId = 'default') {
   io.to(uid).emit('store-cleared', { sessionId });
 }
 
-// Helper to fetch sessionLimit from Firestore dynamically via Google REST API
-async function fetchUserSessionLimit(uid, token) {
+// =============================================
+// FIRESTORE REST ACCESS
+// =============================================
+// Reads go out with the caller's own ID token, so the same security rules that
+// protect the browser apply here. No service account key is involved.
+function firestoreGetDocument(docPath, token) {
   return new Promise((resolve) => {
     const options = {
       hostname: 'firestore.googleapis.com',
-      path: `/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${uid}`,
+      path: `/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/${docPath}`,
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`
@@ -638,27 +645,157 @@ async function fetchUserSessionLimit(uid, token) {
         if (res.statusCode === 200) {
           try {
             const body = JSON.parse(data);
-            const limitVal = body.fields?.sessionLimit?.integerValue;
-            if (limitVal !== undefined) {
-              return resolve(parseInt(limitVal, 10));
-            }
+            return resolve({ ok: true, fields: body.fields || {} });
           } catch (e) {
-            console.error('[Firestore REST] Error parsing profile document:', e);
+            console.error(`[Firestore REST] Error parsing ${docPath}:`, e);
+            return resolve({ ok: false, status: res.statusCode, fields: {} });
           }
-        } else {
-          console.warn(`[Firestore REST] Failed to fetch profile (HTTP ${res.statusCode}):`, data);
         }
-        resolve(1); // Default fallback
+        // 404 is expected (missing plan, missing profile) and not worth a warning.
+        if (res.statusCode !== 404) {
+          console.warn(`[Firestore REST] Failed to fetch ${docPath} (HTTP ${res.statusCode}):`, data);
+        }
+        resolve({ ok: false, status: res.statusCode, fields: {} });
       });
     });
 
     req.on('error', (err) => {
-      console.error('[Firestore REST] Request error:', err);
-      resolve(1); // Default fallback
+      console.error(`[Firestore REST] Request error for ${docPath}:`, err);
+      resolve({ ok: false, status: 0, fields: {} });
     });
 
     req.end();
   });
+}
+
+// Firestore REST wraps every value in a type tag ({ integerValue: "5" }).
+function fsNumber(field) {
+  if (!field) return undefined;
+  const raw = field.integerValue ?? field.doubleValue;
+  if (raw === undefined || raw === null) return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function fsString(field) {
+  return field?.stringValue ?? undefined;
+}
+
+function fsBool(field) {
+  return field?.booleanValue ?? undefined;
+}
+
+async function fetchUserProfile(uid, token) {
+  const { ok, fields } = await firestoreGetDocument(`users/${uid}`, token);
+  if (!ok) return null;
+  return {
+    uid,
+    email: fsString(fields.email),
+    name: fsString(fields.name),
+    role: fsString(fields.role),
+    isApproved: fsBool(fields.isApproved),
+    tier: fsString(fields.tier),
+    planId: fsString(fields.planId),
+    sessionLimit: fsNumber(fields.sessionLimit),
+    messageLimit: fsNumber(fields.messageLimit),
+    messagesSent: fsNumber(fields.messagesSent),
+  };
+}
+
+// Plan documents change rarely but are read on every socket connect, so cache
+// them briefly to avoid an extra round trip per browser tab.
+const PLAN_CACHE_TTL_MS = 60000;
+const planCache = new Map(); // planId -> { expires, plan }
+
+async function fetchPlan(planId, token) {
+  if (!planId) return null;
+
+  const cached = planCache.get(planId);
+  if (cached && cached.expires > Date.now()) return cached.plan;
+
+  const { ok, fields } = await firestoreGetDocument(`plans/${planId}`, token);
+  const plan = ok
+    ? {
+        id: planId,
+        name: fsString(fields.name) || planId,
+        sessionLimit: fsNumber(fields.sessionLimit),
+        messageLimit: fsNumber(fields.messageLimit),
+      }
+    : null;
+
+  planCache.set(planId, { expires: Date.now() + PLAN_CACHE_TTL_MS, plan });
+  return plan;
+}
+
+// Effective device limit for a user.
+//
+// Mirrors resolveEffectiveLimits() in src/utils/plans.js: an explicit
+// sessionLimit on the user document wins, otherwise the value comes from their
+// plan, otherwise the historical default of one device.
+const DEFAULT_SESSION_LIMIT = 1;
+
+async function resolveSessionLimit(uid, token, profileHint) {
+  try {
+    const profile = profileHint || await fetchUserProfile(uid, token);
+    if (!profile) return DEFAULT_SESSION_LIMIT;
+
+    if (Number.isFinite(profile.sessionLimit)) {
+      return Math.max(1, profile.sessionLimit);
+    }
+
+    const planId = profile.planId || profile.tier;
+    const plan = await fetchPlan(planId, token);
+    if (plan && Number.isFinite(plan.sessionLimit)) {
+      return Math.max(1, plan.sessionLimit);
+    }
+
+    return DEFAULT_SESSION_LIMIT;
+  } catch (err) {
+    console.error('[Limits] Failed to resolve session limit:', err);
+    return DEFAULT_SESSION_LIMIT;
+  }
+}
+
+// =============================================
+// ADMIN AUTHORIZATION
+// =============================================
+// Comma-separated ADMIN_EMAILS, defaulting to the same addresses as
+// isAdminEmail() in firestore.rules. Keep the three lists in sync:
+// firestore.rules, src/utils/adminAccess.js, and this one.
+const BUILT_IN_ADMIN_EMAILS = ['owner@admin.com', 'adminthelab@gmail.com'];
+const ADMIN_EMAILS = Array.from(new Set([
+  ...BUILT_IN_ADMIN_EMAILS,
+  ...(process.env.ADMIN_EMAILS || '')
+    .split(',')
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean),
+]));
+
+function isAdminEmail(email) {
+  if (!email) return false;
+  return ADMIN_EMAILS.includes(String(email).trim().toLowerCase());
+}
+
+// Guards /api/admin/*. Runs after authMiddleware, so req.user and req.idToken
+// are already populated. Requires BOTH an allow-listed verified email and a
+// stored role of 'admin', matching the isAdmin() rule in firestore.rules — a
+// tampered role field alone grants nothing.
+async function adminMiddleware(req, res, next) {
+  const email = req.user?.email;
+
+  if (!isAdminEmail(email)) {
+    console.warn(`[Admin] Rejected ${req.method} ${req.path} for non-allow-listed address: ${email || 'unknown'}`);
+    return res.status(403).json({ error: 'Forbidden: admin access required' });
+  }
+
+  const profile = await fetchUserProfile(req.user.uid, req.idToken);
+  if (!profile || profile.role !== 'admin') {
+    console.warn(`[Admin] Rejected ${req.method} ${req.path}: ${email} is allow-listed but role is '${profile?.role || 'missing'}'`);
+    return res.status(403).json({ error: 'Forbidden: admin access required' });
+  }
+
+  req.adminProfile = profile;
+  next();
 }
 
 // Socket.io JWT Authentication Middleware
@@ -683,8 +820,8 @@ io.on('connection', async (socket) => {
   const uid = socket.user.uid;
   const token = socket.token;
 
-  // Fetch session limit dynamically from Firestore REST API
-  const sessionLimit = await fetchUserSessionLimit(uid, token);
+  // Device limit comes from the user's override if set, otherwise their plan.
+  const sessionLimit = await resolveSessionLimit(uid, token);
 
   // Check if active sockets for this user ID >= sessionLimit
   const activeSockets = io.sockets.adapter.rooms.get(uid);
@@ -978,6 +1115,11 @@ app.post('/api/logout', authMiddleware, (req, res) => {
 // =============================================
 // MAYAR PAYMENT GATEWAY INTEGRATION
 // =============================================
+// Public origin of the deployed app, used as the post-payment return URL when
+// the request carries no Referer. Set this to your domain so the hardcoded
+// fallback is never relied on.
+const PUBLIC_URL = (process.env.PUBLIC_URL || 'https://www.omnireach.my.id').trim().replace(/\/+$/, '');
+
 const MAYAR_API_KEY = (process.env.MAYAR_API_KEY || '').trim();
 const MAYAR_WEBHOOK_TOKEN = (process.env.MAYAR_WEBHOOK_TOKEN || '').trim();
 const MAYAR_PAYMENT_LINK = (process.env.MAYAR_PAYMENT_LINK || '').trim();
@@ -1044,7 +1186,7 @@ app.post('/api/mayar/create-checkout', authMiddleware, async (req, res) => {
     email: userEmail,
     amount: amount,
     description: description || (type === 'session' ? 'Device Session License' : 'Premium Subscription Upgrade'),
-    redirectUrl: req.headers.referer || 'https://www.omnireach.my.id'
+    redirectUrl: req.headers.referer || PUBLIC_URL
   };
 
   try {
@@ -1186,6 +1328,162 @@ app.post('/api/resolve-contacts', authMiddleware, async (req, res) => {
   });
 });
 
+// =============================================
+// ADMIN API — every route requires an allow-listed admin (see adminMiddleware)
+// =============================================
+
+// Recursive directory size, used to surface how much disk the Baileys
+// credential folders and chat stores are consuming.
+function directorySize(dirPath) {
+  let total = 0;
+  let files = 0;
+  try {
+    for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+      const full = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        const nested = directorySize(full);
+        total += nested.bytes;
+        files += nested.files;
+      } else {
+        try {
+          total += fs.statSync(full).size;
+          files += 1;
+        } catch {
+          // File vanished between readdir and stat; ignore.
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[Admin] Could not measure ${dirPath}:`, err.message);
+  }
+  return { bytes: total, files };
+}
+
+// Describe one in-memory WhatsApp session for the admin console. The customer's
+// email is deliberately not resolved here: the console already holds the user
+// registry from Firestore and joins on uid, which avoids a REST read per session.
+function describeSession(key, session) {
+  let chatCount = 0;
+  let messageCount = 0;
+  let contactCount = 0;
+  let unresolvedLids = 0;
+
+  try {
+    const store = getStore(key);
+    chatCount = Object.keys(store.chats || {}).length;
+    contactCount = Object.keys(store.contacts || {}).length;
+    messageCount = Object.values(store.messages || {})
+      .reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0);
+    unresolvedLids = typeof store.getUnresolvedLids === 'function'
+      ? store.getUnresolvedLids().length
+      : 0;
+  } catch (err) {
+    console.warn(`[Admin] Could not read store for ${key}:`, err.message);
+  }
+
+  return {
+    key,
+    uid: session.uid,
+    sessionId: session.sessionId,
+    status: session.status,
+    // The connected WhatsApp account, when the socket has authenticated.
+    waNumber: session.user?.id ? String(session.user.id).split(':')[0].split('@')[0] : null,
+    waName: session.user?.name || session.user?.verifiedName || null,
+    hasPendingQr: Boolean(session.qr),
+    reconnectAttempts: session.reconnectAttempts || 0,
+    connectedBrowsers: io.sockets.adapter.rooms.get(session.uid)?.size || 0,
+    chatCount,
+    messageCount,
+    contactCount,
+    unresolvedLids,
+  };
+}
+
+// Every live WhatsApp session across all tenants.
+app.get('/api/admin/sessions', authMiddleware, adminMiddleware, (req, res) => {
+  const sessions = Object.entries(activeSessions).map(([key, session]) => describeSession(key, session));
+
+  // Connected first, then by owner, so problem sessions surface at a glance.
+  const statusRank = { connected: 0, connecting: 1, qr: 2, disconnected: 3 };
+  sessions.sort((a, b) => {
+    const rank = (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9);
+    if (rank !== 0) return rank;
+    return String(a.uid).localeCompare(String(b.uid));
+  });
+
+  res.json({
+    sessions,
+    summary: {
+      total: sessions.length,
+      connected: sessions.filter(s => s.status === 'connected').length,
+      awaitingQr: sessions.filter(s => s.hasPendingQr).length,
+      distinctUsers: new Set(sessions.map(s => s.uid)).size,
+      onlineBrowsers: io.sockets.sockets.size,
+    },
+  });
+});
+
+// Force a customer's WhatsApp session to disconnect.
+//
+// Only sessions the server is already tracking can be targeted. That keeps the
+// caller from influencing the filesystem path that logoutSession() deletes.
+app.post('/api/admin/sessions/logout', authMiddleware, adminMiddleware, (req, res) => {
+  const { uid, sessionId } = req.body || {};
+
+  if (!uid || typeof uid !== 'string') {
+    return res.status(400).json({ error: 'uid is required' });
+  }
+
+  const key = sessionKey(uid, sessionId);
+  const session = activeSessions[key];
+  if (!session) {
+    return res.status(404).json({ error: 'No active session with that id' });
+  }
+
+  console.log(`[Admin] ${req.user.email} is force-disconnecting session ${key}`);
+  logoutSession(session.uid, session.sessionId);
+
+  res.json({ success: true, key });
+});
+
+// Server-side operational snapshot for the admin console.
+app.get('/api/admin/overview', authMiddleware, adminMiddleware, (req, res) => {
+  const sessionsDir = path.resolve('sessions');
+  const disk = fs.existsSync(sessionsDir) ? directorySize(sessionsDir) : { bytes: 0, files: 0 };
+  const memory = process.memoryUsage();
+  const statuses = {};
+  Object.values(activeSessions).forEach((s) => {
+    statuses[s.status] = (statuses[s.status] || 0) + 1;
+  });
+
+  res.json({
+    uptimeSeconds: Math.floor(process.uptime()),
+    nodeVersion: process.version,
+    baileysVersion: latestBaileysVersion.join('.'),
+    sessions: {
+      tracked: Object.keys(activeSessions).length,
+      byStatus: statuses,
+    },
+    onlineBrowsers: io.sockets.sockets.size,
+    storage: {
+      path: sessionsDir,
+      bytes: disk.bytes,
+      files: disk.files,
+    },
+    memory: {
+      rssBytes: memory.rss,
+      heapUsedBytes: memory.heapUsed,
+    },
+    config: {
+      corsOrigin: allowedOrigins === '*' ? '*' : allowedOrigins,
+      firebaseProjectId: FIREBASE_PROJECT_ID,
+      adminEmailCount: ADMIN_EMAILS.length,
+      mayarConfigured: Boolean(MAYAR_API_KEY || MAYAR_PAYMENT_LINK),
+      mayarWebhookTokenSet: Boolean(MAYAR_WEBHOOK_TOKEN),
+    },
+  });
+});
+
 // Unauthenticated health check for the reverse proxy / uptime monitoring.
 // Intentionally exposes no session or customer data.
 app.get('/api/health', (req, res) => {
@@ -1196,13 +1494,43 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Serve frontend build static files in production
+// An unknown /api path must never fall through to the SPA catch-all below.
+// Returning index.html for a mistyped or removed endpoint makes the client fail
+// with "Unexpected token '<'" instead of a readable error, which matters more now
+// that the frontend is served from this same origin.
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: `Unknown API endpoint: ${req.method} /api${req.path}` });
+});
+
+// Serve the frontend build. Present when the app is deployed as a single origin
+// (frontend + API from this process); absent during local development, where
+// Vite serves the frontend on port 3000 and proxies here.
 const distPath = path.resolve('dist');
 if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
+  console.log(`[Config] Serving frontend build from ${distPath}`);
+
+  app.use(express.static(distPath, {
+    // Vite fingerprints asset filenames, so they can be cached indefinitely.
+    // index.html must not be, or clients keep booting a stale bundle after a
+    // deploy and never pick up the new asset hashes.
+    setHeaders: (res, filePath) => {
+      if (path.basename(filePath) === 'index.html') {
+        res.setHeader('Cache-Control', 'no-cache');
+      } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
+  }));
+
+  // Deep links (/dashboard, /login, ...) are served the SPA shell. This path
+  // bypasses express.static, so the no-cache header has to be set again here or
+  // a returning browser can boot a stale bundle that references deleted assets.
   app.get('*', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(path.join(distPath, 'index.html'));
   });
+} else {
+  console.warn('[Config] No dist/ directory found — API only. Run `npm run build` to serve the frontend from this process.');
 }
 
 // Graceful shutdown so pm2/systemd restarts don't sever sockets abruptly.

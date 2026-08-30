@@ -28,6 +28,10 @@ service cloud.firestore {
     // IMPORTANT: previously any address ending in "@admin.com" was treated as
     // admin, which meant anyone who registered such an address became an admin.
     // Add real admin addresses here instead.
+    //
+    // Keep in sync with src/utils/adminAccess.js (decides what the client writes
+    // at signup) and ADMIN_EMAILS in the server environment (guards the
+    // /api/admin routes). This function is the actual enforcement point.
     function isAdminEmail() {
       return isSignedIn()
         && request.auth.token.email != null
@@ -35,6 +39,17 @@ service cloud.firestore {
              'owner@admin.com',
              'adminthelab@gmail.com'
            ];
+    }
+
+    // A signup may only place itself on the plan an admin marked as the default.
+    // 'free' stays accepted so registration keeps working before any plan
+    // documents have been created.
+    function isSignupPlan(planId) {
+      return planId == 'free'
+        || (
+             exists(/databases/$(database)/documents/plans/$(planId))
+             && get(/databases/$(database)/documents/plans/$(planId)).data.isDefault == true
+           );
     }
 
     // Trusts the stored role, but only for accounts that are also on the
@@ -52,13 +67,17 @@ service cloud.firestore {
       allow read: if isSelf(userId) || isAdmin();
 
       // --- CREATE (self-registration) ---
-      // New accounts must start unprivileged. Admin bootstrap is permitted only
-      // for allow-listed emails, so the first admin can still create a profile.
+      // New accounts must start unprivileged: the customer role, unapproved, and
+      // on the plan marked as the signup default. They also may not write their
+      // own limit overrides, which would otherwise let a signup grant itself an
+      // arbitrary quota. Admin bootstrap is permitted only for allow-listed
+      // emails, so the first admin can still create a profile.
       allow create: if isSelf(userId) && (
         (
           request.resource.data.role == 'customer' &&
           request.resource.data.isApproved == false &&
-          request.resource.data.tier == 'free'
+          isSignupPlan(request.resource.data.tier) &&
+          !request.resource.data.keys().hasAny(['messageLimit', 'sessionLimit', 'trialExpired'])
         )
         || isAdminEmail()
       );
@@ -77,6 +96,23 @@ service cloud.firestore {
 
       // --- ADMIN full control ---
       allow update, delete: if isAdmin();
+    }
+
+    match /transactions/{txId} {
+      allow read: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Plan catalogue (quota, device limit, price per tier).
+    //
+    // Readable by any signed-in user: the dashboard resolves the customer's
+    // effective limits from their plan, and the backend reads the plan through
+    // the REST API using the caller's own token when enforcing the device limit.
+    // Only admins may define or change a plan.
+    match /plans/{planId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     // Deny everything else by default.
