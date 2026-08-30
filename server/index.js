@@ -839,6 +839,13 @@ app.get('/api/chats', approved, (req, res) => {
 // 07:00. The client sends its Date#getTimezoneOffset() and the shift is applied
 // to the epoch before the day and hour are read back out in UTC, which also
 // handles the half-hour zones a whole-hour rotation would get wrong.
+// Optional `from` / `to` narrow the window, as epoch milliseconds.
+//
+// Milliseconds rather than dates on purpose: a date needs a timezone to mean an
+// instant, and the browser is the only party that knows the viewer's. It already
+// sends tzOffset for bucketing, so it also converts its own date pickers to
+// absolute instants and the server just compares numbers. Accepting 'YYYY-MM-DD'
+// here would silently mean UTC midnight and shift a WIB operator's day by 7 hours.
 app.get('/api/stats/activity', approved, (req, res) => {
   const ownerId = req.workspaceId;
   const sid = req.query.sessionId || 'default';
@@ -849,6 +856,15 @@ app.get('/api/stats/activity', approved, (req, res) => {
   const rawOffset = Number(req.query.tzOffset);
   const tzOffset = Number.isFinite(rawOffset) ? Math.max(-900, Math.min(900, rawOffset)) : 0;
 
+  const bound = (raw) => {
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  };
+  let fromMs = bound(req.query.from);
+  let toMs = bound(req.query.to);
+  // Tolerate a reversed range rather than returning an empty grid for it.
+  if (fromMs !== null && toMs !== null && fromMs > toMs) [fromMs, toMs] = [toMs, fromMs];
+
   const blank = () => Array.from({ length: 7 }, () => new Array(24).fill(0));
   const incoming = blank();
   const outgoing = blank();
@@ -856,6 +872,12 @@ app.get('/api/stats/activity', approved, (req, res) => {
   let total = 0;
   let earliest = null;
   let latest = null;
+
+  // Bounds across EVERYTHING stored, computed even when a filter is applied. The
+  // picker needs them to constrain its inputs and to make "all time" meaningful,
+  // and they cost nothing here because the scan happens either way.
+  let availableFrom = null;
+  let availableTo = null;
 
   for (const messages of Object.values(store.messages)) {
     for (const message of messages) {
@@ -867,6 +889,12 @@ app.get('/api/stats/activity', approved, (req, res) => {
 
       const ms = seconds * 1000;
       if (ms > Date.now() + 86400000) continue; // clock-skewed junk
+
+      if (availableFrom === null || ms < availableFrom) availableFrom = ms;
+      if (availableTo === null || ms > availableTo) availableTo = ms;
+
+      if (fromMs !== null && ms < fromMs) continue;
+      if (toMs !== null && ms > toMs) continue;
 
       const shifted = new Date(ms - tzOffset * 60000);
       const day = shifted.getUTCDay();
@@ -885,11 +913,18 @@ app.get('/api/stats/activity', approved, (req, res) => {
     incoming,
     outgoing,
     total,
-    // The window the numbers actually cover. The store keeps only the last 100
-    // messages per chat, so this is not "all time" and the UI should not imply
-    // it is.
+    // The window the returned numbers actually cover — the first and last message
+    // counted, not the requested bounds, so an empty stretch at either end of a
+    // custom range is not claimed as data.
     from: earliest,
     to: latest,
+    // Everything on disk. The store keeps only the last 100 messages per chat, so
+    // this is not "all time" and the UI should not imply it is.
+    availableFrom,
+    availableTo,
+    // Echoed so the client can tell a filtered response from an unfiltered one.
+    requestedFrom: fromMs,
+    requestedTo: toMs,
     chatsCounted: Object.keys(store.messages).length,
   });
 });

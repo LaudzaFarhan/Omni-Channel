@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Clock, MessageSquare } from 'lucide-react';
+import { Clock, MessageSquare, CalendarRange } from 'lucide-react';
 import { fetchActivityHeatmap } from '../../utils/api.js';
 import { subscribeSocket } from '../../utils/socket.js';
 
@@ -11,6 +11,75 @@ const VIEWS = [
   { key: 'incoming', label: 'Masuk' },
   { key: 'outgoing', label: 'Keluar' },
 ];
+
+// Rolling windows, plus everything and a custom span. `days: null` means no bound.
+const RANGES = [
+  { key: '7d', label: '7 hari', days: 7 },
+  { key: '30d', label: '30 hari', days: 30 },
+  { key: '90d', label: '90 hari', days: 90 },
+  { key: 'all', label: 'Semua', days: null },
+  { key: 'custom', label: 'Kustom', days: null },
+];
+
+// Local midnight at the start of the day `daysAgo` days back, and the very end of
+// today. Both are computed in the VIEWER's timezone and then handed to the server as
+// absolute instants, because "the last 7 days" is a statement about someone's
+// calendar, not about UTC.
+function startOfDay(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function endOfDay(date) {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+}
+
+/** Bounds in epoch ms for a preset, or null when unbounded. */
+function boundsFor(rangeKey, customFrom, customTo) {
+  if (rangeKey === 'all') return { from: null, to: null };
+
+  if (rangeKey === 'custom') {
+    // Order the DATES before turning them into instants, not the instants
+    // afterwards. `from` becomes the start of its day and `to` the end of its day,
+    // so swapping the two numbers would pair a 23:59 lower bound with a 00:00 upper
+    // one and quietly drop both boundary days. 'YYYY-MM-DD' sorts chronologically as
+    // a string, so comparing them directly is enough.
+    let a = customFrom;
+    let b = customTo;
+    if (a && b && a > b) [a, b] = [b, a];
+
+    return {
+      // Splitting the parts and building a local Date avoids Date.parse, which reads
+      // 'YYYY-MM-DD' as UTC midnight and would shift the boundary by the whole
+      // offset — 7 hours for WIB.
+      from: a ? startOfDay(localDate(a)) : null,
+      to: b ? endOfDay(localDate(b)) : null,
+    };
+  }
+
+  const preset = RANGES.find(r => r.key === rangeKey);
+  if (!preset?.days) return { from: null, to: null };
+
+  const start = new Date();
+  start.setDate(start.getDate() - (preset.days - 1));
+  return { from: startOfDay(start), to: endOfDay(new Date()) };
+}
+
+function localDate(yyyyMmDd) {
+  const [y, m, d] = String(yyyyMmDd).split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
+/** Epoch ms -> 'YYYY-MM-DD' in local time, for an <input type="date"> value. */
+function toInputDate(ms) {
+  if (!Number.isFinite(ms)) return '';
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 // Five buckets, matching the "Sepi -> Ramai" legend. Level 0 is a distinct
 // neutral rather than the lightest green, so "no messages at all" reads
@@ -53,6 +122,13 @@ export default function InteractionHeatmap({ activeSessionId = 'default', connec
   const [error, setError] = useState(null);
   const [view, setView] = useState('all');
 
+  // Defaults to everything stored, which is what the panel showed before a filter
+  // existed — and the store only keeps the last 100 messages per chat, so "all" is
+  // already a bounded window rather than an unbounded scan.
+  const [range, setRange] = useState('all');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+
   // Hover is transient; a click pins a cell so the reading survives the pointer
   // leaving, and so touch users can read it at all.
   const [hovered, setHovered] = useState(null);
@@ -60,13 +136,24 @@ export default function InteractionHeatmap({ activeSessionId = 'default', connec
 
   const gridRef = useRef(null);
 
+  // A custom range with only one end filled is still in progress; sending it would
+  // flash a half-applied filter between the two clicks.
+  const customIncomplete = range === 'custom' && !(customFrom && customTo);
+
   const load = useCallback(async () => {
     if (!connected) {
       setLoading(false);
       return;
     }
     try {
-      setData(await fetchActivityHeatmap(activeSessionId));
+      const bounds = customIncomplete
+        ? { from: null, to: null }
+        : boundsFor(range, customFrom, customTo);
+
+      setData(await fetchActivityHeatmap(activeSessionId, {
+        from: bounds.from ?? undefined,
+        to: bounds.to ?? undefined,
+      }));
       setError(null);
     } catch (err) {
       console.info('[Heatmap] Could not load activity:', err.message);
@@ -74,7 +161,7 @@ export default function InteractionHeatmap({ activeSessionId = 'default', connec
     } finally {
       setLoading(false);
     }
-  }, [activeSessionId, connected]);
+  }, [activeSessionId, connected, range, customFrom, customTo, customIncomplete]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -183,7 +270,19 @@ export default function InteractionHeatmap({ activeSessionId = 'default', connec
     });
   };
 
-  const range = data ? formatRange(data.from, data.to) : null;
+  // The span the returned numbers actually cover, which is not the same as the span
+  // that was requested: a custom range with quiet days at either end reports the
+  // first and last message inside it.
+  const coveredLabel = data ? formatRange(data.from, data.to) : null;
+
+  // Constrain the pickers to what is actually on disk, so a range with no possible
+  // data cannot be chosen.
+  const minDate = toInputDate(data?.availableFrom);
+  const maxDate = toInputDate(data?.availableTo);
+
+  // Whether the server actually applied a bound, taken from what it echoed rather
+  // than from local state — they disagree while a custom range is half-filled.
+  const isFiltered = Boolean(data?.requestedFrom || data?.requestedTo);
 
   return (
     <div className="dashboard-panel heatmap-panel">
@@ -206,6 +305,56 @@ export default function InteractionHeatmap({ activeSessionId = 'default', connec
         </div>
       </div>
 
+      {/* Range picker. Outside the body's conditional so it stays usable when the
+          current selection returns nothing — otherwise picking an empty range would
+          hide the only control that could undo it. */}
+      {connected && !error && (
+        <div className="heatmap-rangebar">
+          <span className="heatmap-rangebar-label">
+            <CalendarRange size={14} /> Rentang
+          </span>
+
+          <div className="heatmap-range-toggle" role="group" aria-label="Rentang tanggal">
+            {RANGES.map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                className={`heatmap-view-btn ${range === key ? 'active' : ''}`}
+                aria-pressed={range === key}
+                onClick={() => setRange(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {range === 'custom' && (
+            <div className="heatmap-custom-range">
+              <input
+                type="date"
+                aria-label="Dari tanggal"
+                value={customFrom}
+                min={minDate || undefined}
+                max={customTo || maxDate || undefined}
+                onChange={(e) => setCustomFrom(e.target.value)}
+              />
+              <span aria-hidden="true">–</span>
+              <input
+                type="date"
+                aria-label="Sampai tanggal"
+                value={customTo}
+                min={customFrom || minDate || undefined}
+                max={maxDate || undefined}
+                onChange={(e) => setCustomTo(e.target.value)}
+              />
+              {customIncomplete && (
+                <span className="heatmap-range-hint">Pilih kedua tanggal</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="dashboard-panel-body heatmap-body">
         {loading ? (
           <div className="spinner" />
@@ -222,11 +371,26 @@ export default function InteractionHeatmap({ activeSessionId = 'default', connec
         ) : total === 0 ? (
           <div className="dashboard-empty-state">
             <div className="dashboard-empty-icon"><MessageSquare size={40} /></div>
-            <p>
-              {view === 'all'
-                ? 'Peta panas akan terisi setelah ada percakapan'
-                : `Belum ada pesan ${view === 'incoming' ? 'masuk' : 'keluar'} yang tercatat`}
-            </p>
+            {/* "Nothing here" and "nothing in the window you picked" are different
+                problems with different fixes, so they get different wording. */}
+            {isFiltered ? (
+              <>
+                <p>Tidak ada interaksi pada rentang ini</p>
+                <button
+                  type="button"
+                  className="heatmap-view-btn"
+                  onClick={() => { setRange('all'); setCustomFrom(''); setCustomTo(''); }}
+                >
+                  Tampilkan semua
+                </button>
+              </>
+            ) : (
+              <p>
+                {view === 'all'
+                  ? 'Peta panas akan terisi setelah ada percakapan'
+                  : `Belum ada pesan ${view === 'incoming' ? 'masuk' : 'keluar'} yang tercatat`}
+              </p>
+            )}
           </div>
         ) : (
           <div className="heatmap-wrap">
@@ -289,7 +453,7 @@ export default function InteractionHeatmap({ activeSessionId = 'default', connec
                     {' '}({busiest.count})
                   </span>
                 )}
-                {range && <span className="heatmap-range">{total} interaksi · {range}</span>}
+                {coveredLabel && <span className="heatmap-range">{total} interaksi · {coveredLabel}</span>}
               </div>
 
               <div className="heatmap-legend" aria-hidden="true">

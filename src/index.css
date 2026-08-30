@@ -2524,6 +2524,64 @@ input:checked + .slider:before {
   color: var(--primary);
 }
 
+/* Date-range bar, between the header and the grid. Its own row rather than more
+   buttons in the header, which already carries the Semua/Masuk/Keluar toggle. */
+.heatmap-rangebar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 22px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--overlay-subtle);
+}
+
+.heatmap-rangebar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dimmed);
+}
+
+.heatmap-range-toggle {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.heatmap-custom-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  color: var(--text-dimmed);
+}
+
+.heatmap-custom-range input[type='date'] {
+  padding: 5px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-panel, var(--bg-sidebar));
+  color: var(--text-main);
+  font-size: 0.8rem;
+  font-family: inherit;
+}
+
+/* The native picker icon is near-black and vanishes on the dark surface. */
+[data-theme='dark'] .heatmap-custom-range input[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(1) opacity(0.65);
+}
+
+.heatmap-range-hint {
+  font-size: 0.75rem;
+  color: #f59e0b;
+}
+
 /* The body is centred for empty states; the populated grid wants the full width. */
 .heatmap-body {
   align-items: stretch;

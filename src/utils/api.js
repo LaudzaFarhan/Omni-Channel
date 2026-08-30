@@ -404,12 +404,21 @@ export async function acceptInvite({ token, password, name }) {
  * would otherwise bucket a WIB afternoon into the morning. getTimezoneOffset()
  * returns minutes to add to local time to reach UTC, which is what the server
  * expects.
+ *
+ * `from` / `to` are epoch milliseconds and optional. They are absolute instants
+ * rather than dates for the same reason as the offset: only the browser knows what
+ * "the 5th" means as a moment in time, so it resolves its own picker locally and
+ * the server only ever compares numbers.
  */
-export async function fetchActivityHeatmap(sessionId = 'default') {
-  const tzOffset = new Date().getTimezoneOffset();
-  return apiFetch(
-    `/api/stats/activity?sessionId=${encodeURIComponent(sessionId)}&tzOffset=${tzOffset}`
-  );
+export async function fetchActivityHeatmap(sessionId = 'default', { from, to } = {}) {
+  const params = new URLSearchParams({
+    sessionId,
+    tzOffset: String(new Date().getTimezoneOffset()),
+  });
+  if (Number.isFinite(from)) params.set('from', String(Math.floor(from)));
+  if (Number.isFinite(to)) params.set('to', String(Math.floor(to)));
+
+  return apiFetch(`/api/stats/activity?${params.toString()}`);
 }
 
 // ---------------------------------------------------------------------------
