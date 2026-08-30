@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Clock, MessageSquare, CalendarRange } from 'lucide-react';
 import { fetchActivityHeatmap } from '../../utils/api.js';
 import { subscribeSocket } from '../../utils/socket.js';
+import { RANGES, boundsFor, toDayKey } from '../../utils/dateRange.js';
+import DateRangePicker from './DateRangePicker.jsx';
 
 const DAY_LABELS = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 const DAY_NAMES = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -12,74 +14,10 @@ const VIEWS = [
   { key: 'outgoing', label: 'Keluar' },
 ];
 
-// Rolling windows, plus everything and a custom span. `days: null` means no bound.
-const RANGES = [
-  { key: '7d', label: '7 hari', days: 7 },
-  { key: '30d', label: '30 hari', days: 30 },
-  { key: '90d', label: '90 hari', days: 90 },
-  { key: 'all', label: 'Semua', days: null },
-  { key: 'custom', label: 'Kustom', days: null },
-];
-
-// Local midnight at the start of the day `daysAgo` days back, and the very end of
-// today. Both are computed in the VIEWER's timezone and then handed to the server as
-// absolute instants, because "the last 7 days" is a statement about someone's
-// calendar, not about UTC.
-function startOfDay(date) {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
-function endOfDay(date) {
-  const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
-  return d.getTime();
-}
-
-/** Bounds in epoch ms for a preset, or null when unbounded. */
-function boundsFor(rangeKey, customFrom, customTo) {
-  if (rangeKey === 'all') return { from: null, to: null };
-
-  if (rangeKey === 'custom') {
-    // Order the DATES before turning them into instants, not the instants
-    // afterwards. `from` becomes the start of its day and `to` the end of its day,
-    // so swapping the two numbers would pair a 23:59 lower bound with a 00:00 upper
-    // one and quietly drop both boundary days. 'YYYY-MM-DD' sorts chronologically as
-    // a string, so comparing them directly is enough.
-    let a = customFrom;
-    let b = customTo;
-    if (a && b && a > b) [a, b] = [b, a];
-
-    return {
-      // Splitting the parts and building a local Date avoids Date.parse, which reads
-      // 'YYYY-MM-DD' as UTC midnight and would shift the boundary by the whole
-      // offset — 7 hours for WIB.
-      from: a ? startOfDay(localDate(a)) : null,
-      to: b ? endOfDay(localDate(b)) : null,
-    };
-  }
-
-  const preset = RANGES.find(r => r.key === rangeKey);
-  if (!preset?.days) return { from: null, to: null };
-
-  const start = new Date();
-  start.setDate(start.getDate() - (preset.days - 1));
-  return { from: startOfDay(start), to: endOfDay(new Date()) };
-}
-
-function localDate(yyyyMmDd) {
-  const [y, m, d] = String(yyyyMmDd).split('-').map(Number);
-  return new Date(y, (m || 1) - 1, d || 1);
-}
-
-/** Epoch ms -> 'YYYY-MM-DD' in local time, for an <input type="date"> value. */
-function toInputDate(ms) {
-  if (!Number.isFinite(ms)) return '';
-  const d = new Date(ms);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
+// RANGES, boundsFor and the day-key helpers live in utils/dateRange.js, shared with
+// the calendar picker. They were local to this file until the picker needed the same
+// arithmetic, and duplicating timezone-sensitive date maths across two components is
+// how the reversed-range bug got in the first time.
 
 // Five buckets, matching the "Sepi -> Ramai" legend. Level 0 is a distinct
 // neutral rather than the lightest green, so "no messages at all" reads
@@ -275,10 +213,11 @@ export default function InteractionHeatmap({ activeSessionId = 'default', connec
   // first and last message inside it.
   const coveredLabel = data ? formatRange(data.from, data.to) : null;
 
-  // Constrain the pickers to what is actually on disk, so a range with no possible
-  // data cannot be chosen.
-  const minDate = toInputDate(data?.availableFrom);
-  const maxDate = toInputDate(data?.availableTo);
+  // Constrain the calendar to what is actually on disk, so a range with no possible
+  // data cannot be chosen. Days outside this are rendered disabled rather than hidden,
+  // which shows WHY they cannot be picked.
+  const minDay = data?.availableFrom ? toDayKey(data.availableFrom) : '';
+  const maxDay = data?.availableTo ? toDayKey(data.availableTo) : '';
 
   // Whether the server actually applied a bound, taken from what it echoed rather
   // than from local state — they disagree while a custom range is half-filled.
@@ -329,28 +268,17 @@ export default function InteractionHeatmap({ activeSessionId = 'default', connec
           </div>
 
           {range === 'custom' && (
-            <div className="heatmap-custom-range">
-              <input
-                type="date"
-                aria-label="Dari tanggal"
-                value={customFrom}
-                min={minDate || undefined}
-                max={customTo || maxDate || undefined}
-                onChange={(e) => setCustomFrom(e.target.value)}
-              />
-              <span aria-hidden="true">–</span>
-              <input
-                type="date"
-                aria-label="Sampai tanggal"
-                value={customTo}
-                min={customFrom || minDate || undefined}
-                max={maxDate || undefined}
-                onChange={(e) => setCustomTo(e.target.value)}
-              />
-              {customIncomplete && (
-                <span className="heatmap-range-hint">Pilih kedua tanggal</span>
-              )}
-            </div>
+            <DateRangePicker
+              from={customFrom}
+              to={customTo}
+              minDay={minDay}
+              maxDay={maxDay}
+              onChange={({ from, to }) => {
+                setCustomFrom(from);
+                setCustomTo(to);
+              }}
+              onClear={() => { setCustomFrom(''); setCustomTo(''); }}
+            />
           )}
         </div>
       )}

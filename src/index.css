@@ -2553,33 +2553,251 @@ input:checked + .slider:before {
   flex-wrap: wrap;
 }
 
-.heatmap-custom-range {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 0.8rem;
-  color: var(--text-dimmed);
-}
-
-.heatmap-custom-range input[type='date'] {
-  padding: 5px 9px;
-  border-radius: 6px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-panel, var(--bg-sidebar));
-  color: var(--text-main);
-  font-size: 0.8rem;
-  font-family: inherit;
-}
-
-/* The native picker icon is near-black and vanishes on the dark surface. */
-[data-theme='dark'] .heatmap-custom-range input[type='date']::-webkit-calendar-picker-indicator {
-  filter: invert(1) opacity(0.65);
-}
-
 .heatmap-range-hint {
   font-size: 0.75rem;
   color: #f59e0b;
+}
+
+/* ---------------------------------------------------------------------------
+   Calendar range picker
+   ---------------------------------------------------------------------------
+   The popover is absolutely positioned inside the range bar, and .dashboard-panel
+   sets overflow:hidden for its rounded corners — which would clip it at the panel
+   edge. Overridden here rather than portalling: nothing else in this panel needs
+   clipping (the header and range bar are full-bleed rows, and the grid body has its
+   own overflow for horizontal scroll). */
+.heatmap-panel {
+  overflow: visible;
+}
+
+.heatmap-calendar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.heatmap-calendar-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-panel, var(--bg-sidebar));
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.heatmap-calendar-trigger:hover {
+  border-color: var(--primary);
+  color: var(--text-main);
+}
+
+.heatmap-calendar-trigger.has-value {
+  color: var(--text-main);
+  border-color: rgba(0, 168, 132, 0.35);
+}
+
+.heatmap-calendar-count {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--primary);
+  background: rgba(0, 168, 132, 0.12);
+}
+
+.heatmap-calendar-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-dimmed);
+  cursor: pointer;
+}
+
+.heatmap-calendar-clear:hover {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.heatmap-calendar-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-panel, var(--bg-sidebar));
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.18);
+}
+
+.heatmap-calendar-pop.align-right {
+  left: auto;
+  right: 0;
+}
+
+.heatmap-calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.heatmap-calendar-nav button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.heatmap-calendar-nav button:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.heatmap-calendar-nav button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.heatmap-calendar-months {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.heatmap-calendar-month {
+  min-width: 208px;
+}
+
+.heatmap-calendar-caption {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-main);
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.heatmap-calendar-weekdays,
+.heatmap-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.heatmap-calendar-weekdays {
+  margin-bottom: 4px;
+}
+
+.heatmap-calendar-weekdays span {
+  text-align: center;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-dimmed);
+}
+
+/* No column gap, so a selected span reads as one continuous bar rather than a row
+   of separate chips. The rounding is moved to the two ends instead. */
+.heatmap-calendar-grid {
+  row-gap: 2px;
+  column-gap: 0;
+}
+
+.heatmap-day {
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 0.78rem;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 0;
+  padding: 0;
+}
+
+.heatmap-day.is-blank {
+  cursor: default;
+}
+
+.heatmap-day:hover:not(.is-disabled):not(.in-range) {
+  background: var(--overlay-medium);
+  border-radius: 6px;
+}
+
+.heatmap-day.is-disabled {
+  color: var(--text-dimmed);
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Today is marked even when it is outside the selection. */
+.heatmap-day.is-today {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.heatmap-day.in-range {
+  background: rgba(0, 168, 132, 0.14);
+}
+
+.heatmap-day.is-start,
+.heatmap-day.is-end {
+  background: var(--primary);
+  color: #fff;
+  font-weight: 700;
+}
+
+.heatmap-day.is-start { border-radius: 6px 0 0 6px; }
+.heatmap-day.is-end { border-radius: 0 6px 6px 0; }
+/* A single-day selection is both ends at once. */
+.heatmap-day.is-start.is-end { border-radius: 6px; }
+
+.heatmap-calendar-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.heatmap-calendar-avail {
+  color: var(--text-dimmed);
+}
+
+@media (max-width: 560px) {
+  /* One month at a time on a phone; two would overflow the popover. */
+  .heatmap-calendar-months {
+    gap: 0;
+  }
+  .heatmap-calendar-month:last-child {
+    display: none;
+  }
 }
 
 /* The body is centred for empty states; the populated grid wants the full width. */
