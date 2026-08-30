@@ -969,11 +969,20 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
             let senderName = null;
             let senderColor = '#999';
             if (isGroup && !isMe) {
-              // Try pushName first, then participantPn phone, then participant LID
+              // Resolution order: the sender's own pushName, then their phone
+              // number, then a stable label derived from their LID.
+              //
+              // participantAlt is the Baileys v7 name for what v6 called
+              // participantPn. Only participantPn was checked here, so after the
+              // v7 upgrade every group sender fell through to the last branch —
+              // or to null when the key had no participant at all, which is why
+              // messages showed a bare "WA" avatar with no name.
+              const participantPhone = msg.key.participantAlt || msg.key.participantPn;
+
               if (msg.pushName) {
                 senderName = msg.pushName;
-              } else if (msg.key.participantPn) {
-                senderName = '+' + msg.key.participantPn.split('@')[0];
+              } else if (participantPhone) {
+                senderName = '+' + participantPhone.split('@')[0];
               } else if (msg.key.participant) {
                 const pid = msg.key.participant.split('@')[0];
                 if (!/^\d+$/.test(pid)) {
@@ -987,8 +996,8 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
               }
 
               // Generate a stable color for each sender
-              if (msg.key.participant || msg.key.participantPn) {
-                const senderId = msg.key.participant || msg.key.participantPn;
+              if (msg.key.participant || participantPhone) {
+                const senderId = msg.key.participant || participantPhone;
                 const senderColors = [
                   '#e15d44', '#009b77', '#dd4124', '#45b8ac', '#5b5ea6',
                   '#9b2335', '#dfcfbe', '#55b4b0', '#e15d44', '#7fcdcd',

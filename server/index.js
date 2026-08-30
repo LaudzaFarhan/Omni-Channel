@@ -460,9 +460,26 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
         const store = getStore(key);
         for (const msg of messages) {
           const jid = msg.key.remoteJid;
-          
+          const isGroup = typeof jid === 'string' && jid.endsWith('@g.us');
+
           if (!msg.key.fromMe && msg.pushName) {
-            store.addContact({ id: jid, name: msg.pushName });
+            if (isGroup) {
+              // In a group, pushName belongs to the PARTICIPANT who spoke, not to
+              // the group. Attributing it to the group jid renamed the whole
+              // conversation to whoever last sent a message, and meant the
+              // sender was never learned at all.
+              //
+              // participantAlt is the v7 name for what v6 called participantPn.
+              const participant = msg.key.participant
+                || msg.key.participantAlt
+                || msg.key.participantPn;
+
+              if (participant) {
+                store.addContact({ id: participant, name: msg.pushName });
+              }
+            } else {
+              store.addContact({ id: jid, name: msg.pushName });
+            }
           }
 
           store.addMessage(jid, msg);
