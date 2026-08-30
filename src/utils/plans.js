@@ -112,6 +112,12 @@ export function normalizePlan(id, raw = {}) {
     maxAgents: raw.maxAgents === null || raw.maxAgents === undefined
       ? null
       : Math.max(1, num(raw.maxAgents, 1)),
+
+    // A per-unit top-up rather than a plan. Must survive normalisation for the same
+    // reason the agent-pricing fields must: the plan editor reads its own form values
+    // back from the normalised object, so dropping this here would silently turn an
+    // add-on back into a plan on the next save.
+    isAddon: Boolean(raw.isAddon),
   };
 }
 
@@ -129,8 +135,12 @@ export function sortPlans(plans) {
 
 // Plans an admin can assign: archived plans stay resolvable for the users
 // already on them, but are hidden from the assignment dropdown.
+//
+// Add-ons are excluded. They are top-ups, not plans — assigning one as somebody's
+// plan would give them the add-on's message limit (typically nothing) in place of what
+// they were paying for.
 export function assignablePlans(plans) {
-  return sortPlans(plans.filter(p => !p.archived));
+  return sortPlans(plans.filter(p => !p.archived && !p.isAddon));
 }
 
 export function getDefaultPlan(plans) {

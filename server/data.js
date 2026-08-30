@@ -78,6 +78,10 @@ export function mapPlan(row) {
     maxAgents: row.max_agents === null || row.max_agents === undefined
       ? null
       : Number(row.max_agents),
+
+    // A per-unit top-up rather than a plan: buying it adds agents to the current plan
+    // instead of switching to this one. See migration 006 and isAddon() in pricing.js.
+    isAddon: Boolean(row.is_addon),
   };
 }
 
@@ -407,6 +411,48 @@ export async function setPurchasedAgents(userId, agents) {
   return mapUser(row);
 }
 
+/**
+ * Add agents to what the customer already has, for an add-on purchase.
+ *
+ * The starting point is deliberately COALESCE(purchased_agents, plan.included_agents,
+ * plan.session_limit, 1) rather than purchased_agents alone. NULL there means "inherit
+ * the plan", so treating it as zero would turn a Premium customer's first add-on
+ * purchase into a DOWNGRADE: 5 included agents would become 1 bought agent.
+ *
+ * session_limit is untouched. It is the admin's explicit override and outranks this,
+ * so a manually granted limit is not silently overwritten by a customer's top-up.
+ */
+export async function addPurchasedAgents(userId, delta) {
+  const amount = Math.max(1, Math.floor(Number(delta) || 0));
+  const row = await queryOne(
+    `UPDATE users u
+        SET purchased_agents = COALESCE(
+              u.purchased_agents,
+              p.included_agents,
+              p.session_limit,
+              1
+            ) + $2
+       FROM plans p
+      WHERE u.id = $1 AND p.id = u.plan_id
+      RETURNING ${USER_COLUMNS.split(',').map(c => `u.${c.trim()}`).join(', ')}`,
+    [userId, amount]
+  );
+
+  // No plan row to join against (plan_id is NULL, or points at a deleted plan), so the
+  // FROM clause matched nothing. Fall back to the column alone, where NULL genuinely
+  // does mean "nothing inherited".
+  if (!row) {
+    const fallback = await queryOne(
+      `UPDATE users SET purchased_agents = COALESCE(purchased_agents, 1) + $2
+        WHERE id = $1 RETURNING ${USER_COLUMNS}`,
+      [userId, amount]
+    );
+    return mapUser(fallback);
+  }
+
+  return mapUser(row);
+}
+
 // ---------------------------------------------------------------------------
 // plans
 // ---------------------------------------------------------------------------
@@ -441,8 +487,8 @@ export async function upsertPlan(plan) {
     const { rows } = await client.query(
       `INSERT INTO plans (id, name, description, price, currency, message_limit,
                           session_limit, trial_days, features, is_default, archived, sort_order,
-                          base_price, included_agents, addon_agent_price, max_agents)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16)
+                          base_price, included_agents, addon_agent_price, max_agents, is_addon)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17)
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name,
          description = EXCLUDED.description,
@@ -458,7 +504,8 @@ export async function upsertPlan(plan) {
          base_price = EXCLUDED.base_price,
          included_agents = EXCLUDED.included_agents,
          addon_agent_price = EXCLUDED.addon_agent_price,
-         max_agents = EXCLUDED.max_agents
+         max_agents = EXCLUDED.max_agents,
+         is_addon = EXCLUDED.is_addon
        RETURNING *`,
       [
         plan.id, plan.name, plan.description || '', plan.price || 0,
@@ -469,6 +516,7 @@ export async function upsertPlan(plan) {
         Math.max(1, plan.includedAgents ?? 1),
         plan.addonAgentPrice ?? 0,
         plan.maxAgents === null || plan.maxAgents === undefined ? null : Math.max(1, plan.maxAgents),
+        Boolean(plan.isAddon),
       ]
     );
 

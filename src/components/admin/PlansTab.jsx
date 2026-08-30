@@ -9,7 +9,9 @@ import {
   FALLBACK_PLANS, normalizePlan, sortPlans,
   resolveUserPlanId, planPriceLabel, formatQuota,
 } from '../../utils/plans.js';
-import { agentRange, priceFor, formatIDR, priceBreakdownLabel } from '../../utils/pricing.js';
+import {
+  agentRange, priceFor, formatIDR, priceBreakdownLabel, agentsGranted,
+} from '../../utils/pricing.js';
 
 const BLANK_FORM = {
   id: '',
@@ -26,6 +28,7 @@ const BLANK_FORM = {
   trialDays: '0',
   featuresText: '',
   isDefault: false,
+  isAddon: false,
   sortOrder: '100',
 };
 
@@ -50,7 +53,10 @@ function formToPlan(form) {
       .split('\n')
       .map(line => line.trim())
       .filter(Boolean),
-    isDefault: Boolean(form.isDefault),
+    // An add-on can never be the default plan: it would be assigned to every new
+    // signup, giving them the add-on's message limit instead of a real plan's.
+    isDefault: Boolean(form.isDefault) && !form.isAddon,
+    isAddon: Boolean(form.isAddon),
     sortOrder: parseInt(form.sortOrder, 10) || 0,
   };
 }
@@ -71,6 +77,7 @@ function planToForm(plan) {
     trialDays: String(plan.trialDays ?? 0),
     featuresText: (plan.features || []).join('\n'),
     isDefault: Boolean(plan.isDefault),
+    isAddon: Boolean(plan.isAddon),
     sortOrder: String(plan.sortOrder ?? 100),
   };
 }
@@ -324,7 +331,14 @@ export default function PlansTab({ plans, loading, error, users, onPlansChanged,
                   <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', margin: 0, lineHeight: '1.5' }}>{plan.description}</p>
                 )}
 
-                {plan.addonAgentPrice > 0 && (
+                {plan.isAddon ? (
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', padding: '8px 10px', borderRadius: '6px', background: 'rgba(0,168,132,0.08)', border: '1px solid rgba(0,168,132,0.25)' }}>
+                    <strong>Add-on.</strong> {formatIDR(plan.basePrice)} per unit granting{' '}
+                    {plan.includedAgents} {plan.includedAgents === 1 ? 'agent' : 'agents'}, up to{' '}
+                    {plan.maxAgents ?? 20} at a time. Adds to the customer's current plan
+                    rather than replacing it.
+                  </div>
+                ) : plan.addonAgentPrice > 0 && (
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', padding: '8px 10px', borderRadius: '6px', background: 'var(--overlay-subtle)', border: '1px solid var(--border-color)' }}>
                     {formatIDR(plan.basePrice)} covers {plan.includedAgents} {plan.includedAgents === 1 ? 'agent' : 'agents'},
                     then <strong>{formatIDR(plan.addonAgentPrice)}</strong> per extra
@@ -488,18 +502,47 @@ export default function PlansTab({ plans, loading, error, users, onPlansChanged,
             {/* Agent-based pricing. An "agent" is one concurrent access slot. */}
             <div style={{ padding: '14px', borderRadius: '10px', background: 'var(--overlay-subtle)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-dimmed)' }}>
-                Agent pricing
+                {editor.form.isAddon ? 'Add-on pricing' : 'Agent pricing'}
               </div>
+
+              {/* The switch between a plan and a top-up. Everything below reads
+                  differently depending on it, so it comes first. */}
+              <label style={{
+                display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer',
+                padding: '12px 14px', borderRadius: '8px',
+                background: editor.form.isAddon ? 'rgba(0,168,132,0.08)' : 'var(--overlay-subtle)',
+                border: `1px solid ${editor.form.isAddon ? 'rgba(0,168,132,0.3)' : 'var(--border-color)'}`,
+              }}>
+                <input
+                  type="checkbox"
+                  checked={editor.form.isAddon}
+                  onChange={(e) => updateForm({ isAddon: e.target.checked })}
+                  style={{ marginTop: '2px' }}
+                />
+                <span>
+                  <strong style={{ fontSize: '0.86rem' }}>This is an add-on, not a plan</strong>
+                  <span style={{ display: 'block', fontSize: '0.79rem', color: 'var(--text-muted)', lineHeight: '1.5', marginTop: '3px' }}>
+                    Customers buy it by the unit with a +/− stepper, and it <strong>adds</strong> agents
+                    to whichever plan they are already on instead of replacing it. Use this for
+                    "extra agent" style products — selling one as a plan would move a Premium
+                    customer onto it and take their message quota with it.
+                  </span>
+                </span>
+              </label>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                 <div>
-                  <label style={labelStyle} htmlFor="plan-base-price">Base price</label>
+                  <label style={labelStyle} htmlFor="plan-base-price">
+                    {editor.form.isAddon ? 'Price per unit' : 'Base price'}
+                  </label>
                   <input id="plan-base-price" type="number" min="0" style={inputStyle}
                     value={editor.form.basePrice}
                     onChange={(e) => updateForm({ basePrice: e.target.value, price: e.target.value })} />
                 </div>
                 <div>
-                  <label style={labelStyle} htmlFor="plan-included-agents">Agents included in base</label>
+                  <label style={labelStyle} htmlFor="plan-included-agents">
+                    {editor.form.isAddon ? 'Agents granted per unit' : 'Agents included in base'}
+                  </label>
                   <input id="plan-included-agents" type="number" min="1" style={inputStyle}
                     value={editor.form.includedAgents}
                     onChange={(e) => updateForm({ includedAgents: e.target.value })} />
@@ -507,15 +550,25 @@ export default function PlansTab({ plans, loading, error, users, onPlansChanged,
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                {/* Meaningless on an add-on: there is no base/surplus split when every
+                    unit costs the same. Hidden rather than disabled so it cannot be
+                    filled in and then silently ignored. */}
+                {!editor.form.isAddon && (
+                  <div>
+                    <label style={labelStyle} htmlFor="plan-addon-price">Price per extra agent</label>
+                    <input id="plan-addon-price" type="number" min="0" style={inputStyle}
+                      value={editor.form.addonAgentPrice}
+                      onChange={(e) => updateForm({ addonAgentPrice: e.target.value })} />
+                  </div>
+                )}
                 <div>
-                  <label style={labelStyle} htmlFor="plan-addon-price">Price per extra agent</label>
-                  <input id="plan-addon-price" type="number" min="0" style={inputStyle}
-                    value={editor.form.addonAgentPrice}
-                    onChange={(e) => updateForm({ addonAgentPrice: e.target.value })} />
-                </div>
-                <div>
-                  <label style={labelStyle} htmlFor="plan-max-agents">Max agents (blank = unlimited)</label>
-                  <input id="plan-max-agents" type="number" min="1" style={inputStyle} placeholder="unlimited"
+                  <label style={labelStyle} htmlFor="plan-max-agents">
+                    {editor.form.isAddon
+                      ? 'Max units per purchase (blank = 20)'
+                      : 'Max agents (blank = unlimited)'}
+                  </label>
+                  <input id="plan-max-agents" type="number" min="1" style={inputStyle}
+                    placeholder={editor.form.isAddon ? '20' : 'unlimited'}
                     value={editor.form.maxAgents}
                     onChange={(e) => updateForm({ maxAgents: e.target.value })} />
                 </div>
@@ -526,6 +579,27 @@ export default function PlansTab({ plans, loading, error, users, onPlansChanged,
                 {(() => {
                   const preview = formToPlan({ ...editor.form, id: editor.form.id || 'preview' });
                   const range = agentRange(preview);
+
+                  if (preview.isAddon) {
+                    const sample = Math.min(range.max, 3);
+                    return (
+                      <>
+                        {formatIDR(preview.basePrice)} per unit, granting {preview.includedAgents}{' '}
+                        {preview.includedAgents === 1 ? 'agent' : 'agents'} each, up to {range.max} at a time.
+                        <br />
+                        <strong>
+                          {sample} units = {formatIDR(priceFor(preview, sample).total)} for{' '}
+                          +{agentsGranted(preview, sample)} agents
+                        </strong>{' '}
+                        <span style={{ color: 'var(--text-dimmed)' }}>({priceBreakdownLabel(preview, sample)})</span>
+                        <br />
+                        <span style={{ color: 'var(--text-dimmed)' }}>
+                          The customer's plan is not changed by this purchase.
+                        </span>
+                      </>
+                    );
+                  }
+
                   if (range.max === range.min) {
                     return <>Fixed at {range.min} {range.min === 1 ? 'agent' : 'agents'} for {formatIDR(preview.basePrice)}. Set a price per extra agent to allow add-ons.</>;
                   }

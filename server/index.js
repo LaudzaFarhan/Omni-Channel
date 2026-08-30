@@ -20,12 +20,14 @@ import { assertAuthConfigured, verifyAccessToken } from './auth.js';
 import {
   resolveSessionLimitFor, consumeMessageQuota, saveTransaction,
   markTransactionStatus, findUserById, recordAudit, isChatHeld,
-  findPlanById, updateUser, setPurchasedAgents,
+  findPlanById, updateUser, setPurchasedAgents, addPurchasedAgents,
 } from './data.js';
 // Pricing arithmetic is shared with the browser so the customer is shown exactly
 // the figure they will be charged. The server always recomputes it; the client's
 // number is never trusted.
-import { priceFor, invoiceLines, clampAgents, agentRange } from '../src/utils/pricing.js';
+import {
+  priceFor, invoiceLines, clampAgents, agentRange, isAddon, agentsGranted,
+} from '../src/utils/pricing.js';
 import {
   mayarConfig, reportMayarConfig, createInvoice, verifyWebhookToken, parseWebhookEvent,
 } from './mayar.js';
@@ -1253,18 +1255,21 @@ app.post('/api/mayar/create-checkout', supervisor, async (req, res) => {
     if (plan.archived) {
       return res.status(400).json({ error: `Plan "${plan.name}" is no longer available.` });
     }
-    // How many agents (concurrent access slots) they are buying. Clamped to what
-    // the plan allows, then priced here — the client's arithmetic is never trusted,
-    // only its choice of quantity.
+    // Units being bought. For a plan that is an absolute agent count; for an add-on
+    // it is a quantity, and the range floor differs accordingly (see agentRange).
+    // Clamped and then priced here — the client's arithmetic is never trusted, only
+    // its choice of quantity.
     const range = agentRange(plan);
     const requestedAgents = req.body?.agents;
     const agents = clampAgents(plan, requestedAgents ?? range.min);
+    const addon = isAddon(plan);
 
     if (requestedAgents !== undefined && Number(requestedAgents) !== agents) {
+      const unit = addon ? 'unit' : 'agent';
       return res.status(400).json({
         error: range.max === null
-          ? `This plan needs at least ${range.min} agents.`
-          : `This plan allows between ${range.min} and ${range.max} agents.`,
+          ? `This plan needs at least ${range.min} ${unit}s.`
+          : `You can buy between ${range.min} and ${range.max} ${unit}${range.max === 1 ? '' : 's'} at a time.`,
         code: 'agents_out_of_range',
         min: range.min,
         max: range.max,
@@ -1275,19 +1280,24 @@ app.post('/api/mayar/create-checkout', supervisor, async (req, res) => {
 
     if (pricing.total <= 0) {
       return res.status(400).json({
-        error: `Plan "${plan.name}" is free — there is nothing to pay for.`,
+        error: `"${plan.name}" is free — there is nothing to pay for.`,
         code: 'plan_is_free',
       });
     }
 
-    // Same plan AND same agent count is a no-op; buying more agents on the plan
-    // you are already on is a legitimate upgrade.
-    const currentAgents = req.profile.purchasedAgents ?? plan.includedAgents;
-    if (req.profile.planId === planId && currentAgents === agents) {
-      return res.status(409).json({
-        error: `You are already on the ${plan.name} plan with ${agents} ${agents === 1 ? 'agent' : 'agents'}.`,
-        code: 'already_on_plan',
-      });
+    // An add-on is repeatable by design: buying a second one is the point, and there
+    // is no "already on it" state because it never becomes the customer's plan. Only
+    // plans get the no-op guard.
+    if (!addon) {
+      // Same plan AND same agent count is a no-op; buying more agents on the plan
+      // you are already on is a legitimate upgrade.
+      const currentAgents = req.profile.purchasedAgents ?? plan.includedAgents;
+      if (req.profile.planId === planId && currentAgents === agents) {
+        return res.status(409).json({
+          error: `You are already on the ${plan.name} plan with ${agents} ${agents === 1 ? 'agent' : 'agents'}.`,
+          code: 'already_on_plan',
+        });
+      }
     }
 
     if (!mayarConfig.isConfigured) {
@@ -1298,9 +1308,12 @@ app.post('/api/mayar/create-checkout', supervisor, async (req, res) => {
     }
 
     const transactionId = `WA-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-    const description = pricing.extraAgents > 0
-      ? `${plan.name} plan, ${agents} agents (${pricing.includedAgents} included + ${pricing.extraAgents} extra)`
-      : `${plan.name} plan, ${agents} ${agents === 1 ? 'agent' : 'agents'}`;
+    const grantedAgents = agentsGranted(plan, agents);
+    const description = addon
+      ? `${plan.name} x${agents} (+${grantedAgents} ${grantedAgents === 1 ? 'agent' : 'agents'})`
+      : pricing.extraAgents > 0
+        ? `${plan.name} plan, ${agents} agents (${pricing.includedAgents} included + ${pricing.extraAgents} extra)`
+        : `${plan.name} plan, ${agents} ${agents === 1 ? 'agent' : 'agents'}`;
 
     // The transaction row is written AFTER Mayar accepts, not before.
     //
@@ -1487,6 +1500,38 @@ app.post('/api/webhooks/mayar', async (req, res) => {
         console.error(`[Mayar Webhook] Paid for unknown plan "${planId}" — needs manual review.`);
       } else if (!user) {
         console.error(`[Mayar Webhook] Paid for unknown user "${uid}" — needs manual review.`);
+      } else if (isAddon(plan)) {
+        // A top-up. The plan is left exactly as it is — switching it here is what made
+        // an "extra agent" product unusable, because a Premium customer who bought one
+        // would land on the add-on and lose the message quota they were paying for.
+        const units = requestedAgents === null ? 1 : clampAgents(plan, requestedAgents);
+        const granted = agentsGranted(plan, units);
+
+        const updated = await addPurchasedAgents(uid, granted);
+        appliedPlan = user.planId;
+        appliedAgents = updated?.purchasedAgents ?? null;
+
+        console.log(
+          `[Mayar Webhook] ${user.email} bought ${plan.name} x${units}: ` +
+          `+${granted} agent(s), now ${appliedAgents} total. Plan unchanged (${user.planId}).`
+        );
+
+        const fresh = await findUserById(uid);
+        io.to(userRoom(uid)).emit('profile-updated', fresh);
+        io.to(uid).emit('workspace-updated', { planId: user.planId, agents: appliedAgents });
+
+        // Skip the plan-switch branch below.
+        await recordAudit({
+          actorUserId: null,
+          actorEmail: 'mayar-webhook',
+          action: 'payment.addon_applied',
+          targetUserId: uid,
+          detail: {
+            localTransactionId: event.localTransactionId,
+            addonId: plan.id, units, grantedAgents: granted, totalAgents: appliedAgents,
+          },
+          ip: clientIp(req),
+        });
       } else {
         await updateUser(uid, { planId: plan.id });
         appliedPlan = plan.id;
