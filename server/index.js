@@ -1267,22 +1267,17 @@ app.post('/api/mayar/create-checkout', supervisor, async (req, res) => {
       ? `${plan.name} plan, ${agents} agents (${pricing.includedAgents} included + ${pricing.extraAgents} extra)`
       : `${plan.name} plan, ${agents} ${agents === 1 ? 'agent' : 'agents'}`;
 
-    // Record the intent BEFORE calling Mayar, so a customer who pays is never
-    // left without a local record if our process dies mid-request.
-    await saveTransaction({
-      transactionId,
-      uid,
-      email: userEmail || '',
-      item: description,
-      type: planId,
-      amount: pricing.total,
-      currency: plan.currency || 'IDR',
-      status: 'PENDING',
-      paymentUrl: null,
-      planId,
-      agents,
-    });
-
+    // The transaction row is written AFTER Mayar accepts, not before.
+    //
+    // It used to be written first, on the reasoning that a customer who pays must
+    // never be left without a local record. But the gateway call is the step that
+    // actually fails, so every failed attempt left a PENDING row the customer could
+    // see in their history — a payment they never started and cannot complete.
+    //
+    // The durability that ordering was protecting is now provided by the webhook,
+    // which creates the row if it is missing (see the fulfilment path below). The id
+    // is generated here and travels in extraData, so the webhook can reconstruct the
+    // record even if this process dies between Mayar accepting and the insert.
     let paymentUrl = '';
     let mayarRef = null;
 
@@ -1346,17 +1341,31 @@ app.post('/api/mayar/create-checkout', supervisor, async (req, res) => {
       description,
     });
   } catch (err) {
-    console.error('[Mayar Checkout] Failed:', err.message);
+    // Nothing was written before the gateway call, so a failure leaves no
+    // transaction behind to confuse the customer.
+    console.error(`[Mayar Checkout] Failed for ${userEmail} (${err.code || 'unknown'}):`, err.message);
+
     const status = err.code === 'mayar_not_configured' ? 503
+      : err.code === 'mayar_auth_failed' ? 503
       : err.code === 'mayar_rejected' ? 502
       : err.code === 'mayar_unreachable' ? 504
+      : err.code === 'invalid_amount' ? 400
+      : err.code === 'mayar_no_link' ? 502
       : 500;
-    res.status(status).json({
-      error: err.code === 'mayar_rejected'
-        ? `Payment provider rejected the request: ${err.message}`
-        : 'Could not start the payment. Please try again.',
-      code: err.code || 'checkout_failed',
-    });
+
+    // Say what actually went wrong. "Please try again" hid a misconfigured API key
+    // behind a message that suggested the problem was transient, which meant the
+    // real cause only existed in the server log.
+    const message = {
+      mayar_rejected: `The payment provider rejected this request: ${err.message}`,
+      mayar_auth_failed: 'Payments are misconfigured on this server: the payment gateway refused our API key. Nothing was charged. This needs an administrator, not a retry.',
+      mayar_unreachable: 'The payment provider did not respond. Check the server\'s internet access and try again.',
+      mayar_no_link: 'The payment provider accepted the invoice but returned no checkout link.',
+      invalid_amount: err.message,
+      mayar_not_configured: 'Payments are not configured on this server yet.',
+    }[err.code] || `Could not start the payment: ${err.message}`;
+
+    res.status(status).json({ error: message, code: err.code || 'checkout_failed' });
   }
 });
 
@@ -1396,8 +1405,26 @@ app.post('/api/webhooks/mayar', async (req, res) => {
     let localTx = null;
     if (event.localTransactionId) {
       localTx = await markTransactionStatus(event.localTransactionId, 'PAID');
+
+      // No row: the checkout wrote it only after Mayar accepted, and this process
+      // died in between. The payment is real and extraData carries everything the
+      // record needs, so reconstruct it rather than losing the revenue record.
       if (!localTx) {
-        console.warn(`[Mayar Webhook] No local transaction ${event.localTransactionId}; recording the event only.`);
+        console.warn(`[Mayar Webhook] No local transaction ${event.localTransactionId} — recreating it from the payment.`);
+        localTx = await saveTransaction({
+          transactionId: event.localTransactionId,
+          uid: event.uid || null,
+          email: event.email || '',
+          item: event.planId ? `${event.planId} plan` : 'Payment',
+          type: event.planId || null,
+          amount: event.amount || 0,
+          currency: 'IDR',
+          status: 'PAID',
+          paymentUrl: null,
+          planId: event.planId || null,
+          agents: event.agents || null,
+          raw: { recoveredFromWebhook: true },
+        });
       }
     }
 

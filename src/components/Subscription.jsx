@@ -86,9 +86,11 @@ export default function Subscription({ userProfile, activeSessionCount, plans = 
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        // 503 means the server has no Mayar key configured, which is a setup
-        // problem rather than something the customer can act on.
-        if (res.status === 503 || data.code === 'mayar_not_configured') {
+        // Anything the server flags as a setup problem: no key configured, or a key
+        // the gateway refused. Neither is something the customer can act on, and
+        // both used to arrive as "please try again", which sent them retrying a
+        // request that could never succeed.
+        if (res.status === 503 || data.code === 'mayar_not_configured' || data.code === 'mayar_auth_failed') {
           setActivePaymentModal({
             isConfigError: true,
             message: data.error || 'Payments are not configured on this server yet.',
@@ -102,10 +104,16 @@ export default function Subscription({ userProfile, activeSessionCount, plans = 
           setActivePaymentModal({ isNotice: true, message: data.error });
           return;
         }
-        throw new Error(data.error || `Server returned status ${res.status}`);
+        // Everything else, including what the gateway itself said. Shown in the
+        // panel rather than a browser alert, and with the provider's own wording,
+        // because "could not start the payment" is not actionable by anyone.
+        setActivePaymentModal({
+          isFailure: true,
+          message: data.error || `The server returned status ${res.status}.`,
+          code: data.code,
+        });
+        return;
       }
-
-      loadServerTransactions();
 
       if (!data.paymentUrl) {
         setActivePaymentModal({
@@ -115,17 +123,22 @@ export default function Subscription({ userProfile, activeSessionCount, plans = 
         return;
       }
 
-      setActivePaymentModal({
-        transactionId: data.transactionId,
-        paymentUrl: data.paymentUrl,
-        amount: data.amount,
-        description: data.description,
-      });
-
-      window.open(data.paymentUrl, '_blank');
+      // Go straight to the gateway in this tab.
+      //
+      // This used to window.open() a new tab and leave a modal behind. Because the
+      // call happens after an await, it is no longer inside the click's user-gesture
+      // window, so browsers routinely block it — the customer clicked Pay, watched a
+      // dialog appear, and never reached a payment page. A same-tab navigation cannot
+      // be blocked, and Mayar returns them here when they are done.
+      loadServerTransactions();
+      window.location.assign(data.paymentUrl);
     } catch (err) {
+      // A thrown error here is a network or parsing failure, not a gateway refusal.
       console.error('Mayar Checkout Error:', err);
-      alert(`Failed to start payment: ${err.message}`);
+      setActivePaymentModal({
+        isFailure: true,
+        message: `Could not reach the server: ${err.message}`,
+      });
     } finally {
       setBuying(false);
     }
@@ -388,7 +401,35 @@ export default function Subscription({ userProfile, activeSessionCount, plans = 
               </button>
             </div>
 
-            {activePaymentModal.isNotice ? (
+            {activePaymentModal.isFailure ? (
+              <>
+                <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)' }}>
+                  <div style={{ fontWeight: '700', fontSize: '0.95rem', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px', color: '#ef4444' }}>
+                    <AlertCircle size={18} /> Checkout could not start
+                  </div>
+                  <div style={{ fontSize: '0.87rem', color: 'var(--text-muted)', lineHeight: '1.55' }}>
+                    {activePaymentModal.message}
+                  </div>
+                </div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-dimmed)', lineHeight: '1.55' }}>
+                  Nothing was charged, and no payment was recorded against your account.
+                </div>
+                <button
+                  onClick={() => setActivePaymentModal(null)}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--border-color)',
+                    color: 'var(--text-muted)',
+                    padding: '10px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  Close
+                </button>
+              </>
+            ) : activePaymentModal.isNotice ? (
               <>
                 <div style={{ padding: '16px', borderRadius: '12px', background: 'var(--overlay-subtle)', border: '1px solid var(--border-color)', fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.55' }}>
                   {activePaymentModal.message}

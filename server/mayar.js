@@ -34,6 +34,42 @@ export const mayarConfig = {
   get paymentLink() { return PAYMENT_LINK; },
 };
 
+/**
+ * Structural check on the API key, without logging any of it.
+ *
+ * A Mayar key is a JWT: three base64url segments separated by exactly two dots.
+ * The failure this catches is a doubled paste — copying the key twice into the
+ * same variable yields four dots and a length around twice the real one. Mayar
+ * answers that with a 401, which surfaces to the customer as a rejected payment
+ * with no hint that the cause is a config typo.
+ *
+ * Returns a human-readable complaint, or null when the shape is plausible.
+ */
+export function inspectApiKeyShape(key = API_KEY) {
+  if (!key) return null;
+
+  const dots = (key.match(/\./g) || []).length;
+
+  if (dots === 0) {
+    return 'it contains no dots, so it is not a JWT. Copy the whole Bearer key from the Mayar dashboard.';
+  }
+  if (dots === 2) return null; // well-formed
+
+  // A JWT pasted twice end to end has 2 + 2 = 4 dots and an even length whose two
+  // halves are identical. Worth naming exactly, because the fix ("paste it once")
+  // is not obvious from a dot count.
+  if (dots === 4 && key.length % 2 === 0) {
+    const half = key.length / 2;
+    if (key.slice(0, half) === key.slice(half)) {
+      return 'the same key appears twice, end to end. Paste it once.';
+    }
+  }
+  if (dots > 2) {
+    return `it has ${dots} dots where a JWT has 2, which usually means the value was pasted more than once or two keys were concatenated.`;
+  }
+  return `it has ${dots} dot where a JWT has 2, so it looks truncated.`;
+}
+
 // Warn loudly at startup rather than at the first payment attempt.
 export function reportMayarConfig() {
   if (!mayarConfig.isConfigured) {
@@ -41,6 +77,17 @@ export function reportMayarConfig() {
     return;
   }
   console.log(`[Mayar] Configured against ${API_BASE}${mayarConfig.isSandbox ? ' (SANDBOX)' : ''}`);
+
+  const keyProblem = inspectApiKeyShape();
+  if (keyProblem) {
+    // Length only. Never the value, not even truncated.
+    console.error(
+      `[Mayar] MAYAR_API_KEY looks malformed (${API_KEY.length} chars): ${keyProblem}\n` +
+      '        Every checkout will fail with a 401 until this is fixed. Re-paste the key in .env ' +
+      'on ONE line and restart.'
+    );
+  }
+
   if (!mayarConfig.hasWebhookToken) {
     console.warn('[Mayar] MAYAR_WEBHOOK_TOKEN is unset — the webhook will reject every call. Set it to enable fulfilment.');
   }
@@ -136,6 +183,22 @@ export async function createInvoice({
     // Mayar returns { statusCode, messages }. Surface its message, never the key.
     const detail = payload?.messages || payload?.message || `HTTP ${res.status}`;
     console.error(`[Mayar] invoice/create failed: ${res.status} ${JSON.stringify(detail)}`);
+
+    // A 401/403 is never something the customer can act on, and reporting it as
+    // "the provider rejected your request" sends them looking for a problem with
+    // their card. It means our key is wrong.
+    if (res.status === 401 || res.status === 403) {
+      const shape = inspectApiKeyShape();
+      console.error(
+        `[Mayar] The API key was refused (${API_KEY.length} chars).` +
+        (shape ? ` It also looks malformed: ${shape}` : ' Check it is the live key for this API base and has not been revoked.')
+      );
+      throw Object.assign(
+        new Error('the payment gateway refused our credentials'),
+        { code: 'mayar_auth_failed', status: res.status }
+      );
+    }
+
     throw Object.assign(
       new Error(typeof detail === 'string' ? detail : 'Mayar rejected the invoice request'),
       { code: 'mayar_rejected', status: res.status }
