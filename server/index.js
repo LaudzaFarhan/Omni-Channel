@@ -7,9 +7,21 @@ import pino from 'pino';
 import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, downloadMediaMessage } from '@whiskeysockets/baileys';
 import fs from 'fs';
 import path from 'path';
-import https from 'https';
-import crypto from 'crypto';
 import { getStore } from './store.js';
+
+// Postgres replaces Firestore; local JWTs replace Firebase Auth.
+import {
+  runMigrations, verifyConnection, pruneRefreshTokens, closePool,
+  query as dbQuery,
+} from './db.js';
+import { assertAuthConfigured, verifyAccessToken } from './auth.js';
+import {
+  resolveSessionLimitFor, consumeMessageQuota, saveTransaction,
+  markTransactionStatus, findUserById, recordAudit,
+} from './data.js';
+import { authenticated, approved, admin, clientIp } from './middleware.js';
+import { mountAuthRoutes } from './routes-auth.js';
+import { mountDataRoutes } from './routes-data.js';
 
 const PORT = process.env.PORT || 5000;
 // Bind to loopback by default so a VPS only exposes the app through its reverse
@@ -32,8 +44,6 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason, promise) => {
   console.error('[Process] Unhandled Rejection at:', promise, 'reason:', reason);
 });
-// Trimmed because values pasted into a host's env UI often carry a trailing newline.
-const FIREBASE_PROJECT_ID = (process.env.FIREBASE_PROJECT_ID || 'whatsapp-omni-f2918').trim();
 const app = express();
 const httpServer = createServer(app);
 
@@ -66,94 +76,10 @@ fetchLatestBaileysVersion().then(latest => {
   console.warn('[Baileys] Failed to fetch latest version on startup, using default fallback:', err.message);
 });
 
-// Cache for Google's Firebase public keys
-let googlePublicKeys = {};
-let keysExpireTime = 0;
-
-// Fetch Google's public certificates dynamically
-async function fetchGooglePublicKeys() {
-  if (Date.now() < keysExpireTime && Object.keys(googlePublicKeys).length > 0) {
-    return googlePublicKeys;
-  }
-
-  return new Promise((resolve, reject) => {
-    https.get('https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com', (res) => {
-      let data = '';
-      res.on('data', (chunk) => data += chunk);
-      res.on('end', () => {
-        try {
-          const cacheControl = res.headers['cache-control'] || '';
-          const maxAgeMatch = cacheControl.match(/max-age=(\d+)/);
-          const maxAge = maxAgeMatch ? parseInt(maxAgeMatch[1]) * 1000 : 3600000;
-          keysExpireTime = Date.now() + maxAge;
-          googlePublicKeys = JSON.parse(data);
-          resolve(googlePublicKeys);
-        } catch (e) {
-          reject(e);
-        }
-      });
-    }).on('error', reject);
-  });
-}
-
-// Zero-dependency Firebase ID Token Verifier
-async function verifyFirebaseIdToken(token) {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) throw new Error('Invalid JWT format');
-
-    const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-
-    // Validate claims
-    if (payload.iss !== `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`) {
-      throw new Error('Invalid issuer');
-    }
-    if (payload.aud !== FIREBASE_PROJECT_ID) {
-      throw new Error('Invalid audience');
-    }
-    if (payload.exp < Date.now() / 1000) {
-      throw new Error('Token expired');
-    }
-
-    // Verify signature against Google's public key
-    const publicKeys = await fetchGooglePublicKeys();
-    const cert = publicKeys[header.kid];
-    if (!cert) throw new Error('Public certificate not found for key ID: ' + header.kid);
-
-    const verifier = crypto.createVerify('RSA-SHA256');
-    verifier.update(parts[0] + '.' + parts[1]);
-    
-    const isValid = verifier.verify(cert, parts[2], 'base64url');
-    if (!isValid) throw new Error('Signature verification failed');
-
-    // Map the standard user ID claims to 'uid' for downstream route compatibility
-    payload.uid = payload.user_id || payload.sub;
-
-    return payload; // Returns verified payload containing uid and email
-  } catch (err) {
-    console.error('[Auth] JWT Verification failed:', err);
-    return null;
-  }
-}
-
-// REST Auth Middleware
-async function authMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized: Missing token' });
-  }
-  const token = authHeader.split('Bearer ')[1];
-  const decoded = await verifyFirebaseIdToken(token);
-  if (!decoded) {
-    return res.status(401).json({ error: 'Unauthorized: Invalid token' });
-  }
-  req.user = decoded;
-  // Kept so downstream middleware can read Firestore as the caller (see
-  // adminMiddleware), rather than needing a service account.
-  req.idToken = token;
-  next();
-}
+// Authentication lives in server/auth.js (token signing and verification) and
+// server/middleware.js (request guards). The Firebase ID token verifier and its
+// Google public-key cache that used to sit here are gone: tokens are now issued
+// and verified by this server, so there is no external key material to fetch.
 
 // =============================================
 // MULTI-SESSION SUPPORT
@@ -622,206 +548,52 @@ function logoutSession(uid, sessionId = 'default') {
   io.to(uid).emit('store-cleared', { sessionId });
 }
 
-// =============================================
-// FIRESTORE REST ACCESS
-// =============================================
-// Reads go out with the caller's own ID token, so the same security rules that
-// protect the browser apply here. No service account key is involved.
-function firestoreGetDocument(docPath, token) {
-  return new Promise((resolve) => {
-    const options = {
-      hostname: 'firestore.googleapis.com',
-      path: `/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/${docPath}`,
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    };
+// Firestore REST access, the plan cache and the admin allow-list that used to
+// live here are gone. Profiles, plans and the effective device limit now come
+// from Postgres via server/data.js, and the admin gate is server/middleware.js
+// (requireAdmin), which reads the live row instead of trusting a token claim.
 
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => data += chunk);
-      res.on('end', () => {
-        if (res.statusCode === 200) {
-          try {
-            const body = JSON.parse(data);
-            return resolve({ ok: true, fields: body.fields || {} });
-          } catch (e) {
-            console.error(`[Firestore REST] Error parsing ${docPath}:`, e);
-            return resolve({ ok: false, status: res.statusCode, fields: {} });
-          }
-        }
-        // 404 is expected (missing plan, missing profile) and not worth a warning.
-        if (res.statusCode !== 404) {
-          console.warn(`[Firestore REST] Failed to fetch ${docPath} (HTTP ${res.statusCode}):`, data);
-        }
-        resolve({ ok: false, status: res.statusCode, fields: {} });
-      });
-    });
-
-    req.on('error', (err) => {
-      console.error(`[Firestore REST] Request error for ${docPath}:`, err);
-      resolve({ ok: false, status: 0, fields: {} });
-    });
-
-    req.end();
-  });
-}
-
-// Firestore REST wraps every value in a type tag ({ integerValue: "5" }).
-function fsNumber(field) {
-  if (!field) return undefined;
-  const raw = field.integerValue ?? field.doubleValue;
-  if (raw === undefined || raw === null) return undefined;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function fsString(field) {
-  return field?.stringValue ?? undefined;
-}
-
-function fsBool(field) {
-  return field?.booleanValue ?? undefined;
-}
-
-async function fetchUserProfile(uid, token) {
-  const { ok, fields } = await firestoreGetDocument(`users/${uid}`, token);
-  if (!ok) return null;
-  return {
-    uid,
-    email: fsString(fields.email),
-    name: fsString(fields.name),
-    role: fsString(fields.role),
-    isApproved: fsBool(fields.isApproved),
-    tier: fsString(fields.tier),
-    planId: fsString(fields.planId),
-    sessionLimit: fsNumber(fields.sessionLimit),
-    messageLimit: fsNumber(fields.messageLimit),
-    messagesSent: fsNumber(fields.messagesSent),
-  };
-}
-
-// Plan documents change rarely but are read on every socket connect, so cache
-// them briefly to avoid an extra round trip per browser tab.
-const PLAN_CACHE_TTL_MS = 60000;
-const planCache = new Map(); // planId -> { expires, plan }
-
-async function fetchPlan(planId, token) {
-  if (!planId) return null;
-
-  const cached = planCache.get(planId);
-  if (cached && cached.expires > Date.now()) return cached.plan;
-
-  const { ok, fields } = await firestoreGetDocument(`plans/${planId}`, token);
-  const plan = ok
-    ? {
-        id: planId,
-        name: fsString(fields.name) || planId,
-        sessionLimit: fsNumber(fields.sessionLimit),
-        messageLimit: fsNumber(fields.messageLimit),
-      }
-    : null;
-
-  planCache.set(planId, { expires: Date.now() + PLAN_CACHE_TTL_MS, plan });
-  return plan;
-}
-
-// Effective device limit for a user.
-//
-// Mirrors resolveEffectiveLimits() in src/utils/plans.js: an explicit
-// sessionLimit on the user document wins, otherwise the value comes from their
-// plan, otherwise the historical default of one device.
-const DEFAULT_SESSION_LIMIT = 1;
-
-async function resolveSessionLimit(uid, token, profileHint) {
-  try {
-    const profile = profileHint || await fetchUserProfile(uid, token);
-    if (!profile) return DEFAULT_SESSION_LIMIT;
-
-    if (Number.isFinite(profile.sessionLimit)) {
-      return Math.max(1, profile.sessionLimit);
-    }
-
-    const planId = profile.planId || profile.tier;
-    const plan = await fetchPlan(planId, token);
-    if (plan && Number.isFinite(plan.sessionLimit)) {
-      return Math.max(1, plan.sessionLimit);
-    }
-
-    return DEFAULT_SESSION_LIMIT;
-  } catch (err) {
-    console.error('[Limits] Failed to resolve session limit:', err);
-    return DEFAULT_SESSION_LIMIT;
-  }
-}
-
-// =============================================
-// ADMIN AUTHORIZATION
-// =============================================
-// Comma-separated ADMIN_EMAILS, defaulting to the same addresses as
-// isAdminEmail() in firestore.rules. Keep the three lists in sync:
-// firestore.rules, src/utils/adminAccess.js, and this one.
-const BUILT_IN_ADMIN_EMAILS = ['owner@admin.com', 'adminthelab@gmail.com'];
-const ADMIN_EMAILS = Array.from(new Set([
-  ...BUILT_IN_ADMIN_EMAILS,
-  ...(process.env.ADMIN_EMAILS || '')
-    .split(',')
-    .map(e => e.trim().toLowerCase())
-    .filter(Boolean),
-]));
-
-function isAdminEmail(email) {
-  if (!email) return false;
-  return ADMIN_EMAILS.includes(String(email).trim().toLowerCase());
-}
-
-// Guards /api/admin/*. Runs after authMiddleware, so req.user and req.idToken
-// are already populated. Requires BOTH an allow-listed verified email and a
-// stored role of 'admin', matching the isAdmin() rule in firestore.rules — a
-// tampered role field alone grants nothing.
-async function adminMiddleware(req, res, next) {
-  const email = req.user?.email;
-
-  if (!isAdminEmail(email)) {
-    console.warn(`[Admin] Rejected ${req.method} ${req.path} for non-allow-listed address: ${email || 'unknown'}`);
-    return res.status(403).json({ error: 'Forbidden: admin access required' });
-  }
-
-  const profile = await fetchUserProfile(req.user.uid, req.idToken);
-  if (!profile || profile.role !== 'admin') {
-    console.warn(`[Admin] Rejected ${req.method} ${req.path}: ${email} is allow-listed but role is '${profile?.role || 'missing'}'`);
-    return res.status(403).json({ error: 'Forbidden: admin access required' });
-  }
-
-  req.adminProfile = profile;
-  next();
-}
-
-// Socket.io JWT Authentication Middleware
+// Socket.io authentication. Verifies this server's own access token, then
+// confirms the account still exists and is approved — a revoked customer must
+// not keep a live socket just because their token has not expired yet.
 io.use(async (socket, next) => {
-  console.log(`[Socket] Connection attempt from socket ID ${socket.id}`);
   const token = socket.handshake.auth.token || socket.handshake.headers['x-auth-token'];
   if (!token) {
     console.warn(`[Socket] Rejected: Missing auth token from socket ID ${socket.id}`);
     return next(new Error('Authentication error: Missing token'));
   }
-  const decoded = await verifyFirebaseIdToken(token);
+
+  const decoded = verifyAccessToken(token);
   if (!decoded) {
     console.warn(`[Socket] Rejected: Invalid auth token from socket ID ${socket.id}`);
     return next(new Error('Authentication error: Invalid token'));
   }
-  socket.user = decoded;
-  socket.token = token;
-  next();
+
+  try {
+    const profile = await findUserById(decoded.uid);
+    if (!profile) {
+      return next(new Error('Authentication error: Account no longer exists'));
+    }
+    if (profile.role !== 'admin' && !profile.isApproved) {
+      console.warn(`[Socket] Rejected ${profile.email}: account not approved`);
+      return next(new Error('Authentication error: Account pending approval'));
+    }
+    socket.user = decoded;
+    socket.profile = profile;
+    socket.token = token;
+    next();
+  } catch (err) {
+    console.error('[Socket] Profile lookup failed during handshake:', err.message);
+    next(new Error('Authentication error: Service unavailable'));
+  }
 });
 
 io.on('connection', async (socket) => {
   const uid = socket.user.uid;
-  const token = socket.token;
 
   // Device limit comes from the user's override if set, otherwise their plan.
-  const sessionLimit = await resolveSessionLimit(uid, token);
+  // Resolved in a single SQL statement (see resolveSessionLimitFor).
+  const sessionLimit = await resolveSessionLimitFor(uid);
 
   // Check if active sockets for this user ID >= sessionLimit
   const activeSockets = io.sockets.adapter.rooms.get(uid);
@@ -903,7 +675,7 @@ async function fetchGroupMetadata(uid, sessionId, jid) {
 // =============================================
 
 // Get all WA sessions for the user
-app.get('/api/sessions', authMiddleware, (req, res) => {
+app.get('/api/sessions', approved, (req, res) => {
   const uid = req.user.uid;
   const userSessionEntries = Object.entries(activeSessions)
     .filter(([k, v]) => v.uid === uid)
@@ -916,7 +688,7 @@ app.get('/api/sessions', authMiddleware, (req, res) => {
   res.json(userSessionEntries);
 });
 
-app.get('/api/status', authMiddleware, (req, res) => {
+app.get('/api/status', approved, (req, res) => {
   const uid = req.user.uid;
   const sid = req.query.sessionId || 'default';
   const key = sessionKey(uid, sid);
@@ -931,7 +703,7 @@ app.get('/api/status', authMiddleware, (req, res) => {
   });
 });
 
-app.get('/api/chats', authMiddleware, (req, res) => {
+app.get('/api/chats', approved, (req, res) => {
   const uid = req.user.uid;
   const sid = req.query.sessionId || 'default';
   const key = sessionKey(uid, sid);
@@ -942,7 +714,7 @@ app.get('/api/chats', authMiddleware, (req, res) => {
   res.json(sortedChats);
 });
 
-app.get('/api/chats/:jid/messages', authMiddleware, (req, res) => {
+app.get('/api/chats/:jid/messages', approved, (req, res) => {
   const uid = req.user.uid;
   const sid = req.query.sessionId || 'default';
   const key = sessionKey(uid, sid);
@@ -957,7 +729,7 @@ app.get('/api/chats/:jid/messages', authMiddleware, (req, res) => {
   res.json(store.messages[jid] || []);
 });
 
-app.post('/api/messages/send', authMiddleware, async (req, res) => {
+app.post('/api/messages/send', approved, async (req, res) => {
   const uid = req.user.uid;
   const sid = req.body.sessionId || req.query.sessionId || 'default';
   const key = sessionKey(uid, sid);
@@ -973,6 +745,25 @@ app.post('/api/messages/send', authMiddleware, async (req, res) => {
   if (!to) {
     return res.status(400).json({ error: 'Missing to (recipient JID)' });
   }
+
+  // Quota is now enforced here, atomically, before the message goes out.
+  //
+  // Previously the limit was checked in the browser and the browser incremented
+  // its own counter, which made it advisory: a modified client, or two tabs
+  // racing, could exceed it freely. consumeMessageQuota does the check and the
+  // increment in one UPDATE, so neither is possible. Admins are exempt.
+  const quota = await consumeMessageQuota(uid);
+  if (!quota.allowed) {
+    return res.status(429).json({
+      error: 'Message quota reached. Upgrade the plan or raise the limit to send more.',
+      code: 'quota_exceeded',
+      messagesSent: quota.messagesSent,
+      limit: quota.limit,
+    });
+  }
+
+  // Tell the user's other tabs about the new count so the UI stays in step.
+  io.to(uid).emit('quota-updated', { messagesSent: quota.messagesSent, limit: quota.limit });
 
   try {
     let jid = to;
@@ -1019,7 +810,7 @@ app.post('/api/messages/send', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/media/download', authMiddleware, async (req, res) => {
+app.post('/api/media/download', approved, async (req, res) => {
   const uid = req.user.uid;
   const sid = req.body.sessionId || req.query.sessionId || 'default';
   const key = sessionKey(uid, sid);
@@ -1063,7 +854,7 @@ app.post('/api/media/download', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/sync', authMiddleware, async (req, res) => {
+app.post('/api/sync', approved, async (req, res) => {
   const uid = req.user.uid;
   const sid = req.body.sessionId || req.query.sessionId || 'default';
   const key = sessionKey(uid, sid);
@@ -1101,7 +892,7 @@ app.post('/api/sync', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/logout', authMiddleware, (req, res) => {
+app.post('/api/logout', approved, (req, res) => {
   const uid = req.user.uid;
   const sid = req.body.sessionId || req.query.sessionId || 'default';
   try {
@@ -1125,38 +916,19 @@ const MAYAR_WEBHOOK_TOKEN = (process.env.MAYAR_WEBHOOK_TOKEN || '').trim();
 const MAYAR_PAYMENT_LINK = (process.env.MAYAR_PAYMENT_LINK || '').trim();
 
 // Transactions Store Helper (File-backed fallback)
-const transactionsFilePath = path.resolve('sessions/transactions.json');
+// Transactions used to live in sessions/transactions.json, which meant they were
+// invisible to the admin console and lost if the file was cleaned up. They are
+// now rows in Postgres — see saveTransaction in server/data.js. GET
+// /api/transactions and /api/admin/transactions are served from routes-data.js.
 
-function loadTransactionsStore() {
-  try {
-    const sessionsDir = path.resolve('sessions');
-    if (!fs.existsSync(sessionsDir)) {
-      fs.mkdirSync(sessionsDir, { recursive: true });
-    }
-    if (fs.existsSync(transactionsFilePath)) {
-      return JSON.parse(fs.readFileSync(transactionsFilePath, 'utf-8')) || [];
-    }
-  } catch (e) {
-    console.error('[Transactions Store] Error reading transactions.json:', e);
-  }
-  return [];
-}
+// Authentication (register / login / refresh / logout / me) and all the
+// profile, plan, user-admin, transaction and audit endpoints that replaced
+// Firestore. Mounted before the /api 404 guard at the bottom of this file.
+mountAuthRoutes(app);
+mountDataRoutes(app, io);
 
-function saveTransactionRecord(record) {
-  try {
-    const list = loadTransactionsStore();
-    const existingIndex = list.findIndex(t => t.transactionId === record.transactionId || (t.id && t.id === record.transactionId));
-    if (existingIndex >= 0) {
-      list[existingIndex] = { ...list[existingIndex], ...record };
-    } else {
-      list.unshift(record);
-    }
-    fs.writeFileSync(transactionsFilePath, JSON.stringify(list, null, 2), 'utf-8');
-  } catch (e) {
-    console.error('[Transactions Store] Error saving transaction:', e);
-  }
-}
-
+// Reports whether the payment gateway is configured. Unauthenticated by design:
+// it exposes booleans only, never the key itself.
 app.get('/api/mayar/config', (req, res) => {
   res.json({
     configured: Boolean(MAYAR_API_KEY || MAYAR_PAYMENT_LINK),
@@ -1164,14 +936,7 @@ app.get('/api/mayar/config', (req, res) => {
   });
 });
 
-app.get('/api/transactions', authMiddleware, (req, res) => {
-  const uid = req.user.uid;
-  const allTx = loadTransactionsStore();
-  const userTx = allTx.filter(t => t.uid === uid);
-  res.json(userTx);
-});
-
-app.post('/api/mayar/create-checkout', authMiddleware, async (req, res) => {
+app.post('/api/mayar/create-checkout', authenticated, async (req, res) => {
   const uid = req.user.uid;
   const userEmail = req.user.email;
   const { type, amount, description } = req.body;
@@ -1221,20 +986,18 @@ app.post('/api/mayar/create-checkout', authMiddleware, async (req, res) => {
       }
     }
 
-    // Save transaction to server store
-    const txRecord = {
+    // Persist the pending transaction to Postgres.
+    await saveTransaction({
       transactionId,
       uid,
       email: userEmail || '',
       item: checkoutPayload.description,
       type,
-      amount: amount,
+      amount,
       currency: 'IDR',
       status: 'PENDING',
       paymentUrl,
-      createdAt: new Date().toISOString()
-    };
-    saveTransactionRecord(txRecord);
+    });
 
     if (!paymentUrl) {
       return res.json({
@@ -1280,12 +1043,37 @@ app.post('/api/webhooks/mayar', async (req, res) => {
       const email = payload.customerEmail || payload.data?.customerEmail || payload.email;
       const type = payload.metadata?.type || payload.data?.metadata?.type || 'session';
       const uid = payload.metadata?.uid || payload.data?.metadata?.uid;
+      const transactionId = payload.id || payload.transactionId
+        || payload.metadata?.ref || payload.data?.metadata?.ref;
 
-      console.log(`[Mayar Webhook] Payment SUCCESS for ${email || uid || 'customer'}. Fulfilling product...`);
+      console.log(`[Mayar Webhook] Payment SUCCESS for ${email || uid || 'customer'} (tx ${transactionId || 'unknown'}).`);
+
+      // Mark the transaction paid so the record stops sitting at PENDING
+      // forever, which is what happened while transactions lived in a JSON file
+      // and nothing wrote back to them.
+      if (transactionId) {
+        const updated = await markTransactionStatus(transactionId, 'PAID');
+        if (!updated) {
+          console.warn(`[Mayar Webhook] No local transaction matches ${transactionId}; recording the event only.`);
+        }
+      }
+
+      // Note: the plan is NOT changed automatically. The webhook payload carries
+      // no plan id, and inferring one from `type` would be guesswork that could
+      // silently grant the wrong entitlement. An admin applies the upgrade from
+      // the Customers tab; the audit row below is the prompt to do so.
+      await recordAudit({
+        actorUserId: null,
+        actorEmail: 'mayar-webhook',
+        action: 'payment.received',
+        targetUserId: uid || null,
+        detail: { transactionId, type, email, status },
+        ip: clientIp(req),
+      });
 
       if (uid) {
         io.to(uid).emit('payment-success', {
-          transactionId: payload.id || payload.transactionId,
+          transactionId,
           type,
           timestamp: new Date().toISOString()
         });
@@ -1301,7 +1089,7 @@ app.post('/api/webhooks/mayar', async (req, res) => {
 
 // Manually trigger LID -> phone resolution for the active session.
 // Useful right after a big history sync, without waiting for a reconnect.
-app.post('/api/resolve-contacts', authMiddleware, async (req, res) => {
+app.post('/api/resolve-contacts', approved, async (req, res) => {
   const uid = req.user.uid;
   const sid = req.body?.sessionId || req.query.sessionId || 'default';
   const key = sessionKey(uid, sid);
@@ -1329,7 +1117,8 @@ app.post('/api/resolve-contacts', authMiddleware, async (req, res) => {
 });
 
 // =============================================
-// ADMIN API — every route requires an allow-listed admin (see adminMiddleware)
+// ADMIN API — every route requires role 'admin', checked against the live
+// database row by requireAdmin in server/middleware.js
 // =============================================
 
 // Recursive directory size, used to surface how much disk the Baileys
@@ -1400,7 +1189,7 @@ function describeSession(key, session) {
 }
 
 // Every live WhatsApp session across all tenants.
-app.get('/api/admin/sessions', authMiddleware, adminMiddleware, (req, res) => {
+app.get('/api/admin/sessions', admin, (req, res) => {
   const sessions = Object.entries(activeSessions).map(([key, session]) => describeSession(key, session));
 
   // Connected first, then by owner, so problem sessions surface at a glance.
@@ -1427,7 +1216,7 @@ app.get('/api/admin/sessions', authMiddleware, adminMiddleware, (req, res) => {
 //
 // Only sessions the server is already tracking can be targeted. That keeps the
 // caller from influencing the filesystem path that logoutSession() deletes.
-app.post('/api/admin/sessions/logout', authMiddleware, adminMiddleware, (req, res) => {
+app.post('/api/admin/sessions/logout', admin, (req, res) => {
   const { uid, sessionId } = req.body || {};
 
   if (!uid || typeof uid !== 'string') {
@@ -1447,7 +1236,7 @@ app.post('/api/admin/sessions/logout', authMiddleware, adminMiddleware, (req, re
 });
 
 // Server-side operational snapshot for the admin console.
-app.get('/api/admin/overview', authMiddleware, adminMiddleware, (req, res) => {
+app.get('/api/admin/overview', admin, async (req, res) => {
   const sessionsDir = path.resolve('sessions');
   const disk = fs.existsSync(sessionsDir) ? directorySize(sessionsDir) : { bytes: 0, files: 0 };
   const memory = process.memoryUsage();
@@ -1455,6 +1244,25 @@ app.get('/api/admin/overview', authMiddleware, adminMiddleware, (req, res) => {
   Object.values(activeSessions).forEach((s) => {
     statuses[s.status] = (statuses[s.status] || 0) + 1;
   });
+
+  // Row counts double as a health signal: if this errors the database is the
+  // problem, and the admin sees that rather than an empty console.
+  let dbStats = { reachable: false };
+  try {
+    const { rows } = await dbQuery(`
+      SELECT
+        (SELECT count(*)::int FROM users)                                      AS users,
+        (SELECT count(*)::int FROM users WHERE is_approved)                    AS approved_users,
+        (SELECT count(*)::int FROM plans WHERE NOT archived)                   AS plans,
+        (SELECT count(*)::int FROM transactions)                               AS transactions,
+        (SELECT count(*)::int FROM refresh_tokens
+          WHERE revoked_at IS NULL AND expires_at > now())                     AS active_sessions,
+        pg_size_pretty(pg_database_size(current_database()))                    AS size
+    `);
+    dbStats = { reachable: true, ...rows[0] };
+  } catch (err) {
+    dbStats = { reachable: false, error: err.message };
+  }
 
   res.json({
     uptimeSeconds: Math.floor(process.uptime()),
@@ -1474,10 +1282,9 @@ app.get('/api/admin/overview', authMiddleware, adminMiddleware, (req, res) => {
       rssBytes: memory.rss,
       heapUsedBytes: memory.heapUsed,
     },
+    database: dbStats,
     config: {
       corsOrigin: allowedOrigins === '*' ? '*' : allowedOrigins,
-      firebaseProjectId: FIREBASE_PROJECT_ID,
-      adminEmailCount: ADMIN_EMAILS.length,
       mayarConfigured: Boolean(MAYAR_API_KEY || MAYAR_PAYMENT_LINK),
       mayarWebhookTokenSet: Boolean(MAYAR_WEBHOOK_TOKEN),
     },
@@ -1534,23 +1341,67 @@ if (fs.existsSync(distPath)) {
 }
 
 // Graceful shutdown so pm2/systemd restarts don't sever sockets abruptly.
-const shutdown = (signal) => {
+let shuttingDown = false;
+const shutdown = async (signal) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log(`[Process] Received ${signal}, shutting down gracefully...`);
-  httpServer.close(() => process.exit(0));
+
   // Force exit if connections refuse to close in time.
-  setTimeout(() => process.exit(0), 10000);
+  const force = setTimeout(() => process.exit(0), 10000);
+
+  httpServer.close(async () => {
+    try {
+      await closePool();
+      console.log('[DB] Connection pool closed.');
+    } catch (err) {
+      console.error('[DB] Error closing pool:', err.message);
+    }
+    clearTimeout(force);
+    process.exit(0);
+  });
 };
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
-// Start Server
-httpServer.listen(PORT, HOST, () => {
-  console.log(`Multi-Tenant Server listening on http://${HOST}:${PORT}`);
-  console.log(`[Config] Firebase project: ${FIREBASE_PROJECT_ID}`);
-  console.log(`[Config] Sessions directory: ${path.resolve('sessions')}`);
-  if (allowedOrigins === '*') {
-    console.warn('[Config] CORS_ORIGIN is not set — allowing all origins. Set CORS_ORIGIN to your frontend URL in production.');
-  } else {
-    console.log(`[Config] CORS allowed origins: ${allowedOrigins.join(', ')}`);
+// =============================================
+// STARTUP
+// =============================================
+// The database and signing key are checked before the port is opened. Starting
+// without them would serve a site that fails every request, so it is better to
+// exit and let pm2 report the crash than to appear healthy.
+async function start() {
+  try {
+    assertAuthConfigured();
+  } catch (err) {
+    console.error(`[Config] ${err.message}`);
+    process.exit(1);
   }
-});
+
+  try {
+    await verifyConnection();
+    await runMigrations();
+  } catch (err) {
+    console.error('[DB] Startup failed:', err.message);
+    console.error('[DB] Check DATABASE_URL and that Postgres is reachable. See deploy/POSTGRES.md.');
+    process.exit(1);
+  }
+
+  // Housekeeping: drop long-expired refresh tokens hourly.
+  pruneRefreshTokens().catch(() => {});
+  setInterval(() => {
+    pruneRefreshTokens().catch(err => console.error('[DB] Prune failed:', err.message));
+  }, 60 * 60 * 1000).unref();
+
+  httpServer.listen(PORT, HOST, () => {
+    console.log(`Multi-Tenant Server listening on http://${HOST}:${PORT}`);
+    console.log(`[Config] Sessions directory: ${path.resolve('sessions')}`);
+    if (allowedOrigins === '*') {
+      console.warn('[Config] CORS_ORIGIN is not set — allowing all origins. Set CORS_ORIGIN to your frontend URL in production.');
+    } else {
+      console.log(`[Config] CORS allowed origins: ${allowedOrigins.join(', ')}`);
+    }
+  });
+}
+
+start();
