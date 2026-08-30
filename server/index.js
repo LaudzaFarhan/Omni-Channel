@@ -7,6 +7,7 @@ import pino from 'pino';
 import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, downloadMediaMessage } from '@whiskeysockets/baileys';
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import { getStore } from './store.js';
 
 // Postgres replaces Firestore; local JWTs replace Firebase Auth.
@@ -1356,12 +1357,36 @@ app.get('/api/admin/overview', admin, async (req, res) => {
   });
 });
 
+// Commit this process is running, resolved once at startup.
+//
+// The frontend bundle carries the commit it was built from (see vite.config.js).
+// Reporting the server's commit here lets the UI compare the two and warn when
+// they differ, which is exactly the "I restarted pm2 but forgot to rebuild"
+// mistake that is otherwise invisible.
+const SERVER_BUILD = (() => {
+  const run = (cmd) => {
+    try {
+      return execSync(cmd, { cwd: path.resolve('.'), stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString().trim();
+    } catch {
+      return '';
+    }
+  };
+  return {
+    sha: run('git rev-parse --short HEAD') || 'unknown',
+    branch: run('git rev-parse --abbrev-ref HEAD') || 'unknown',
+    startedAt: new Date().toISOString(),
+  };
+})();
+
 // Unauthenticated health check for the reverse proxy / uptime monitoring.
-// Intentionally exposes no session or customer data.
+// Intentionally exposes no session or customer data. The commit is included so
+// the frontend can detect a version mismatch; it is not sensitive.
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     uptimeSeconds: Math.floor(process.uptime()),
+    build: SERVER_BUILD,
     activeWhatsAppSessions: Object.values(activeSessions).filter(s => s.status === 'connected').length,
   });
 });

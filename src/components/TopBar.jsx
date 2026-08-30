@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Moon, Bell, MessageCircle, Columns, ChevronDown, Plus, Phone, Trash2, Check, Loader2, QrCode, RefreshCw } from 'lucide-react';
+import VersionBadge from './VersionBadge.jsx';
 
 export default function TopBar({ 
   user, userProfile, connectionStatus, userInfo, onWhatsAppLogout,
@@ -155,6 +156,9 @@ export default function TopBar({
       </div>
 
       <div className="topbar-right">
+        {/* Which commit this bundle came from; warns on a server mismatch. */}
+        <VersionBadge />
+
         <button className="topbar-icon-btn" title="Toggle Dark Mode">
           <Moon size={20} />
         </button>
