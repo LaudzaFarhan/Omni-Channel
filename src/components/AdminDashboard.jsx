@@ -4,6 +4,7 @@ import { subscribeSocket } from '../utils/socket.js';
 import { Shield, LogOut, Users, Layers, Activity } from 'lucide-react';
 import { normalizePlan, sortPlans } from '../utils/plans.js';
 import VersionBadge from './VersionBadge.jsx';
+import ThemeToggle from './ThemeToggle.jsx';
 import UsersTab from './admin/UsersTab.jsx';
 import PlansTab from './admin/PlansTab.jsx';
 import SessionsTab from './admin/SessionsTab.jsx';
@@ -122,6 +123,7 @@ export default function AdminDashboard({ user, onLogout }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <VersionBadge />
+          <ThemeToggle />
           <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
             Logged in as: <strong>{user.email}</strong>
           </span>

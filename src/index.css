@@ -1,28 +1,77 @@
 /* Design System Variables - Premium Light Theme */
-:root {
+/* Light theme (default).
+ *
+ * The theme is selected by a data-theme attribute on <html>, set by
+ * src/utils/theme.js before React mounts so there is no flash of the wrong
+ * palette on load. Anything that reads these variables switches for free;
+ * hardcoded colours in component inline styles do not, so prefer the variables.
+ */
+:root,
+[data-theme='light'] {
   --bg-main: #f0f2f5;
   --bg-sidebar: #ffffff;
   --bg-chat: #efeae2;
   --bg-input: #f0f2f5;
-  
+
   --primary: #00a884;
   --primary-hover: #008069;
   --primary-glow: rgba(0, 168, 132, 0.1);
-  
+
   --text-main: #111b21;
   --text-muted: #3b4a54;
   --text-dimmed: #667781;
-  
+
   --border-color: #e9edef;
   --card-bg: rgba(255, 255, 255, 0.9);
-  
+
   --msg-sent: #d9fdd3;
   --msg-sent-text: #111b21;
   --msg-received: #ffffff;
   --msg-received-text: #111b21;
-  
+
+  /* Surface overlays. Used instead of hardcoded rgba(255,255,255,x), which is
+   * invisible on a light background. */
+  --overlay-subtle: rgba(0, 0, 0, 0.03);
+  --overlay-medium: rgba(0, 0, 0, 0.06);
+  --scrollbar-thumb: rgba(0, 0, 0, 0.18);
+  --shadow-card: 0 1px 3px rgba(11, 20, 26, 0.08);
+
   --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  color-scheme: light;
+}
+
+/* Dark theme. Values follow WhatsApp Web's dark palette so the chat surfaces
+ * stay familiar, with contrast ratios kept at or above 4.5:1 for body text. */
+[data-theme='dark'] {
+  --bg-main: #0b141a;
+  --bg-sidebar: #111b21;
+  --bg-chat: #0b141a;
+  --bg-input: #202c33;
+
+  --primary: #00a884;
+  --primary-hover: #06cf9c;
+  --primary-glow: rgba(0, 168, 132, 0.16);
+
+  --text-main: #e9edef;
+  --text-muted: #aebac1;
+  --text-dimmed: #8696a0;
+
+  --border-color: #2a3942;
+  --card-bg: rgba(32, 44, 51, 0.9);
+
+  --msg-sent: #005c4b;
+  --msg-sent-text: #e9edef;
+  --msg-received: #202c33;
+  --msg-received-text: #e9edef;
+
+  --overlay-subtle: rgba(255, 255, 255, 0.04);
+  --overlay-medium: rgba(255, 255, 255, 0.08);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.16);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+
+  color-scheme: dark;
 }
 
 /* Base Reset & Core Styles */
@@ -39,6 +88,9 @@ body {
   height: 100vh;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  /* Only these two transition on a theme switch. Transitioning everything makes
+   * the change feel sluggish and fights element-level transitions. */
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 #root {
@@ -57,7 +109,8 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  /* Was a hardcoded white overlay, invisible on the light theme. */
+  background: var(--scrollbar-thumb);
   border-radius: 4px;
 }
 
