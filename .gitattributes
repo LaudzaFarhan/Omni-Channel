@@ -1,0 +1,40 @@
+# Normalise line endings.
+#
+# Without this, files committed from Windows carry CRLF into the repository. On
+# the Linux VPS git then reports them as locally modified straight after a clean
+# checkout, which blocked `git pull` repeatedly during deployment — a different
+# file each time, with no actual edits in it.
+#
+# `text=auto eol=lf` stores every text file with LF in the repository and checks
+# it out with LF everywhere. Editors on Windows handle LF fine.
+
+* text=auto eol=lf
+
+# Explicit for the types in this project, so detection is never in doubt.
+*.js      text eol=lf
+*.jsx     text eol=lf
+*.cjs     text eol=lf
+*.mjs     text eol=lf
+*.json    text eol=lf
+*.css     text eol=lf
+*.html    text eol=lf
+*.md      text eol=lf
+*.sql     text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.conf    text eol=lf
+*.snippet text eol=lf
+.env*     text eol=lf
+.gitignore text eol=lf
+
+# Binary: never touch these.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
