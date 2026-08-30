@@ -100,27 +100,37 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
     );
 
   // --- Role -----------------------------------------------------------------
-  const otherAdminCount = users.filter(
-    u => u.role === 'admin' && u.uid !== currentUser.uid
-  ).length;
+  // The only genuinely unsafe demotion is one that leaves zero admins. Demoting
+  // *another* admin can never do that, because you are an admin yourself and
+  // cannot demote your own account. An earlier version of this guard counted only
+  // the other admins and refused when that reached one, which wrongly blocked the
+  // ordinary case of two admins demoting each other. The server enforces the real
+  // rule (see routes-data.js), so this is just a courtesy check that avoids a
+  // pointless round trip.
+  const adminCount = users.filter(u => u.role === 'admin').length;
 
   const openRoleModal = (userObj) => {
     if (userObj.uid === currentUser.uid) {
-      showToast({ type: 'error', title: 'Not allowed', message: 'You cannot change your own admin role.' });
-      return;
-    }
-    const targetRole = userObj.role === 'admin' ? 'customer' : 'admin';
-    // Demoting the only other admin would leave the console with a single
-    // account, and demoting yourself is already blocked above.
-    if (targetRole === 'customer' && otherAdminCount <= 1) {
       showToast({
         type: 'error',
         title: 'Not allowed',
-        message: 'This is the last remaining admin besides you. Promote another account first.',
+        message: 'You cannot change your own role. Ask another admin to do it.',
+      });
+      return;
+    }
+
+    const targetRole = userObj.role === 'admin' ? 'customer' : 'admin';
+
+    if (targetRole === 'customer' && adminCount <= 1) {
+      showToast({
+        type: 'error',
+        title: 'Not allowed',
+        message: 'This is the only remaining admin. Promote another account first.',
         duration: 5200,
       });
       return;
     }
+
     setActiveModal({ type: 'confirmRole', userObj, targetRole });
   };
 
@@ -820,10 +830,20 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
               <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
                 Change the role of this account to{' '}
                 <strong style={{ color: 'var(--primary)' }}>{activeModal.targetRole.toUpperCase()}</strong>?
+
                 {activeModal.targetRole === 'admin' && (
-                  <div style={{ marginTop: '8px', color: '#f59e0b', fontSize: '0.8rem' }}>
-                    Promoting an account grants full approval and admin console access. The address must
-                    also be on the allow-list in firestore.rules, otherwise the console will load empty.
+                  <div style={{ marginTop: '10px', padding: '10px 12px', background: 'rgba(245,158,11,0.08)', borderLeft: '3px solid #f59e0b', borderRadius: '6px', fontSize: '0.8rem' }}>
+                    Promoting grants full admin console access: this account will be able to see and
+                    change every customer, plan and live session, including yours. It is also approved
+                    automatically.
+                  </div>
+                )}
+
+                {activeModal.targetRole === 'customer' && (
+                  <div style={{ marginTop: '10px', padding: '10px 12px', background: 'rgba(245,158,11,0.08)', borderLeft: '3px solid #f59e0b', borderRadius: '6px', fontSize: '0.8rem' }}>
+                    They lose admin console access immediately and are signed out of every device, so
+                    they will need to log in again as a regular user. Their approval, plan and message
+                    usage are left untouched, and quota and device limits now apply to them.
                   </div>
                 )}
               </div>
