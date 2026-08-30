@@ -1347,6 +1347,8 @@ app.post('/api/mayar/create-checkout', supervisor, async (req, res) => {
 
     const status = err.code === 'mayar_not_configured' ? 503
       : err.code === 'mayar_auth_failed' ? 503
+      : err.code === 'mayar_endpoint_missing' ? 503
+      : err.code === 'mayar_duplicate' ? 429
       : err.code === 'mayar_rejected' ? 502
       : err.code === 'mayar_unreachable' ? 504
       : err.code === 'invalid_amount' ? 400
@@ -1359,6 +1361,8 @@ app.post('/api/mayar/create-checkout', supervisor, async (req, res) => {
     const message = {
       mayar_rejected: `The payment provider rejected this request: ${err.message}`,
       mayar_auth_failed: 'Payments are misconfigured on this server: the payment gateway refused our API key. Nothing was charged. This needs an administrator, not a retry.',
+      mayar_endpoint_missing: `Payments are misconfigured on this server: ${err.message} Nothing was charged. This needs an administrator, not a retry.`,
+      mayar_duplicate: 'You just started a checkout for this. Wait a minute before trying again, or use the payment link from the last attempt.',
       mayar_unreachable: 'The payment provider did not respond. Check the server\'s internet access and try again.',
       mayar_no_link: 'The payment provider accepted the invoice but returned no checkout link.',
       invalid_amount: err.message,

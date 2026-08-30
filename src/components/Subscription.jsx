@@ -90,7 +90,10 @@ export default function Subscription({ userProfile, activeSessionCount, plans = 
         // the gateway refused. Neither is something the customer can act on, and
         // both used to arrive as "please try again", which sent them retrying a
         // request that could never succeed.
-        if (res.status === 503 || data.code === 'mayar_not_configured' || data.code === 'mayar_auth_failed') {
+        if (res.status === 503
+          || data.code === 'mayar_not_configured'
+          || data.code === 'mayar_auth_failed'
+          || data.code === 'mayar_endpoint_missing') {
           setActivePaymentModal({
             isConfigError: true,
             message: data.error || 'Payments are not configured on this server yet.',

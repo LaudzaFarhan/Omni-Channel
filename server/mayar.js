@@ -21,6 +21,27 @@ const WEBHOOK_TOKEN = (process.env.MAYAR_WEBHOOK_TOKEN || '').trim();
 // Point MAYAR_API_BASE at the sandbox to test without moving real money.
 const API_BASE = (process.env.MAYAR_API_BASE || 'https://api.mayar.id').trim().replace(/\/+$/, '');
 
+// Invoice creation path, and the reason this is not a single constant.
+//
+// Mayar pluralised the resource between API versions, and only one spelling exists
+// per version:
+//
+//   v1  POST /hl/v1/invoice/create    (singular)
+//   v2  POST /hl/v2/invoices/create   (plural)
+//
+// This code was calling /hl/v2/invoice/create — v2's version with v1's spelling,
+// which exists in neither. Mayar's router answered with its generic
+// {"messages":"Not Found"}, so every checkout failed with a message that looked like
+// a missing customer or product rather than a wrong URL.
+//
+// v2 is tried first and v1 is the fallback, because a 404 is the one error that
+// reliably means "this path is not a route here" rather than anything about the
+// request. MAYAR_INVOICE_PATH pins it explicitly once you know which your account
+// serves, skipping the probe.
+const INVOICE_PATH_V2 = '/hl/v2/invoices/create';
+const INVOICE_PATH_V1 = '/hl/v1/invoice/create';
+const INVOICE_PATH_OVERRIDE = (process.env.MAYAR_INVOICE_PATH || '').trim();
+
 // Static payment link fallback, for accounts not using the headless API.
 const PAYMENT_LINK = (process.env.MAYAR_PAYMENT_LINK || '').trim();
 
@@ -158,26 +179,55 @@ export async function createInvoice({
     ...(extraData ? { extraData } : {}),
   };
 
+  const post = async (path) => {
+    try {
+      const response = await fetch(`${API_BASE}${path}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(20000),
+      });
+      return { response, body: await response.json().catch(() => null) };
+    } catch (err) {
+      // Network or timeout. Deliberately does not include the request headers.
+      throw Object.assign(
+        new Error(`Could not reach Mayar: ${err.message}`),
+        { code: 'mayar_unreachable' }
+      );
+    }
+  };
+
+  const attempts = INVOICE_PATH_OVERRIDE
+    ? [INVOICE_PATH_OVERRIDE]
+    : [INVOICE_PATH_V2, INVOICE_PATH_V1];
+
   let res;
-  try {
-    res = await fetch(`${API_BASE}/hl/v2/invoice/create`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(20000),
-    });
-  } catch (err) {
-    // Network or timeout. Deliberately does not include the request headers.
-    throw Object.assign(
-      new Error(`Could not reach Mayar: ${err.message}`),
-      { code: 'mayar_unreachable' }
-    );
+  let payload;
+  let usedPath;
+
+  for (const path of attempts) {
+    ({ response: res, body: payload } = await post(path));
+    usedPath = path;
+
+    // Only a 404 justifies trying the other spelling. Any other status is a real
+    // answer about this request and must not be retried — re-posting a 429
+    // "duplicate request" or a 409 "already exist" would make things worse.
+    if (res.status !== 404) break;
+
+    if (path !== attempts[attempts.length - 1]) {
+      console.warn(`[Mayar] ${path} returned 404; trying the other API version.`);
+    }
   }
 
-  const payload = await res.json().catch(() => null);
+  if (res.ok && usedPath !== attempts[0]) {
+    console.warn(
+      `[Mayar] Invoices are being created via ${usedPath}, not ${attempts[0]}. ` +
+      `Set MAYAR_INVOICE_PATH=${usedPath} to skip the failed probe on every checkout.`
+    );
+  }
 
   if (!res.ok) {
     // Mayar returns { statusCode, messages }. Surface its message, never the key.
@@ -196,6 +246,28 @@ export async function createInvoice({
       throw Object.assign(
         new Error('the payment gateway refused our credentials'),
         { code: 'mayar_auth_failed', status: res.status }
+      );
+    }
+
+    // A 404 after every candidate path has been tried is a configuration problem,
+    // not a rejected payment. Mayar's own body here is the bare "Not Found" from its
+    // router, which reads like a missing customer and sends you looking in the wrong
+    // place — so say what it actually means.
+    if (res.status === 404) {
+      throw Object.assign(
+        new Error(
+          `no invoice endpoint responded at ${API_BASE} (tried ${attempts.join(' and ')}). ` +
+          'Check MAYAR_API_BASE, and MAYAR_INVOICE_PATH if your account uses a different path.'
+        ),
+        { code: 'mayar_endpoint_missing', status: 404 }
+      );
+    }
+
+    // Documented: Mayar debounces identical create requests for a minute.
+    if (res.status === 429) {
+      throw Object.assign(
+        new Error('the payment provider is rate limiting duplicate requests — wait a minute and try again'),
+        { code: 'mayar_duplicate', status: 429 }
       );
     }
 
