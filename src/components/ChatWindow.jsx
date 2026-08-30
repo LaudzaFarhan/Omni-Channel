@@ -1119,9 +1119,9 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
 
         {/* Message Input Box */}
         <div className="chat-window-input-bar" style={{ position: 'relative' }}>
+          {/* Quota-reached overlay. Themed rather than a hardcoded white wash,
+              which read as a bright panel over the dark composer. */}
           {userProfile && userProfile.role !== 'admin' && (userProfile.messagesSent || 0) >= (userProfile.messageLimit ?? 500) && (
-            {/* Themed rather than a hardcoded white wash, which read as a bright
-                panel over the dark composer. */}
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'var(--bg-input)', opacity: 0.94, zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', fontWeight: '600', gap: '8px' }}>
               <AlertCircle size={18} /> Usage limit reached. Upgrade your plan to send more messages.
             </div>
