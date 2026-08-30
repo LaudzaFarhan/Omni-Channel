@@ -268,13 +268,15 @@ export default function Subscription({ userProfile, activeSessionCount, plans = 
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
                 <thead>
+                  {/* Description absorbs the slack so the fixed-shape columns
+                      (date, id, amount, status) never wrap. */}
                   <tr style={{ borderBottom: '2px solid var(--border-color)', color: 'var(--text-dimmed)', fontWeight: '600' }}>
-                    <th style={{ padding: '12px 14px' }}>Date</th>
-                    <th style={{ padding: '12px 14px' }}>Transaction ID</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '1%' }}>Date</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '1%' }}>Transaction ID</th>
                     <th style={{ padding: '12px 14px' }}>Description</th>
-                    <th style={{ padding: '12px 14px' }}>Amount</th>
-                    <th style={{ padding: '12px 14px' }}>Status</th>
-                    <th style={{ padding: '12px 14px' }}>Action</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '1%', textAlign: 'right' }}>Amount</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '1%' }}>Status</th>
+                    <th style={{ padding: '12px 14px', whiteSpace: 'nowrap', width: '1%' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -284,19 +286,19 @@ export default function Subscription({ userProfile, activeSessionCount, plans = 
 
                     return (
                       <tr key={tx.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ padding: '14px', color: 'var(--text-muted)' }}>
+                        <td style={{ padding: '14px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                           {tx.createdAt ? new Date(tx.createdAt).toLocaleDateString() : 'N/A'}
                         </td>
-                        <td style={{ padding: '14px', fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                        <td style={{ padding: '14px', fontFamily: 'monospace', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
                           {tx.transactionId || tx.id}
                         </td>
                         <td style={{ padding: '14px', fontWeight: '600' }}>
                           {tx.item || 'Payment Checkout'}
                         </td>
-                        <td style={{ padding: '14px', fontWeight: '700', color: 'var(--primary)' }}>
+                        <td style={{ padding: '14px', fontWeight: '700', color: 'var(--primary)', whiteSpace: 'nowrap', textAlign: 'right' }}>
                           Rp {(tx.amount || 0).toLocaleString('id-ID')}
                         </td>
-                        <td style={{ padding: '14px' }}>
+                        <td style={{ padding: '14px', whiteSpace: 'nowrap' }}>
                           <span style={{
                             padding: '4px 10px',
                             borderRadius: '12px',
@@ -309,7 +311,7 @@ export default function Subscription({ userProfile, activeSessionCount, plans = 
                             {(tx.status || 'PENDING').toUpperCase()}
                           </span>
                         </td>
-                        <td style={{ padding: '14px' }}>
+                        <td style={{ padding: '14px', whiteSpace: 'nowrap' }}>
                           {tx.paymentUrl ? (
                             <a 
                               href={tx.paymentUrl} 

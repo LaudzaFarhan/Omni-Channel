@@ -676,7 +676,12 @@ body {
 
 .view-content {
   padding: 0 40px 40px;
-  max-width: 800px;
+  /* No max-width. This used to cap every view at 800px, which squeezed the
+     subscription page's transaction table into a horizontal scrollbar on a wide
+     screen. The two views that genuinely want narrow content (Profile, Settings)
+     constrain their own card instead. */
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* Subscription specific */
