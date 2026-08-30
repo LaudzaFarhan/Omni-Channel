@@ -58,8 +58,12 @@ export default function Subscription({ userProfile, activeSessionCount }) {
     };
   }, [userProfile?.uid]);
 
-  // Initiate real Mayar Payment Checkout
-  const handleInitiateMayarCheckout = async (type, amount, description) => {
+  // Start a Mayar checkout for a plan.
+  //
+  // Only the plan id is sent. The price comes from the plans table server-side —
+  // this used to post an `amount`, which meant the payload could be edited to buy
+  // a paid plan for a token sum.
+  const handleInitiateMayarCheckout = async (planId) => {
     if (buying || !userProfile?.uid) return;
     setBuying(true);
 
@@ -67,44 +71,48 @@ export default function Subscription({ userProfile, activeSessionCount }) {
       const res = await fetchWithAuth('/api/mayar/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, amount, description })
+        body: JSON.stringify({ planId })
       });
 
+      const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        throw new Error(`Server returned status ${res.status}`);
+        // 503 means the server has no Mayar key configured, which is a setup
+        // problem rather than something the customer can act on.
+        if (res.status === 503 || data.code === 'mayar_not_configured') {
+          setActivePaymentModal({
+            isConfigError: true,
+            message: data.error || 'Payments are not configured on this server yet.',
+          });
+          return;
+        }
+        throw new Error(data.error || `Server returned status ${res.status}`);
       }
 
-      const data = await res.json();
       loadServerTransactions();
 
-      if (data.isConfigError || !data.paymentUrl) {
+      if (!data.paymentUrl) {
         setActivePaymentModal({
           isConfigError: true,
-          message: data.message || 'Mayar API Secret Key or Payment Link is required.'
+          message: 'The payment provider did not return a checkout link.',
         });
         return;
       }
 
-      // Show payment modal & open Mayar checkout in new window
       setActivePaymentModal({
         transactionId: data.transactionId,
         paymentUrl: data.paymentUrl,
         amount: data.amount,
-        description: checkoutDescription(type, amount)
+        description: data.description,
       });
 
       window.open(data.paymentUrl, '_blank');
     } catch (err) {
       console.error('Mayar Checkout Error:', err);
-      alert(`Failed to start Mayar payment checkout: ${err.message}`);
+      alert(`Failed to start payment: ${err.message}`);
     } finally {
       setBuying(false);
     }
-  };
-
-  const checkoutDescription = (type, amount) => {
-    if (type === 'premium') return 'Upgrade to Premium Tier (Unlimited API Access)';
-    return `Additional Device Session License (${amount.toLocaleString('id-ID')} IDR)`;
   };
 
   return (
@@ -170,7 +178,7 @@ export default function Subscription({ userProfile, activeSessionCount }) {
             <div style={{ marginTop: '24px' }}>
               <button 
                 className="upgrade-btn" 
-                onClick={() => handleInitiateMayarCheckout('premium', 299000, 'Premium Tier Upgrade (1 Month)')}
+                onClick={() => handleInitiateMayarCheckout('premium')}
                 disabled={buying || userProfile?.tier === 'premium'}
                 style={{ width: '100%', display: 'inline-flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
               >
@@ -212,7 +220,7 @@ export default function Subscription({ userProfile, activeSessionCount }) {
             <div style={{ marginTop: '24px' }}>
               <button 
                 className="upgrade-btn" 
-                onClick={() => handleInitiateMayarCheckout('session', 200000, '1 Additional Device Session License')}
+                onClick={() => handleInitiateMayarCheckout('premium')}
                 disabled={buying}
                 style={{ width: '100%', display: 'inline-flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}
               >

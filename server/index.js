@@ -8,6 +8,7 @@ import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaile
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import crypto from 'crypto';
 import { getStore } from './store.js';
 
 // Postgres replaces Firestore; local JWTs replace Firebase Auth.
@@ -19,7 +20,11 @@ import { assertAuthConfigured, verifyAccessToken } from './auth.js';
 import {
   resolveSessionLimitFor, consumeMessageQuota, saveTransaction,
   markTransactionStatus, findUserById, recordAudit, isChatHeld,
+  findPlanById, updateUser,
 } from './data.js';
+import {
+  mayarConfig, reportMayarConfig, createInvoice, verifyWebhookToken, parseWebhookEvent,
+} from './mayar.js';
 import { authenticated, approved, admin, clientIp } from './middleware.js';
 import { mountAuthRoutes } from './routes-auth.js';
 import { mountDataRoutes } from './routes-data.js';
@@ -977,9 +982,8 @@ app.post('/api/logout', approved, (req, res) => {
 // fallback is never relied on.
 const PUBLIC_URL = (process.env.PUBLIC_URL || 'https://www.omnireach.my.id').trim().replace(/\/+$/, '');
 
-const MAYAR_API_KEY = (process.env.MAYAR_API_KEY || '').trim();
-const MAYAR_WEBHOOK_TOKEN = (process.env.MAYAR_WEBHOOK_TOKEN || '').trim();
-const MAYAR_PAYMENT_LINK = (process.env.MAYAR_PAYMENT_LINK || '').trim();
+// Mayar credentials and the API client live in server/mayar.js, which reads them
+// from the environment and never logs them.
 
 // Transactions Store Helper (File-backed fallback)
 // Transactions used to live in sessions/transactions.json, which meant they were
@@ -995,161 +999,241 @@ mountDataRoutes(app, io);
 
 // Reports whether the payment gateway is configured. Unauthenticated by design:
 // it exposes booleans only, never the key itself.
+// Reports whether the payment gateway is configured. Unauthenticated by design:
+// it exposes booleans only, never the key itself.
 app.get('/api/mayar/config', (req, res) => {
   res.json({
-    configured: Boolean(MAYAR_API_KEY || MAYAR_PAYMENT_LINK),
-    hasWebhookToken: Boolean(MAYAR_WEBHOOK_TOKEN)
+    configured: mayarConfig.isConfigured,
+    hasWebhookToken: mayarConfig.hasWebhookToken,
+    sandbox: mayarConfig.isSandbox,
   });
 });
 
+// Start a checkout for a plan.
+//
+// The client sends only a planId. The price, name and description are read from
+// the plans table server-side.
+//
+// This previously accepted `amount` from the request body, which meant a user
+// could buy Premium for 1 rupiah by editing the payload. Prices must never be
+// client-supplied.
 app.post('/api/mayar/create-checkout', authenticated, async (req, res) => {
-  const uid = req.user.uid;
-  const userEmail = req.user.email;
-  const { type, amount, description } = req.body;
-
-  if (!amount || amount <= 0) {
-    return res.status(400).json({ error: 'Invalid amount' });
-  }
-
-  const transactionId = 'MAYAR-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
-  const checkoutPayload = {
-    name: userEmail ? userEmail.split('@')[0] : 'Customer',
-    email: userEmail,
-    amount: amount,
-    description: description || (type === 'session' ? 'Device Session License' : 'Premium Subscription Upgrade'),
-    redirectUrl: req.headers.referer || PUBLIC_URL
-  };
+  const uid = req.profile.uid;
+  const userEmail = req.profile.email;
 
   try {
-    let paymentUrl = '';
-    
-    // 1) Use MAYAR_PAYMENT_LINK if set in .env
-    if (MAYAR_PAYMENT_LINK) {
-      const sep = MAYAR_PAYMENT_LINK.includes('?') ? '&' : '?';
-      paymentUrl = `${MAYAR_PAYMENT_LINK}${sep}email=${encodeURIComponent(userEmail || '')}&ref=${transactionId}`;
+    const planId = String(req.body?.planId || '').trim().toLowerCase();
+    if (!planId) {
+      return res.status(400).json({ error: 'planId is required' });
     }
 
-    // 2) Call Mayar Headless API if API Key is available
-    if (!paymentUrl && MAYAR_API_KEY) {
-      try {
-        const mayarRes = await fetch('https://api.mayar.id/hl/v1/payment/create', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${MAYAR_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(checkoutPayload)
-        });
-
-        if (mayarRes.ok) {
-          const mayarData = await mayarRes.json();
-          paymentUrl = mayarData.data?.link || mayarData.data?.url || mayarData.paymentUrl || '';
-        } else {
-          console.warn('[Mayar API] Request returned status:', mayarRes.status);
-        }
-      } catch (apiErr) {
-        console.error('[Mayar API] Error reaching Mayar endpoint:', apiErr.message);
-      }
+    const plan = await findPlanById(planId);
+    if (!plan) {
+      return res.status(404).json({ error: `Plan "${planId}" does not exist.` });
+    }
+    if (plan.archived) {
+      return res.status(400).json({ error: `Plan "${plan.name}" is no longer available.` });
+    }
+    if (!plan.price || plan.price <= 0) {
+      return res.status(400).json({
+        error: `Plan "${plan.name}" is free — there is nothing to pay for.`,
+        code: 'plan_is_free',
+      });
+    }
+    if (req.profile.planId === planId) {
+      return res.status(409).json({
+        error: `You are already on the ${plan.name} plan.`,
+        code: 'already_on_plan',
+      });
     }
 
-    // Persist the pending transaction to Postgres.
+    if (!mayarConfig.isConfigured) {
+      return res.status(503).json({
+        error: 'Payments are not configured on this server. Set MAYAR_API_KEY.',
+        code: 'mayar_not_configured',
+      });
+    }
+
+    const transactionId = `WA-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+    const description = `${plan.name} plan for ${userEmail}`;
+
+    // Record the intent BEFORE calling Mayar, so a customer who pays is never
+    // left without a local record if our process dies mid-request.
     await saveTransaction({
       transactionId,
       uid,
       email: userEmail || '',
-      item: checkoutPayload.description,
-      type,
-      amount,
-      currency: 'IDR',
+      item: description,
+      type: planId,
+      amount: plan.price,
+      currency: plan.currency || 'IDR',
       status: 'PENDING',
-      paymentUrl,
+      paymentUrl: null,
     });
 
-    if (!paymentUrl) {
-      return res.json({
-        success: false,
-        isConfigError: true,
-        transactionId,
-        message: 'Mayar Secret API Key (mayar_sec_...) or MAYAR_PAYMENT_LINK required in .env'
+    let paymentUrl = '';
+    let mayarRef = null;
+
+    if (mayarConfig.hasApiKey) {
+      const invoice = await createInvoice({
+        name: req.profile.name || (userEmail ? userEmail.split('@')[0] : 'Customer'),
+        email: userEmail,
+        mobile: req.body?.mobile,
+        description,
+        itemDescription: `${plan.name} plan`,
+        amount: plan.price,
+        // Round-tripped by Mayar and read back in the webhook, which is what
+        // makes automatic fulfilment safe: we no longer have to guess which plan
+        // a payment was for.
+        extraData: { localTransactionId: transactionId, uid, planId },
       });
+
+      paymentUrl = invoice.link;
+      mayarRef = invoice.mayarTransactionId || invoice.invoiceId;
+    } else {
+      // Static payment link fallback. Fulfilment cannot be automatic here,
+      // because a static link carries no extraData back to us.
+      const sep = mayarConfig.paymentLink.includes('?') ? '&' : '?';
+      paymentUrl = `${mayarConfig.paymentLink}${sep}email=${encodeURIComponent(userEmail || '')}&ref=${transactionId}`;
     }
+
+    await saveTransaction({
+      transactionId,
+      uid,
+      email: userEmail || '',
+      item: description,
+      type: planId,
+      amount: plan.price,
+      currency: plan.currency || 'IDR',
+      status: 'PENDING',
+      paymentUrl,
+      raw: mayarRef ? { mayarRef } : null,
+    });
+
+    await recordAudit({
+      actorUserId: uid,
+      actorEmail: userEmail,
+      action: 'payment.checkout_created',
+      targetUserId: uid,
+      detail: { transactionId, planId, amount: plan.price, mayarRef },
+      ip: clientIp(req),
+    });
 
     res.json({
       success: true,
       transactionId,
       paymentUrl,
-      amount,
-      type,
-      description: checkoutPayload.description
+      amount: plan.price,
+      currency: plan.currency || 'IDR',
+      planId,
+      description,
     });
   } catch (err) {
-    console.error('[Mayar Checkout] Error creating checkout:', err);
-    res.status(500).json({ error: 'Failed to create payment checkout link' });
+    console.error('[Mayar Checkout] Failed:', err.message);
+    const status = err.code === 'mayar_not_configured' ? 503
+      : err.code === 'mayar_rejected' ? 502
+      : err.code === 'mayar_unreachable' ? 504
+      : 500;
+    res.status(status).json({
+      error: err.code === 'mayar_rejected'
+        ? `Payment provider rejected the request: ${err.message}`
+        : 'Could not start the payment. Please try again.',
+      code: err.code || 'checkout_failed',
+    });
   }
 });
 
-// Unauthenticated Mayar Webhook receiver endpoint
+// Mayar webhook receiver.
+//
+// Fails closed: without MAYAR_WEBHOOK_TOKEN set, every call is rejected. The
+// previous version skipped verification entirely when the token was unset, which
+// left an unauthenticated endpoint able to trigger fulfilment.
 app.post('/api/webhooks/mayar', async (req, res) => {
-  const token = req.headers['x-mayar-token'] || req.headers['authorization'] || req.query.token || '';
-  
-  // Verify token if configured
-  if (MAYAR_WEBHOOK_TOKEN && !token.includes(MAYAR_WEBHOOK_TOKEN) && token !== MAYAR_WEBHOOK_TOKEN) {
-    console.warn('[Mayar Webhook] Received webhook with invalid authorization token');
-    return res.status(401).json({ error: 'Unauthorized webhook token' });
+  const presented = req.headers['x-mayar-token']
+    || req.headers['authorization']
+    || req.query.token
+    || '';
+
+  if (!mayarConfig.hasWebhookToken) {
+    console.error('[Mayar Webhook] Rejected: MAYAR_WEBHOOK_TOKEN is not set on this server.');
+    return res.status(503).json({ error: 'Webhook is not configured' });
   }
 
-  const payload = req.body || {};
-  console.log('[Mayar Webhook] Processing event:', payload.event || payload.status || 'payment_event');
+  if (!(await verifyWebhookToken(presented))) {
+    console.warn(`[Mayar Webhook] Rejected a call with an invalid token from ${clientIp(req)}`);
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const event = parseWebhookEvent(req.body || {});
+  console.log(`[Mayar Webhook] ${event.status} tx=${event.mayarTransactionId || 'n/a'} local=${event.localTransactionId || 'n/a'}`);
 
   try {
-    const status = (payload.status || payload.event || '').toUpperCase();
-    const isPaid = status.includes('PAID') || status.includes('SUCCESS') || status.includes('PAYMENT.RECEIVED');
+    if (!event.isPaid) {
+      // Acknowledge non-payment events so Mayar stops retrying them.
+      return res.json({ success: true, ignored: event.status });
+    }
 
-    if (isPaid) {
-      const email = payload.customerEmail || payload.data?.customerEmail || payload.email;
-      const type = payload.metadata?.type || payload.data?.metadata?.type || 'session';
-      const uid = payload.metadata?.uid || payload.data?.metadata?.uid;
-      const transactionId = payload.id || payload.transactionId
-        || payload.metadata?.ref || payload.data?.metadata?.ref;
+    let appliedPlan = null;
 
-      console.log(`[Mayar Webhook] Payment SUCCESS for ${email || uid || 'customer'} (tx ${transactionId || 'unknown'}).`);
-
-      // Mark the transaction paid so the record stops sitting at PENDING
-      // forever, which is what happened while transactions lived in a JSON file
-      // and nothing wrote back to them.
-      if (transactionId) {
-        const updated = await markTransactionStatus(transactionId, 'PAID');
-        if (!updated) {
-          console.warn(`[Mayar Webhook] No local transaction matches ${transactionId}; recording the event only.`);
-        }
-      }
-
-      // Note: the plan is NOT changed automatically. The webhook payload carries
-      // no plan id, and inferring one from `type` would be guesswork that could
-      // silently grant the wrong entitlement. An admin applies the upgrade from
-      // the Customers tab; the audit row below is the prompt to do so.
-      await recordAudit({
-        actorUserId: null,
-        actorEmail: 'mayar-webhook',
-        action: 'payment.received',
-        targetUserId: uid || null,
-        detail: { transactionId, type, email, status },
-        ip: clientIp(req),
-      });
-
-      if (uid) {
-        io.to(uid).emit('payment-success', {
-          transactionId,
-          type,
-          timestamp: new Date().toISOString()
-        });
+    if (event.localTransactionId) {
+      const updated = await markTransactionStatus(event.localTransactionId, 'PAID');
+      if (!updated) {
+        console.warn(`[Mayar Webhook] No local transaction ${event.localTransactionId}; recording the event only.`);
       }
     }
 
-    res.json({ success: true, message: 'Webhook processed successfully' });
+    // Automatic fulfilment, now possible because extraData carried the plan
+    // through the payment. Both ids come from data WE attached at checkout, not
+    // from anything the payer controls.
+    if (event.uid && event.planId) {
+      const plan = await findPlanById(event.planId);
+      const user = await findUserById(event.uid);
+
+      if (!plan) {
+        console.error(`[Mayar Webhook] Paid for unknown plan "${event.planId}" — needs manual review.`);
+      } else if (!user) {
+        console.error(`[Mayar Webhook] Paid for unknown user "${event.uid}" — needs manual review.`);
+      } else {
+        await updateUser(event.uid, { planId: plan.id });
+        appliedPlan = plan.id;
+        console.log(`[Mayar Webhook] Upgraded ${user.email} to ${plan.name}.`);
+
+        const fresh = await findUserById(event.uid);
+        io.to(event.uid).emit('profile-updated', fresh);
+      }
+    } else {
+      console.warn('[Mayar Webhook] Payment carried no uid/planId in extraData — fulfil manually from the admin console.');
+    }
+
+    await recordAudit({
+      actorUserId: null,
+      actorEmail: 'mayar-webhook',
+      action: 'payment.received',
+      targetUserId: event.uid || null,
+      detail: {
+        localTransactionId: event.localTransactionId,
+        mayarTransactionId: event.mayarTransactionId,
+        planId: event.planId,
+        amount: event.amount,
+        status: event.status,
+        appliedPlan,
+      },
+      ip: clientIp(req),
+    });
+
+    if (event.uid) {
+      io.to(event.uid).emit('payment-success', {
+        transactionId: event.localTransactionId,
+        planId: appliedPlan,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    res.json({ success: true, appliedPlan });
   } catch (err) {
-    console.error('[Mayar Webhook] Processing error:', err);
-    res.status(500).json({ error: err.message });
+    // A 500 makes Mayar retry, which is what we want for a transient failure.
+    console.error('[Mayar Webhook] Processing error:', err.message);
+    res.status(500).json({ error: 'Processing failed' });
   }
 });
 
@@ -1351,8 +1435,9 @@ app.get('/api/admin/overview', admin, async (req, res) => {
     database: dbStats,
     config: {
       corsOrigin: allowedOrigins === '*' ? '*' : allowedOrigins,
-      mayarConfigured: Boolean(MAYAR_API_KEY || MAYAR_PAYMENT_LINK),
-      mayarWebhookTokenSet: Boolean(MAYAR_WEBHOOK_TOKEN),
+      mayarConfigured: mayarConfig.isConfigured,
+      mayarWebhookTokenSet: mayarConfig.hasWebhookToken,
+      mayarSandbox: mayarConfig.isSandbox,
     },
   });
 });
@@ -1491,6 +1576,7 @@ async function start() {
     } else {
       console.log(`[Config] CORS allowed origins: ${allowedOrigins.join(', ')}`);
     }
+    reportMayarConfig();
   });
 }
 
