@@ -27,9 +27,26 @@ export function authMiddleware(req, res, next) {
   next();
 }
 
-// Loads the live database row. The access token carries a role claim, but it is
-// up to 15 minutes stale — anything that depends on current state (approval,
-// role, quota) must read the row rather than trust the claim.
+// Loads the live database row, and resolves which workspace the caller acts in.
+//
+// The access token carries a role claim, but it is up to 15 minutes stale —
+// anything that depends on current state (approval, role, quota) must read the row
+// rather than trust the claim. The same argument rules out putting the workspace
+// id in the token: a member removed from a team would keep acting inside it until
+// their access token expired.
+//
+// Two identities come out of this and the distinction matters everywhere:
+//
+//   req.profile.uid   WHO is calling. Their own name, email, password, audit trail.
+//   req.workspaceId   WHOSE DATA they are working on. For a supervisor these are
+//                     the same value; for an invited member the workspace id is
+//                     their supervisor's. Every WhatsApp session, chat, contact,
+//                     hold row and message quota is keyed by the workspace id.
+//
+// Getting that substitution wrong in either direction is a bug with teeth: using
+// the member's id where the workspace belongs gives them an empty parallel tenant,
+// and using the workspace id where the member belongs would let one colleague
+// change another's password.
 export async function loadProfile(req, res, next) {
   try {
     const profile = await findUserById(req.user.uid);
@@ -37,7 +54,28 @@ export async function loadProfile(req, res, next) {
       // The account was deleted while a valid token was still in flight.
       return res.status(401).json({ error: 'Account no longer exists', code: 'account_missing' });
     }
+
     req.profile = profile;
+    req.workspaceId = profile.workspaceId;
+
+    // The row that owns the plan, the quota and the seats. A supervisor is their
+    // own workspace, so the common case costs no extra query.
+    if (profile.ownerUserId) {
+      const owner = await findUserById(profile.ownerUserId);
+      if (!owner) {
+        // CASCADE should make this unreachable, but a member whose supervisor is
+        // gone must not fall back to acting as their own tenant.
+        console.warn(`[Auth] Member ${profile.email} has no surviving supervisor (${profile.ownerUserId}).`);
+        return res.status(403).json({
+          error: 'The account that invited you no longer exists.',
+          code: 'workspace_missing',
+        });
+      }
+      req.workspace = owner;
+    } else {
+      req.workspace = profile;
+    }
+
     next();
   } catch (err) {
     console.error('[Auth] Failed to load profile:', err.message);
@@ -50,6 +88,10 @@ export async function loadProfile(req, res, next) {
 // Under Firestore this was never enforced server-side: revoking a customer in
 // the admin panel left their existing session able to keep sending until they
 // reloaded. Now a revoked account is refused on the next request.
+//
+// Both rows are checked. A member's own approval is not enough: if a platform
+// admin revokes the SUPERVISOR, the whole workspace has to go dark, otherwise
+// suspending an account would leave its staff still sending messages on it.
 export function requireApproved(req, res, next) {
   if (req.profile.role === 'admin') return next();
 
@@ -60,6 +102,29 @@ export function requireApproved(req, res, next) {
     });
   }
 
+  if (req.workspace && req.workspace.uid !== req.profile.uid && !req.workspace.isApproved) {
+    return res.status(403).json({
+      error: 'The account that invited you is pending administrator approval.',
+      code: 'workspace_not_approved',
+    });
+  }
+
+  next();
+}
+
+// Restricts an action to the person who owns the workspace.
+//
+// Used for anything that spends money or that would disrupt every other member:
+// buying a plan, reading billing history, managing the team, and unpairing the
+// shared WhatsApp device. A platform admin is not automatically a supervisor of
+// someone else's workspace, so this checks ownership rather than role.
+export function requireSupervisor(req, res, next) {
+  if (req.profile.ownerUserId) {
+    return res.status(403).json({
+      error: 'Only the account owner can do that. Ask your supervisor.',
+      code: 'supervisor_only',
+    });
+  }
   next();
 }
 
@@ -77,6 +142,10 @@ export function requireAdmin(req, res, next) {
 export const authenticated = [authMiddleware, loadProfile];
 export const approved = [authMiddleware, loadProfile, requireApproved];
 export const admin = [authMiddleware, loadProfile, requireAdmin];
+
+// Approved AND owns the workspace. For billing, team management, and unpairing
+// the WhatsApp device everyone shares.
+export const supervisor = [authMiddleware, loadProfile, requireApproved, requireSupervisor];
 
 // ---------------------------------------------------------------------------
 // rate limiting

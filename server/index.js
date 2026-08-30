@@ -29,10 +29,12 @@ import { priceFor, invoiceLines, clampAgents, agentRange } from '../src/utils/pr
 import {
   mayarConfig, reportMayarConfig, createInvoice, verifyWebhookToken, parseWebhookEvent,
 } from './mayar.js';
-import { authenticated, approved, admin, clientIp } from './middleware.js';
+import { authenticated, approved, admin, supervisor, clientIp } from './middleware.js';
+import { sessionKey, userRoom } from './scope.js';
 import { mountAuthRoutes } from './routes-auth.js';
 import { mountDataRoutes } from './routes-data.js';
 import { mountContactRoutes } from './routes-contacts.js';
+import { mountTeamRoutes } from './routes-team.js';
 
 const PORT = process.env.PORT || 5000;
 // Bind to loopback by default so a VPS only exposes the app through its reverse
@@ -95,30 +97,41 @@ fetchLatestBaileysVersion().then(latest => {
 // =============================================
 // MULTI-SESSION SUPPORT
 // =============================================
-// activeSessions keyed by compositeKey = `${uid}_${sessionId}`
+// activeSessions keyed by compositeKey = `${ownerId}_${sessionId}`
+//
+// `ownerId` throughout this file is the WORKSPACE owner's user id — not
+// necessarily the id of the person who made the request. A supervisor and every
+// team member they invited share one workspace, so they share these WhatsApp
+// sessions, these stores, this socket room and this message quota.
+//
+// Routes get it from `req.workspaceId` (see loadProfile in middleware.js), which
+// is `owner_user_id ?? id`. Using the caller's own id here instead would hand each
+// invited member an empty parallel tenant with no paired device.
+//
+// The parameter is named `ownerId` rather than `uid` deliberately: it used to be
+// called `uid` when one user was one tenant, and leaving that name would have made
+// every call site read as though it were scoped to the caller.
+//
+// sessionKey() and userRoom() live in ./scope.js so the route files share one
+// definition instead of rebuilding the key by hand.
 const activeSessions = {};
-
-// Helper: build composite key
-function sessionKey(uid, sessionId) {
-  return `${uid}_${sessionId || 'default'}`;
-}
 
 // Debounced 'history-sync-complete' emitter.
 // WhatsApp streams hundreds of contact/chat events during a sync; emitting on each
 // one makes the client refetch in a tight loop (flickering). Coalesce bursts into
 // at most one refresh signal per window.
 const syncEmitTimers = {};
-function emitSyncComplete(uid, sessionId) {
-  const k = sessionKey(uid, sessionId);
+function emitSyncComplete(ownerId, sessionId) {
+  const k = sessionKey(ownerId, sessionId);
   if (syncEmitTimers[k]) return; // already scheduled within the current window
   syncEmitTimers[k] = setTimeout(() => {
     delete syncEmitTimers[k];
-    io.to(uid).emit('history-sync-complete', { sessionId });
+    io.to(ownerId).emit('history-sync-complete', { sessionId });
   }, 700);
 }
 
-async function getOrInitWASocket(uid, sessionId = 'default') {
-  const key = sessionKey(uid, sessionId);
+async function getOrInitWASocket(ownerId, sessionId = 'default') {
+  const key = sessionKey(ownerId, sessionId);
 
   if (activeSessions[key] && activeSessions[key].sock) {
     return activeSessions[key];
@@ -139,7 +152,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
     status: 'connecting',
     qr: null,
     user: null,
-    uid,
+    uid: ownerId,
     sessionId,
     reconnectAttempts: prevAttempts,
     reconnectTimer: null,
@@ -186,7 +199,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
         try {
           const qrDataUrl = await QRCode.toDataURL(qr);
           session.qr = qrDataUrl;
-          io.to(uid).emit('status-change', { sessionId, status: 'qr', qr: qrDataUrl });
+          io.to(ownerId).emit('status-change', { sessionId, status: 'qr', qr: qrDataUrl });
         } catch (err) {
           console.error(`[Baileys - ${key}] Failed to generate QR:`, err);
         }
@@ -194,7 +207,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
 
       if (connection === 'connecting') {
         session.status = 'connecting';
-        io.to(uid).emit('status-change', { sessionId, status: 'connecting' });
+        io.to(ownerId).emit('status-change', { sessionId, status: 'connecting' });
       }
 
       if (connection === 'open') {
@@ -202,7 +215,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
         session.qr = null;
         session.user = sock.user;
         session.reconnectAttempts = 0; // healthy connection resets backoff
-        io.to(uid).emit('status-change', { sessionId, status: 'connected', user: sock.user });
+        io.to(ownerId).emit('status-change', { sessionId, status: 'connected', user: sock.user });
         console.log(`[Baileys - ${key}] Connection successfully opened!`);
       }
 
@@ -221,7 +234,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
         session.qr = null;
         session.user = null;
         session.sock = null;
-        io.to(uid).emit('status-change', { sessionId, status: 'disconnected', reason: statusCode });
+        io.to(ownerId).emit('status-change', { sessionId, status: 'disconnected', reason: statusCode });
 
         if (shouldReconnect) {
           // Exponential backoff (1s, 2s, 4s ... capped at 30s) so a flapping
@@ -236,11 +249,11 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
             // Only reconnect if the session still exists and isn't already connected.
             const current = activeSessions[key];
             if (current && !current.sock) {
-              getOrInitWASocket(uid, sessionId);
+              getOrInitWASocket(ownerId, sessionId);
             }
           }, delay);
         } else {
-          logoutSession(uid, sessionId);
+          logoutSession(ownerId, sessionId);
         }
       }
     });
@@ -260,7 +273,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
             id: jid,
             name: metadata.subject
           });
-          emitSyncComplete(uid, sessionId);
+          emitSyncComplete(ownerId, sessionId);
         }
       } catch (err) {
         console.warn(`[Baileys - ${key}] Failed to fetch group metadata for ${jid}:`, err.message);
@@ -284,7 +297,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
           store.addMessage(m.key.remoteJid, m);
         });
       }
-      emitSyncComplete(uid, sessionId);
+      emitSyncComplete(ownerId, sessionId);
     });
 
     sock.ev.on('chats.upsert', (newChats) => {
@@ -295,7 +308,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
           fetchGroupMetadataIfNeeded(c.id, c.name);
         }
       });
-      emitSyncComplete(uid, sessionId);
+      emitSyncComplete(ownerId, sessionId);
     });
 
     sock.ev.on('chats.update', (updates) => {
@@ -307,7 +320,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
           fetchGroupMetadataIfNeeded(u.id, u.name || existing?.name);
         }
       });
-      emitSyncComplete(uid, sessionId);
+      emitSyncComplete(ownerId, sessionId);
     });
 
     sock.ev.on('contacts.upsert', (newContacts) => {
@@ -319,7 +332,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
         }
         store.addContact(c);
       });
-      emitSyncComplete(uid, sessionId);
+      emitSyncComplete(ownerId, sessionId);
     });
 
     sock.ev.on('contacts.update', (updates) => {
@@ -330,7 +343,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
         }
         store.addContact(u);
       });
-      emitSyncComplete(uid, sessionId);
+      emitSyncComplete(ownerId, sessionId);
     });
 
     // Explicit LID <-> phone number mapping shared by WhatsApp
@@ -339,7 +352,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
       console.log(`[Baileys - ${key}] Phone number share: ${lid} -> ${jid}`);
       const store = getStore(key);
       store.addPhoneNumberShare(lid, jid);
-      emitSyncComplete(uid, sessionId);
+      emitSyncComplete(ownerId, sessionId);
     });
 
     // After connection is opened, re-apply the contact-derived LID mappings to
@@ -358,7 +371,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
       const stillUnresolved = store.getUnresolvedLids().length;
       console.log(`[Baileys - ${key}] LID resolution pass: ${resolved} chats updated, ${stillUnresolved} LIDs still without a phone number.`);
       store.save();
-      emitSyncComplete(uid, sessionId);
+      emitSyncComplete(ownerId, sessionId);
     };
 
     // Resolve @lid chats to real phone numbers.
@@ -494,7 +507,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
           }
 
           store.addMessage(jid, msg);
-          io.to(uid).emit('new-message', { sessionId, jid, message: msg });
+          io.to(ownerId).emit('new-message', { sessionId, jid, message: msg });
         }
       }
     });
@@ -519,7 +532,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
           });
         }
 
-        io.to(uid).emit('message-update', { sessionId, ...update });
+        io.to(ownerId).emit('message-update', { sessionId, ...update });
       }
     });
 
@@ -532,7 +545,7 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
             id: u.id,
             name: u.subject
           });
-          emitSyncComplete(uid, sessionId);
+          emitSyncComplete(ownerId, sessionId);
         }
       });
     });
@@ -542,13 +555,13 @@ async function getOrInitWASocket(uid, sessionId = 'default') {
     console.error(`[Baileys - ${key}] Setup error:`, err);
     if (activeSessions[key]) {
       activeSessions[key].status = 'disconnected';
-      io.to(uid).emit('status-change', { sessionId, status: 'disconnected', error: err.message });
+      io.to(ownerId).emit('status-change', { sessionId, status: 'disconnected', error: err.message });
     }
   }
 }
 
-function logoutSession(uid, sessionId = 'default') {
-  const key = sessionKey(uid, sessionId);
+function logoutSession(ownerId, sessionId = 'default') {
+  const key = sessionKey(ownerId, sessionId);
   console.log(`[Baileys - ${key}] Logging out and deleting session data...`);
   const session = activeSessions[key];
   
@@ -572,8 +585,8 @@ function logoutSession(uid, sessionId = 'default') {
   const store = getStore(key);
   store.clear();
 
-  io.to(uid).emit('status-change', { sessionId, status: 'disconnected' });
-  io.to(uid).emit('store-cleared', { sessionId });
+  io.to(ownerId).emit('status-change', { sessionId, status: 'disconnected' });
+  io.to(ownerId).emit('store-cleared', { sessionId });
 }
 
 // Firestore REST access, the plan cache and the admin allow-list that used to
@@ -606,8 +619,26 @@ io.use(async (socket, next) => {
       console.warn(`[Socket] Rejected ${profile.email}: account not approved`);
       return next(new Error('Authentication error: Account pending approval'));
     }
+
+    // An invited member works inside their supervisor's workspace, so the
+    // supervisor's approval gates them too — suspending an account has to take its
+    // whole team offline, not just the owner. Mirrors requireApproved.
+    if (profile.ownerUserId) {
+      const owner = await findUserById(profile.ownerUserId);
+      if (!owner) {
+        return next(new Error('Authentication error: The account that invited you no longer exists'));
+      }
+      if (owner.role !== 'admin' && !owner.isApproved) {
+        console.warn(`[Socket] Rejected ${profile.email}: workspace owner ${owner.email} is not approved`);
+        return next(new Error('Authentication error: Account pending approval'));
+      }
+    }
+
     socket.user = decoded;
     socket.profile = profile;
+    // Which workspace's events this socket should receive. Same value as
+    // req.workspaceId on the HTTP side.
+    socket.workspaceId = profile.workspaceId;
     socket.token = token;
     next();
   } catch (err) {
@@ -616,34 +647,78 @@ io.use(async (socket, next) => {
   }
 });
 
+// Every socket joins two rooms:
+//
+//   workspaceId   shared with the whole team. WhatsApp status, new messages, quota
+//                 changes, hold changes, contact changes — anything about the
+//                 account rather than the person.
+//   user:<uid>    just this person's tabs. Their own profile row, which must not
+//                 be broadcast to colleagues. See userRoom() in ./scope.js.
+
+// Distinct PEOPLE currently connected to a workspace, and whether a given person
+// is already among them.
+//
+// This replaced a plain room-size check. Counting sockets conflated "how many
+// colleagues are working" with "how many browser tabs are open", so an operator
+// with the dashboard open twice consumed two agent slots and a three-person team
+// could lock itself out by opening a second tab each. Now a seat is a person: any
+// number of tabs from the same account is one seat.
+function workspaceOccupants(workspaceId) {
+  const room = io.sockets.adapter.rooms.get(workspaceId);
+  const people = new Set();
+  if (!room) return people;
+
+  for (const socketId of room) {
+    const existing = io.sockets.sockets.get(socketId);
+    if (existing?.user?.uid) people.add(existing.user.uid);
+  }
+  return people;
+}
+
 io.on('connection', async (socket) => {
-  const uid = socket.user.uid;
+  const memberId = socket.user.uid;
+  const workspaceId = socket.workspaceId;
 
-  // Device limit comes from the user's override if set, otherwise their plan.
-  // Resolved in a single SQL statement (see resolveSessionLimitFor).
-  const sessionLimit = await resolveSessionLimitFor(uid);
+  // Agent slots for the WORKSPACE: the supervisor's override, else what they
+  // purchased, else what their plan includes. A member has no plan of their own.
+  const seatLimit = await resolveSessionLimitFor(workspaceId);
 
-  // Check if active sockets for this user ID >= sessionLimit
-  const activeSockets = io.sockets.adapter.rooms.get(uid);
-  if (activeSockets && activeSockets.size >= sessionLimit) {
-    console.warn(`[Socket] Connection rejected for ${socket.id} (user: ${uid}) - Session limit (${sessionLimit}) reached.`);
-    socket.emit('session-blocked', { 
-      message: `This account is already logged in on ${sessionLimit} device${sessionLimit > 1 ? 's' : ''}.` 
+  const occupants = workspaceOccupants(workspaceId);
+
+  // Reconnecting, or opening another tab, costs nothing — they already hold a seat.
+  if (!occupants.has(memberId) && occupants.size >= seatLimit) {
+    console.warn(
+      `[Socket] Rejected ${socket.profile.email} (${socket.id}): workspace ${workspaceId} ` +
+      `already has ${occupants.size}/${seatLimit} agent${seatLimit > 1 ? 's' : ''} online.`
+    );
+    socket.emit('session-blocked', {
+      message: seatLimit === 1
+        ? 'This account allows one agent online at a time, and someone is already signed in.'
+        : `All ${seatLimit} agent slots on this account are in use. Ask your supervisor to add another, or wait for a colleague to sign out.`,
+      seatLimit,
+      inUse: occupants.size,
     });
     socket.disconnect(true);
     return;
   }
 
-  socket.join(uid);
-  console.log(`[Socket] User JID Room Joined: ${uid} (Limit: ${sessionLimit})`);
+  socket.join(workspaceId);
+  socket.join(userRoom(memberId));
+  console.log(
+    `[Socket] ${socket.profile.email} joined workspace ${workspaceId} ` +
+    `(${occupants.size + (occupants.has(memberId) ? 0 : 1)}/${seatLimit} agents online)`
+  );
 
-  // Broadcast current active session count to all user's sockets
-  const roomSockets = io.sockets.adapter.rooms.get(uid);
-  io.to(uid).emit('session-count-update', { count: roomSockets ? roomSockets.size : 1 });
+  // Agents online, not tabs open, for the same reason as the gate above.
+  const announceOccupancy = () => {
+    const people = workspaceOccupants(workspaceId);
+    io.to(workspaceId).emit('session-count-update', { count: people.size, limit: seatLimit });
+  };
+  announceOccupancy();
 
   // Send all existing WA session statuses to the newly connected browser tab
   const userSessions = Object.entries(activeSessions)
-    .filter(([k, v]) => v.uid === uid)
+    .filter(([k, v]) => v.uid === workspaceId)
     .map(([k, v]) => ({
       sessionId: v.sessionId,
       status: v.status,
@@ -655,27 +730,37 @@ io.on('connection', async (socket) => {
   // Listen for client requesting to init a specific WA session
   socket.on('init-session', (data) => {
     const sid = data?.sessionId || 'default';
-    console.log(`[Socket] Client requested init-session: ${uid}/${sid}`);
-    getOrInitWASocket(uid, sid);
+    console.log(`[Socket] ${socket.profile.email} requested init-session: ${workspaceId}/${sid}`);
+    getOrInitWASocket(workspaceId, sid);
   });
 
-  // Listen for client requesting to disconnect a specific WA session
+  // Unpairing the device is supervisor-only. It deletes the credentials and wipes
+  // the store for EVERYONE in the workspace, so a single member should not be able
+  // to cut their colleagues off and force a re-scan.
   socket.on('logout-session', (data) => {
+    if (socket.profile.ownerUserId) {
+      console.warn(`[Socket] Refused logout-session from member ${socket.profile.email}.`);
+      socket.emit('action-denied', {
+        action: 'logout-session',
+        message: 'Only the account owner can disconnect the WhatsApp number.',
+      });
+      return;
+    }
     const sid = data?.sessionId || 'default';
-    console.log(`[Socket] Client requested logout-session: ${uid}/${sid}`);
-    logoutSession(uid, sid);
+    console.log(`[Socket] ${socket.profile.email} requested logout-session: ${workspaceId}/${sid}`);
+    logoutSession(workspaceId, sid);
   });
 
   socket.on('disconnect', () => {
-    console.log(`[Socket] User JID Room Disconnected: ${uid}`);
-    const remainingSockets = io.sockets.adapter.rooms.get(uid);
-    io.to(uid).emit('session-count-update', { count: remainingSockets ? remainingSockets.size : 0 });
+    console.log(`[Socket] ${socket.profile.email} left workspace ${workspaceId}`);
+    // Runs after the socket has left the room, so the recount reflects reality.
+    announceOccupancy();
   });
 });
 
 // Lazy-load group metadata helper to sync group subjects
-async function fetchGroupMetadata(uid, sessionId, jid) {
-  const key = sessionKey(uid, sessionId);
+async function fetchGroupMetadata(ownerId, sessionId, jid) {
+  const key = sessionKey(ownerId, sessionId);
   const session = activeSessions[key];
   if (!session || !session.sock) return;
   
@@ -690,7 +775,7 @@ async function fetchGroupMetadata(uid, sessionId, jid) {
           id: jid,
           name: metadata.subject
         });
-        emitSyncComplete(uid, sessionId);
+        emitSyncComplete(ownerId, sessionId);
       }
     }
   } catch (err) {
@@ -704,9 +789,9 @@ async function fetchGroupMetadata(uid, sessionId, jid) {
 
 // Get all WA sessions for the user
 app.get('/api/sessions', approved, (req, res) => {
-  const uid = req.user.uid;
+  const ownerId = req.workspaceId;
   const userSessionEntries = Object.entries(activeSessions)
-    .filter(([k, v]) => v.uid === uid)
+    .filter(([k, v]) => v.uid === ownerId)
     .map(([k, v]) => ({
       sessionId: v.sessionId,
       status: v.status,
@@ -717,12 +802,12 @@ app.get('/api/sessions', approved, (req, res) => {
 });
 
 app.get('/api/status', approved, (req, res) => {
-  const uid = req.user.uid;
+  const ownerId = req.workspaceId;
   const sid = req.query.sessionId || 'default';
-  const key = sessionKey(uid, sid);
+  const key = sessionKey(ownerId, sid);
   const session = activeSessions[key] || { status: 'disconnected', qr: null, user: null };
   // Trigger socket init if it hasn't been booted yet
-  getOrInitWASocket(uid, sid);
+  getOrInitWASocket(ownerId, sid);
   res.json({
     sessionId: sid,
     status: session.status,
@@ -732,9 +817,9 @@ app.get('/api/status', approved, (req, res) => {
 });
 
 app.get('/api/chats', approved, (req, res) => {
-  const uid = req.user.uid;
+  const ownerId = req.workspaceId;
   const sid = req.query.sessionId || 'default';
-  const key = sessionKey(uid, sid);
+  const key = sessionKey(ownerId, sid);
   const store = getStore(key);
   const sortedChats = Object.values(store.chats).sort((a, b) => {
     return (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0);
@@ -755,9 +840,9 @@ app.get('/api/chats', approved, (req, res) => {
 // to the epoch before the day and hour are read back out in UTC, which also
 // handles the half-hour zones a whole-hour rotation would get wrong.
 app.get('/api/stats/activity', approved, (req, res) => {
-  const uid = req.user.uid;
+  const ownerId = req.workspaceId;
   const sid = req.query.sessionId || 'default';
-  const store = getStore(sessionKey(uid, sid));
+  const store = getStore(sessionKey(ownerId, sid));
 
   // Same sign convention as the browser: minutes to ADD to local time to reach
   // UTC, so UTC+7 sends -420. Clamped to the real range of world offsets.
@@ -810,24 +895,24 @@ app.get('/api/stats/activity', approved, (req, res) => {
 });
 
 app.get('/api/chats/:jid/messages', approved, (req, res) => {
-  const uid = req.user.uid;
+  const ownerId = req.workspaceId;
   const sid = req.query.sessionId || 'default';
-  const key = sessionKey(uid, sid);
+  const key = sessionKey(ownerId, sid);
   const store = getStore(key);
   const jid = req.params.jid;
 
   // Trigger lazy metadata sync in the background if group chat
   if (jid.endsWith('@g.us')) {
-    fetchGroupMetadata(uid, sid, jid);
+    fetchGroupMetadata(ownerId, sid, jid);
   }
 
   res.json(store.messages[jid] || []);
 });
 
 app.post('/api/messages/send', approved, async (req, res) => {
-  const uid = req.user.uid;
+  const ownerId = req.workspaceId;
   const sid = req.body.sessionId || req.query.sessionId || 'default';
-  const key = sessionKey(uid, sid);
+  const key = sessionKey(ownerId, sid);
   const { to, text, file } = req.body;
   const session = activeSessions[key];
 
@@ -869,7 +954,7 @@ app.post('/api/messages/send', approved, async (req, res) => {
     // enforcement silently disagreed with what the UI showed as held.
     const holdJids = getStore(key).expandHoldJids(holdJid);
 
-    if (await isChatHeld(uid, sid, holdJids)) {
+    if (await isChatHeld(ownerId, sid, holdJids)) {
       console.log(`[Hold] Suppressed an automated reply to ${holdJid} (${key}) — chat is on hold.`);
       return res.status(409).json({
         error: 'This conversation is on hold. A human agent has taken over, so automated replies are suppressed.',
@@ -904,7 +989,7 @@ app.post('/api/messages/send', approved, async (req, res) => {
   // its own counter, which made it advisory: a modified client, or two tabs
   // racing, could exceed it freely. consumeMessageQuota does the check and the
   // increment in one UPDATE, so neither is possible. Admins are exempt.
-  const quota = await consumeMessageQuota(uid);
+  const quota = await consumeMessageQuota(ownerId);
   if (!quota.allowed) {
     return res.status(429).json({
       error: 'Message quota reached. Upgrade the plan or raise the limit to send more.',
@@ -915,7 +1000,7 @@ app.post('/api/messages/send', approved, async (req, res) => {
   }
 
   // Tell the user's other tabs about the new count so the UI stays in step.
-  io.to(uid).emit('quota-updated', { messagesSent: quota.messagesSent, limit: quota.limit });
+  io.to(ownerId).emit('quota-updated', { messagesSent: quota.messagesSent, limit: quota.limit });
 
   try {
     let jid = to;
@@ -953,7 +1038,7 @@ app.post('/api/messages/send', approved, async (req, res) => {
     // Cache the message
     const store = getStore(key);
     store.addMessage(jid, response);
-    io.to(uid).emit('new-message', { sessionId: sid, jid, message: response });
+    io.to(ownerId).emit('new-message', { sessionId: sid, jid, message: response });
 
     res.json({ success: true, message: response });
   } catch (err) {
@@ -963,9 +1048,9 @@ app.post('/api/messages/send', approved, async (req, res) => {
 });
 
 app.post('/api/media/download', approved, async (req, res) => {
-  const uid = req.user.uid;
+  const ownerId = req.workspaceId;
   const sid = req.body.sessionId || req.query.sessionId || 'default';
-  const key = sessionKey(uid, sid);
+  const key = sessionKey(ownerId, sid);
   const session = activeSessions[key];
 
   if (!session || !session.sock) {
@@ -1007,9 +1092,9 @@ app.post('/api/media/download', approved, async (req, res) => {
 });
 
 app.post('/api/sync', approved, async (req, res) => {
-  const uid = req.user.uid;
+  const ownerId = req.workspaceId;
   const sid = req.body.sessionId || req.query.sessionId || 'default';
-  const key = sessionKey(uid, sid);
+  const key = sessionKey(ownerId, sid);
   const session = activeSessions[key];
 
   if (!session) {
@@ -1032,10 +1117,10 @@ app.post('/api/sync', approved, async (req, res) => {
     // Reset session states
     session.status = 'connecting';
     session.qr = null;
-    io.to(uid).emit('status-change', { sessionId: sid, status: 'connecting' });
+    io.to(ownerId).emit('status-change', { sessionId: sid, status: 'connecting' });
 
     // Initialize socket connection again
-    getOrInitWASocket(uid, sid);
+    getOrInitWASocket(ownerId, sid);
 
     res.json({ success: true, message: 'Sync started successfully' });
   } catch (err) {
@@ -1044,11 +1129,15 @@ app.post('/api/sync', approved, async (req, res) => {
   }
 });
 
-app.post('/api/logout', approved, (req, res) => {
-  const uid = req.user.uid;
+// Unpair the WhatsApp device. Supervisor-only: it deletes the credentials and
+// clears the store for the whole workspace, so one member must not be able to cut
+// their colleagues off and force a fresh QR scan. Same reasoning as the
+// 'logout-session' socket handler.
+app.post('/api/logout', supervisor, (req, res) => {
+  const ownerId = req.workspaceId;
   const sid = req.body.sessionId || req.query.sessionId || 'default';
   try {
-    logoutSession(uid, sid);
+    logoutSession(ownerId, sid);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1083,6 +1172,10 @@ mountDataRoutes(app, io);
 // the WhatsApp store to resolve each contact to a conversation.
 mountContactRoutes(app, io);
 
+// Who else may sign in to this account. Supervisor-facing, and much narrower than
+// the admin console: invite, rename, resend, remove — never a plan, quota or role.
+mountTeamRoutes(app, io);
+
 // Reports whether the payment gateway is configured. Unauthenticated by design:
 // it exposes booleans only, never the key itself.
 // Reports whether the payment gateway is configured. Unauthenticated by design:
@@ -1103,8 +1196,13 @@ app.get('/api/mayar/config', (req, res) => {
 // This previously accepted `amount` from the request body, which meant a user
 // could buy Premium for 1 rupiah by editing the payload. Prices must never be
 // client-supplied.
-app.post('/api/mayar/create-checkout', authenticated, async (req, res) => {
-  const uid = req.profile.uid;
+//
+// Supervisor-only. The plan and the agent slots belong to the workspace, so an
+// invited member must not be able to change what the account is paying for. The
+// transaction is recorded against the workspace id, which is what the webhook then
+// fulfils against.
+app.post('/api/mayar/create-checkout', supervisor, async (req, res) => {
+  const uid = req.workspaceId;
   const userEmail = req.profile.email;
 
   try {
@@ -1339,7 +1437,12 @@ app.post('/api/webhooks/mayar', async (req, res) => {
         console.log(`[Mayar Webhook] Upgraded ${user.email} to ${plan.name} with ${agentsPaidFor} agent(s).`);
 
         const fresh = await findUserById(uid);
-        io.to(uid).emit('profile-updated', fresh);
+        // The supervisor's own row goes to their own tabs. It must not reach the
+        // workspace room, where a member would receive a profile that is not theirs.
+        io.to(userRoom(uid)).emit('profile-updated', fresh);
+        // The plan and the seat count just changed for everyone in the workspace,
+        // so every member needs to re-resolve their limits.
+        io.to(uid).emit('workspace-updated', { planId: plan.id, agents: appliedAgents });
       }
     } else {
       console.warn('[Mayar Webhook] Payment carried no uid/planId in extraData and no local record — fulfil manually from the admin console.');
@@ -1383,9 +1486,9 @@ app.post('/api/webhooks/mayar', async (req, res) => {
 // Manually trigger LID -> phone resolution for the active session.
 // Useful right after a big history sync, without waiting for a reconnect.
 app.post('/api/resolve-contacts', approved, async (req, res) => {
-  const uid = req.user.uid;
+  const ownerId = req.workspaceId;
   const sid = req.body?.sessionId || req.query.sessionId || 'default';
-  const key = sessionKey(uid, sid);
+  const key = sessionKey(ownerId, sid);
   const session = activeSessions[key];
 
   if (!session || !session.sock || session.status !== 'connected') {
@@ -1747,6 +1850,18 @@ async function restoreSessionsOnBoot() {
       const owner = await findUserById(uid);
       if (!owner) {
         console.warn(`[Restore] Skipping ${dirName}: no such user.`);
+        skipped += 1;
+        continue;
+      }
+      // Directory names are built from the WORKSPACE id, so the row they name must
+      // be a supervisor. A member id appearing here would mean something built a
+      // path from the caller's id instead of req.workspaceId — worth failing loudly
+      // rather than reconnecting into a tenant that should not exist.
+      if (owner.ownerUserId) {
+        console.error(
+          `[Restore] Skipping ${dirName}: ${owner.email} is a team member, not a workspace owner. ` +
+          'A session directory should never be keyed by a member id.'
+        );
         skipped += 1;
         continue;
       }

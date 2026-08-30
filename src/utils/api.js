@@ -336,6 +336,65 @@ export async function fetchPlans() {
 }
 
 // ---------------------------------------------------------------------------
+// team seats (supervisor-facing)
+// ---------------------------------------------------------------------------
+// Returns { seats: { limit, used, available, members }, members: [...] }.
+// The supervisor is included in `members` with isSupervisor true, because they
+// occupy one of the seats.
+export async function fetchTeam() {
+  return apiFetch('/api/team');
+}
+
+/**
+ * Invite an email address into the account.
+ *
+ * The `inviteUrl` in the response is shown ONCE — only a hash of the token is
+ * stored, so it cannot be retrieved again. Losing it means resending, which
+ * invalidates the previous link.
+ */
+export async function inviteMember({ email, name }) {
+  return apiJson('/api/team/invite', 'POST', { email, name });
+}
+
+export async function resendInvite(memberId) {
+  return apiJson(`/api/team/${encodeURIComponent(memberId)}/resend`, 'POST');
+}
+
+export async function renameMember(memberId, name) {
+  const data = await apiJson(`/api/team/${encodeURIComponent(memberId)}`, 'PATCH', { name });
+  return data.member;
+}
+
+export async function removeMember(memberId) {
+  return apiJson(`/api/team/${encodeURIComponent(memberId)}`, 'DELETE');
+}
+
+// ---------------------------------------------------------------------------
+// invitations (unauthenticated — the recipient has no account yet)
+// ---------------------------------------------------------------------------
+// Both use `request` rather than `apiFetch`: the recipient is signed out, so there
+// is no token to attach and no 401-refresh dance to perform.
+
+/** Who this invite is for, so the accept form can confirm it before they commit. */
+export async function lookupInvite(token) {
+  return request(`/api/auth/invite/${encodeURIComponent(token)}`);
+}
+
+/**
+ * Set the first password for an invited member and sign them in.
+ *
+ * Stores the session exactly as login does, so accepting lands straight in the
+ * dashboard rather than bouncing through the sign-in form.
+ */
+export async function acceptInvite({ token, password, name }) {
+  const data = await request('/api/auth/accept-invite', {
+    method: 'POST',
+    body: { token, password, name },
+  });
+  return storeSession(data);
+}
+
+// ---------------------------------------------------------------------------
 // stats
 // ---------------------------------------------------------------------------
 /**

@@ -1,7 +1,7 @@
 import React from 'react';
-import { LayoutDashboard, MessageSquare, BookUser, CreditCard, User, Settings, LogOut, Bell } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, BookUser, Users, CreditCard, User, Settings, LogOut, Bell } from 'lucide-react';
 
-export default function Sidebar({ activeTab, setActiveTab, onLogout, collapsed, notifications = [] }) {
+export default function Sidebar({ activeTab, setActiveTab, onLogout, collapsed, notifications = [], isSupervisor = true }) {
   const unreadCount = notifications.filter(n => !n.read).length;
 
   return (
@@ -71,14 +71,32 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout, collapsed, 
           {!collapsed && <span className="nav-label">Notifications</span>}
         </button>
 
-        <button 
-          className={`nav-item ${activeTab === 'subscription' ? 'active' : ''}`}
-          onClick={() => setActiveTab('subscription')}
-          title="Subscription"
-        >
-          <CreditCard size={22} />
-          {!collapsed && <span className="nav-label">Subscription</span>}
-        </button>
+        {/* Team and Subscription belong to whoever owns the account. An invited
+            agent has no business seeing the billing or managing colleagues, and the
+            server refuses those endpoints for them anyway (the `supervisor`
+            middleware chain) — hiding them keeps the UI honest about it rather than
+            offering buttons that 403. */}
+        {isSupervisor && (
+          <button 
+            className={`nav-item ${activeTab === 'team' ? 'active' : ''}`}
+            onClick={() => setActiveTab('team')}
+            title="Team"
+          >
+            <Users size={22} />
+            {!collapsed && <span className="nav-label">Team</span>}
+          </button>
+        )}
+
+        {isSupervisor && (
+          <button 
+            className={`nav-item ${activeTab === 'subscription' ? 'active' : ''}`}
+            onClick={() => setActiveTab('subscription')}
+            title="Subscription"
+          >
+            <CreditCard size={22} />
+            {!collapsed && <span className="nav-label">Subscription</span>}
+          </button>
+        )}
 
         <button 
           className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`}

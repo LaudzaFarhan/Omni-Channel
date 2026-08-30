@@ -9,7 +9,7 @@ import AuthScreens from './components/AuthScreens.jsx';
 import AdminDashboard from './components/AdminDashboard.jsx';
 import {
   fetchWithAuth, subscribeAuth, restoreSession, logout as apiLogout,
-  getAccessToken, applyProfileUpdate, fetchContacts,
+  getAccessToken, applyProfileUpdate, fetchContacts, fetchProfile,
 } from './utils/api.js';
 import { normalizePlan, sortPlans, loadPlansOnce, resolveEffectiveLimits } from './utils/plans.js';
 import { MessageSquare, Clock, AlertTriangle, Bell, X } from 'lucide-react';
@@ -23,6 +23,8 @@ import Dashboard from './components/Dashboard.jsx';
 import TopBar from './components/TopBar.jsx';
 import NotificationsView from './components/NotificationsView.jsx';
 import Contacts from './components/Contacts.jsx';
+import Team from './components/Team.jsx';
+import AcceptInvite from './components/AcceptInvite.jsx';
 import { showToast } from './utils/toastBus.js';
 
 export default function App() {
@@ -314,7 +316,8 @@ export default function App() {
     loadContacts(activeSessionId);
   }, [user?.uid, activeSessionId, loadContacts]);
 
-  // Another tab saving a contact should rename the chat here too.
+  // Another tab — or a colleague sharing this account — saving a contact should
+  // rename the chat here too.
   useEffect(() => {
     const ws = getSocket();
     if (!ws) return;
@@ -323,6 +326,60 @@ export default function App() {
     ws.on('contacts-updated', handleContacts);
     return () => ws.off('contacts-updated', handleContacts);
   }, [userProfile?.uid, loadContacts]);
+
+  // Team-seat events.
+  //
+  // workspace-updated  the account's plan or agent count changed (someone bought
+  //                    more agents). Everyone's resolved limits move, so re-read
+  //                    the profile and the plan catalogue.
+  // access-revoked     the supervisor removed this person. The server has already
+  //                    revoked their tokens and is about to drop the socket, so the
+  //                    only thing left is to clear local state and say why —
+  //                    otherwise the app sits there failing every request.
+  useEffect(() => {
+    const ws = getSocket();
+    if (!ws) return;
+
+    const handleWorkspace = async () => {
+      try {
+        const [profile, list] = await Promise.all([fetchProfile(), loadPlansOnce()]);
+        setUserProfile(profile);
+        setPlans(list);
+      } catch (err) {
+        console.warn('[App] Could not refresh after a workspace change:', err.message);
+      }
+    };
+
+    const handleRevoked = ({ message } = {}) => {
+      showToast({
+        type: 'error',
+        title: 'Access removed',
+        message: message || 'Your access to this account has been removed.',
+        duration: 9000,
+      });
+      apiLogout();
+      navigateTo('/login');
+    };
+
+    const handleDenied = ({ message } = {}) => {
+      showToast({
+        type: 'error',
+        title: 'Not allowed',
+        message: message || 'Only the account owner can do that.',
+        duration: 6000,
+      });
+    };
+
+    ws.on('workspace-updated', handleWorkspace);
+    ws.on('access-revoked', handleRevoked);
+    ws.on('action-denied', handleDenied);
+
+    return () => {
+      ws.off('workspace-updated', handleWorkspace);
+      ws.off('access-revoked', handleRevoked);
+      ws.off('action-denied', handleDenied);
+    };
+  }, [userProfile?.uid]);
 
   // Saved name for a chat, keyed by every JID the contact could appear under: the
   // conversation the server resolved (often an @lid) and the plain phone JID.
@@ -802,6 +859,32 @@ export default function App() {
     );
   }
 
+  // 1b. Invitation link.
+  //
+  // Checked before the `!user` gate so an already-signed-in person opening a link
+  // still lands on the accept screen rather than their own dashboard — which is what
+  // happens when a supervisor tests the link they just generated.
+  if (currentPath === '/accept-invite') {
+    const inviteToken = new URLSearchParams(window.location.search).get('token');
+    return (
+      <AcceptInvite
+        token={inviteToken}
+        onAccepted={(invitedUser) => {
+          navigateTo('/dashboard');
+          showToast({
+            type: 'success',
+            title: 'You are in',
+            message: invitedUser?.email
+              ? `Signed in as ${invitedUser.email}.`
+              : 'Your account is ready.',
+            duration: 4200,
+          });
+        }}
+        onGoToLogin={() => navigateTo('/login')}
+      />
+    );
+  }
+
   // 2. Unauthenticated Routing (SaaS Landing & Login/Register Panels)
   if (!user) {
     if (currentPath === '/login') {
@@ -928,6 +1011,11 @@ export default function App() {
   const activeWaSession = waSessions.find(s => s.sessionId === activeSessionId);
   const isActiveConnected = connectionStatus === 'connected';
 
+  // Whether this person owns the account or was invited into someone else's.
+  // `ownerUserId` is null for an owner. Defaulting to true keeps the pre-team
+  // behaviour for any profile payload that predates the field.
+  const isSupervisor = !userProfile?.ownerUserId;
+
   // 5. Approved Customer Dashboard
   return (
     <div className="dashboard-container" style={{ position: 'relative' }}>
@@ -939,6 +1027,7 @@ export default function App() {
             onLogout={handleWebsiteLogout}
             collapsed={sidebarCollapsed}
             notifications={notifications}
+            isSupervisor={isSupervisor}
           />
         </div>
         
@@ -1031,6 +1120,12 @@ export default function App() {
                 />
               )}
 
+              {/* Supervisor-only, matching the sidebar and the server. Guarded here
+                  too so a stale activeTab cannot render it for a member. */}
+              {activeTab === 'team' && isSupervisor && (
+                <Team userProfile={activeProfile} />
+              )}
+
               {activeTab === 'notifications' && (
                 <NotificationsView 
                   notifications={notifications}
@@ -1038,7 +1133,7 @@ export default function App() {
                 />
               )}
 
-              {activeTab === 'subscription' && (
+              {activeTab === 'subscription' && isSupervisor && (
                 <Subscription 
                   userProfile={activeProfile} 
                   activeSessionCount={activeSessionCount} 

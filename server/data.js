@@ -37,6 +37,20 @@ export function mapUser(row) {
     mustResetPassword: row.must_reset_password,
     createdAt: row.created_at,
     lastLoginAt: row.last_login_at,
+
+    // Team seats. NULL means this account owns its own workspace (a supervisor);
+    // set means it is a member of that supervisor's workspace.
+    ownerUserId: row.owner_user_id ?? null,
+    isSupervisor: (row.owner_user_id ?? null) === null,
+
+    // The id everything data-shaped is scoped by. Derived rather than stored so
+    // there is exactly one definition of it and it cannot drift from
+    // owner_user_id.
+    workspaceId: row.owner_user_id ?? row.id,
+
+    // An invited member has no password until they accept, so the members list can
+    // show "invite pending" without a second query.
+    hasPassword: row.password_hash === undefined ? undefined : Boolean(row.password_hash),
   };
 }
 
@@ -91,7 +105,8 @@ export function mapTransaction(row) {
 
 const USER_COLUMNS = `
   id, email, name, role, is_approved, plan_id, message_limit, session_limit,
-  messages_sent, trial_expired, must_reset_password, purchased_agents, created_at, last_login_at
+  messages_sent, trial_expired, must_reset_password, purchased_agents, owner_user_id,
+  created_at, last_login_at
 `;
 
 // ---------------------------------------------------------------------------
@@ -127,12 +142,16 @@ export async function countAdmins() {
 export async function createUser({
   id, email, name, passwordHash, role = 'customer',
   isApproved = false, planId = null, mustResetPassword = false, createdAt = null,
+  // Set for an invited team member. The member inherits the workspace's plan and
+  // quota, so plan_id is left null on their own row — resolving limits from a
+  // member's row would give them a second free allowance.
+  ownerUserId = null,
 }) {
   const row = await queryOne(
-    `INSERT INTO users (id, email, name, password_hash, role, is_approved, plan_id, must_reset_password, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, now()))
+    `INSERT INTO users (id, email, name, password_hash, role, is_approved, plan_id, must_reset_password, created_at, owner_user_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, now()), $10)
      RETURNING ${USER_COLUMNS}`,
-    [id, email, name, passwordHash, role, isApproved, planId, mustResetPassword, createdAt]
+    [id, email, name, passwordHash, role, isApproved, planId, mustResetPassword, createdAt, ownerUserId]
   );
   return mapUser(row);
 }
@@ -261,6 +280,121 @@ export async function resolveSessionLimitFor(userId) {
     [userId]
   );
   return row ? Math.max(1, Number(row.limit_value)) : 1;
+}
+
+// ---------------------------------------------------------------------------
+// team seats
+// ---------------------------------------------------------------------------
+// Everyone in a workspace, supervisor first, then members oldest-first.
+//
+// `hasPassword` distinguishes an accepted member from an outstanding invite, and
+// comes from password_hash — which is why this query names its columns explicitly
+// instead of reusing USER_COLUMNS. The hash itself is never returned, only whether
+// one exists.
+export async function listWorkspaceMembers(workspaceId) {
+  const { rows } = await query(
+    `SELECT ${USER_COLUMNS}, (password_hash IS NOT NULL) AS password_hash
+       FROM users
+      WHERE id = $1 OR owner_user_id = $1
+      ORDER BY (owner_user_id IS NOT NULL), created_at ASC`,
+    [workspaceId]
+  );
+  return rows.map(mapUser);
+}
+
+/** Members excluding the supervisor. Used for the seat arithmetic. */
+export async function countWorkspaceMembers(workspaceId) {
+  const row = await queryOne(
+    'SELECT count(*)::int AS n FROM users WHERE owner_user_id = $1',
+    [workspaceId]
+  );
+  return row.n;
+}
+
+// A single member, scoped to the workspace so one supervisor can never address
+// another's staff by guessing an id.
+export async function findWorkspaceMember(workspaceId, memberId) {
+  return mapUser(await queryOne(
+    `SELECT ${USER_COLUMNS} FROM users WHERE id = $1 AND owner_user_id = $2`,
+    [memberId, workspaceId]
+  ));
+}
+
+export async function setMemberName(workspaceId, memberId, name) {
+  const row = await queryOne(
+    `UPDATE users SET name = $3
+      WHERE id = $1 AND owner_user_id = $2
+      RETURNING ${USER_COLUMNS}`,
+    [memberId, workspaceId, name]
+  );
+  return mapUser(row);
+}
+
+// Deleting the row is the whole revocation: refresh_tokens and team_invites both
+// cascade from users(id). The caller still has to disconnect live sockets, which
+// no cascade can do.
+export async function deleteWorkspaceMember(workspaceId, memberId) {
+  const { rowCount } = await query(
+    'DELETE FROM users WHERE id = $1 AND owner_user_id = $2',
+    [memberId, workspaceId]
+  );
+  return rowCount > 0;
+}
+
+// ---------------------------------------------------------------------------
+// invites
+// ---------------------------------------------------------------------------
+export function mapInvite(row) {
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    userId: row.user_id,
+    workspaceId: row.workspace_id,
+    email: row.email,
+    expiresAt: row.expires_at,
+    acceptedAt: row.accepted_at ?? null,
+    invitedBy: row.invited_by ?? null,
+    createdAt: row.created_at,
+  };
+}
+
+// Only the hash is stored, so an invite link cannot be reconstructed from the
+// database. Superseding any previous token for the same member is what makes
+// "resend" safe: the old link stops working.
+export async function createInvite({ userId, workspaceId, email, tokenHash, expiresAt, invitedBy }) {
+  return withTransaction(async (client) => {
+    await client.query('DELETE FROM team_invites WHERE user_id = $1 AND accepted_at IS NULL', [userId]);
+    const { rows } = await client.query(
+      `INSERT INTO team_invites (user_id, workspace_id, email, token_hash, expires_at, invited_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [userId, workspaceId, email, tokenHash, expiresAt, invitedBy || null]
+    );
+    return mapInvite(rows[0]);
+  });
+}
+
+/** Unexpired, unaccepted invite for this token, or null. */
+export async function findPendingInviteByTokenHash(tokenHash) {
+  return mapInvite(await queryOne(
+    `SELECT * FROM team_invites
+      WHERE token_hash = $1 AND accepted_at IS NULL AND expires_at > now()`,
+    [tokenHash]
+  ));
+}
+
+export async function markInviteAccepted(id) {
+  await query('UPDATE team_invites SET accepted_at = now() WHERE id = $1', [id]);
+}
+
+/** Outstanding invites for a workspace, keyed by member id for the members list. */
+export async function listPendingInvites(workspaceId) {
+  const { rows } = await query(
+    `SELECT * FROM team_invites
+      WHERE workspace_id = $1 AND accepted_at IS NULL AND expires_at > now()`,
+    [workspaceId]
+  );
+  return rows.map(mapInvite);
 }
 
 // Applied by the payment webhook once an invoice for N agents is paid.

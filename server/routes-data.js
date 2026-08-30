@@ -17,14 +17,20 @@ import {
   listAudit, recordAudit, revokeAllRefreshTokens,
   getChatSettings, listHeldChats, setChatHold, clearChatHold,
 } from './data.js';
-import { authenticated, admin, clientIp } from './middleware.js';
+import { authenticated, admin, supervisor, clientIp } from './middleware.js';
 import { getStore } from './store.js';
+import { sessionKey, userRoom } from './scope.js';
 
 // Notify a specific user's open tabs that their profile changed, replacing the
 // onSnapshot listener on their user document.
+//
+// Addressed to that person's own room, not to their workspace. Once a workspace is
+// shared by a supervisor and their team, broadcasting one user's row to the
+// workspace room would push the supervisor's profile — plan, quota, purchased
+// agents — into every member's client.
 function emitProfile(io, profile) {
   if (!io || !profile) return;
-  io.to(profile.uid).emit('profile-updated', profile);
+  io.to(userRoom(profile.uid)).emit('profile-updated', profile);
 }
 
 // Plan changes affect everyone's resolved limits, so they go to all clients.
@@ -322,10 +328,13 @@ export function mountDataRoutes(app, io) {
   // chat hold (suppress automated replies for one conversation)
   // =========================================================================
   // Every chat held in a session, for badging the chat list.
+  //
+  // Holds belong to the workspace, not the person: the point of holding a chat is
+  // that a colleague taking over can see it is being handled.
   app.get('/api/chats/hold', authenticated, async (req, res) => {
     try {
       const sessionId = String(req.query.sessionId || 'default');
-      res.json({ held: await listHeldChats(req.profile.uid, sessionId) });
+      res.json({ held: await listHeldChats(req.workspaceId, sessionId) });
     } catch (err) {
       console.error('[Hold] List failed:', err);
       res.status(500).json({ error: 'Could not load hold state.' });
@@ -338,9 +347,9 @@ export function mountDataRoutes(app, io) {
   app.get('/api/chats/:jid/hold', authenticated, async (req, res) => {
     try {
       const sessionId = String(req.query.sessionId || 'default');
-      const store = getStore(`${req.profile.uid}_${sessionId}`);
+      const store = getStore(sessionKey(req.workspaceId, sessionId));
       const jids = store.expandHoldJids(req.params.jid);
-      res.json(await getChatSettings(req.profile.uid, sessionId, jids));
+      res.json(await getChatSettings(req.workspaceId, sessionId, jids));
     } catch (err) {
       console.error('[Hold] Read failed:', err);
       res.status(500).json({ error: 'Could not read hold state.' });
@@ -366,12 +375,16 @@ export function mountDataRoutes(app, io) {
       const botPaused = Boolean(req.body?.botPaused);
       const note = req.body?.note ? String(req.body.note).slice(0, 300) : null;
 
-      const store = getStore(`${req.profile.uid}_${sessionId}`);
+      const store = getStore(sessionKey(req.workspaceId, sessionId));
       const canonical = store.canonicalHoldJid(chatJid);
       const aliases = store.expandHoldJids(chatJid);
 
-      const settings = await setChatHold(req.profile.uid, sessionId, canonical, {
+      const settings = await setChatHold(req.workspaceId, sessionId, canonical, {
         botPaused,
+        // The row is the workspace's, but `pausedBy` is the individual who took the
+        // conversation over. With a team sharing one account this is what makes the
+        // field worth having: colleagues can see WHO is on it, not just that
+        // someone is.
         pausedBy: req.profile.name || req.profile.email,
         note,
       });
@@ -379,7 +392,7 @@ export function mountDataRoutes(app, io) {
       // Collapse any duplicate @lid/phone row into the canonical one, so a
       // release cannot leave a stale held row behind.
       for (const alias of aliases) {
-        if (alias !== canonical) await clearChatHold(req.profile.uid, sessionId, alias);
+        if (alias !== canonical) await clearChatHold(req.workspaceId, sessionId, alias);
       }
 
       // Push the change to the external agent (Alvi) so it suppresses its own
@@ -396,10 +409,11 @@ export function mountDataRoutes(app, io) {
         });
       }
 
-      // Keep the operator's other tabs, and anyone else watching this account,
-      // in step with the change.
+      // Keep the operator's other tabs, and every colleague in the workspace, in
+      // step with the change — a hold that only one person can see defeats the
+      // purpose.
       if (io) {
-        io.to(req.profile.uid).emit('chat-hold-updated', settings);
+        io.to(req.workspaceId).emit('chat-hold-updated', settings);
       }
 
       res.json(settings);
@@ -412,9 +426,12 @@ export function mountDataRoutes(app, io) {
   // =========================================================================
   // transactions
   // =========================================================================
-  app.get('/api/transactions', authenticated, async (req, res) => {
+  // Supervisor-only, and scoped to the workspace. Billing history is the account
+  // owner's business; an invited agent has no reason to see what the company pays
+  // or which card was charged.
+  app.get('/api/transactions', supervisor, async (req, res) => {
     try {
-      res.json(await listTransactionsForUser(req.profile.uid));
+      res.json(await listTransactionsForUser(req.workspaceId));
     } catch (err) {
       console.error('[Transactions] List failed:', err);
       res.status(500).json({ error: 'Could not load transactions.' });

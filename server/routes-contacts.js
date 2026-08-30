@@ -5,8 +5,9 @@
 // logout), so a name a human typed there would not survive. Everything here is a
 // Postgres row scoped to the caller's user id.
 //
-// Contacts are per user rather than per session — one address book across every
-// WhatsApp number the customer has connected. The link to a live conversation is
+// Contacts are per WORKSPACE rather than per session or per person — one address
+// book across every WhatsApp number the account has connected, shared by the
+// supervisor and every team member they invited. The link to a live conversation is
 // resolved per request from the requested session's LID map, so switching session
 // changes the "last message" column without touching the stored data.
 
@@ -17,6 +18,7 @@ import {
 } from './data.js';
 import { authenticated } from './middleware.js';
 import { getStore } from './store.js';
+import { sessionKey } from './scope.js';
 import { normalizePhone } from '../src/utils/phone.js';
 
 // Postgres reports a unique-index collision as 23505. For contacts that only ever
@@ -72,15 +74,16 @@ function readContactBody(body, { requirePhone = true } = {}) {
 }
 
 export function mountContactRoutes(app, io) {
-  // Let the caller's other tabs refresh after a change, the same way plan and
-  // hold updates propagate.
-  const notify = (uid) => {
-    if (io) io.to(uid).emit('contacts-updated');
+  // Let the whole workspace refresh after a change, the same way plan and hold
+  // updates propagate. The address book is shared, so a contact one agent saves
+  // should appear for their colleagues immediately.
+  const notify = (workspaceId) => {
+    if (io) io.to(workspaceId).emit('contacts-updated');
   };
 
-  const storeFor = (uid, sessionId) => {
+  const storeFor = (ownerId, sessionId) => {
     try {
-      return getStore(`${uid}_${sessionId}`);
+      return getStore(sessionKey(ownerId, sessionId));
     } catch (err) {
       // A missing session must not fail the list; the contacts themselves are
       // independent of WhatsApp.
@@ -95,8 +98,8 @@ export function mountContactRoutes(app, io) {
   app.get('/api/contacts', authenticated, async (req, res) => {
     try {
       const sessionId = String(req.query.sessionId || 'default');
-      const contacts = await listContacts(req.profile.uid);
-      res.json({ contacts: decorateWithChats(contacts, storeFor(req.profile.uid, sessionId)) });
+      const contacts = await listContacts(req.workspaceId);
+      res.json({ contacts: decorateWithChats(contacts, storeFor(req.workspaceId, sessionId)) });
     } catch (err) {
       console.error('[Contacts] List failed:', err);
       res.status(500).json({ error: 'Could not load contacts.' });
@@ -106,7 +109,7 @@ export function mountContactRoutes(app, io) {
   // Declared before '/:id' so 'tags' is not swallowed as an id.
   app.get('/api/contacts/tags', authenticated, async (req, res) => {
     try {
-      res.json({ tags: await listContactTags(req.profile.uid) });
+      res.json({ tags: await listContactTags(req.workspaceId) });
     } catch (err) {
       console.error('[Contacts] Tag list failed:', err);
       res.status(500).json({ error: 'Could not load tags.' });
@@ -120,7 +123,7 @@ export function mountContactRoutes(app, io) {
       const phone = normalizePhone(req.params.phone);
       if (!phone) return res.status(400).json({ error: 'Not a valid phone number.', code: 'invalid_phone' });
 
-      const contact = await findContactByPhone(req.profile.uid, phone);
+      const contact = await findContactByPhone(req.workspaceId, phone);
       if (!contact) return res.status(404).json({ error: 'No saved contact for that number.' });
       res.json({ contact });
     } catch (err) {
@@ -139,12 +142,12 @@ export function mountContactRoutes(app, io) {
       const parsed = readContactBody(req.body || {}, { requirePhone: true });
       if (!parsed.ok) return res.status(400).json({ error: parsed.error, code: parsed.code });
 
-      const existing = await findContactByPhone(req.profile.uid, parsed.value.phone);
-      const contact = await upsertContact(req.profile.uid, {
+      const existing = await findContactByPhone(req.workspaceId, parsed.value.phone);
+      const contact = await upsertContact(req.workspaceId, {
         tags: [], name: '', ...parsed.value,
       });
 
-      notify(req.profile.uid);
+      notify(req.workspaceId);
       res.status(existing ? 200 : 201).json({ contact, created: !existing });
     } catch (err) {
       console.error('[Contacts] Save failed:', err);
@@ -160,11 +163,11 @@ export function mountContactRoutes(app, io) {
       const parsed = readContactBody(req.body || {}, { requirePhone: false });
       if (!parsed.ok) return res.status(400).json({ error: parsed.error, code: parsed.code });
 
-      const existing = await findContactById(req.profile.uid, id);
+      const existing = await findContactById(req.workspaceId, id);
       if (!existing) return res.status(404).json({ error: 'Contact not found.' });
 
-      const contact = await updateContact(req.profile.uid, id, parsed.value);
-      notify(req.profile.uid);
+      const contact = await updateContact(req.workspaceId, id, parsed.value);
+      notify(req.workspaceId);
       res.json({ contact });
     } catch (err) {
       if (err.code === UNIQUE_VIOLATION) {
@@ -183,10 +186,10 @@ export function mountContactRoutes(app, io) {
       const id = String(req.params.id || '');
       if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'Invalid contact id.' });
 
-      const deleted = await deleteContact(req.profile.uid, id);
+      const deleted = await deleteContact(req.workspaceId, id);
       if (!deleted) return res.status(404).json({ error: 'Contact not found.' });
 
-      notify(req.profile.uid);
+      notify(req.workspaceId);
       res.json({ success: true });
     } catch (err) {
       console.error('[Contacts] Delete failed:', err);
@@ -207,8 +210,8 @@ export function mountContactRoutes(app, io) {
         return res.status(400).json({ error: 'Too many contacts in one request.' });
       }
 
-      const removed = await deleteContactsBulk(req.profile.uid, ids);
-      notify(req.profile.uid);
+      const removed = await deleteContactsBulk(req.workspaceId, ids);
+      notify(req.workspaceId);
       res.json({ success: true, removed });
     } catch (err) {
       console.error('[Contacts] Bulk delete failed:', err);
@@ -269,10 +272,10 @@ export function mountContactRoutes(app, io) {
         });
       }
 
-      const { created, updated } = await importContacts(req.profile.uid, [...byPhone.values()]);
+      const { created, updated } = await importContacts(req.workspaceId, [...byPhone.values()]);
 
       console.log(`[Contacts] ${req.profile.email} imported ${created} new and updated ${updated} contact(s); ${invalid.length} row(s) skipped.`);
-      notify(req.profile.uid);
+      notify(req.workspaceId);
 
       res.json({
         success: true,

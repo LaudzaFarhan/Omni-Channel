@@ -9,12 +9,14 @@ import {
   hashPassword, verifyPassword, needsRehash, validatePassword,
   signAccessToken, generateRefreshToken, generateUserId,
   normalizeEmail, isValidEmail, ACCESS_TOKEN_TTL_SECONDS,
+  hashRefreshToken,
 } from './auth.js';
 import {
   findUserForLogin, findUserById, emailExists, createUser, countUsers,
   setPasswordHash, recordLogin, mapUser, getDefaultPlan,
   storeRefreshToken, findValidRefreshToken, revokeRefreshToken,
   revokeAllRefreshTokens, recordAudit,
+  findPendingInviteByTokenHash, markInviteAccepted, setMemberName,
 } from './data.js';
 import { authenticated, rateLimit, clientIp } from './middleware.js';
 
@@ -253,6 +255,127 @@ export function mountAuthRoutes(app) {
       res.json({ success: true });
     }
   });
+
+  // -------------------------------------------------------------------------
+  // GET /api/auth/invite/:token — is this link still good?
+  // -------------------------------------------------------------------------
+  // Unauthenticated: the whole point is that the recipient has no account yet.
+  // Returns the email the invite was issued for so the accept form can show who it
+  // is for, and the inviting account's name so the person can tell whether they
+  // recognise it. Nothing else — an invite token is a bearer credential and must
+  // not reveal the workspace's data.
+  app.get('/api/auth/invite/:token', rateLimit({ key: 'invite_lookup', max: 60 }), async (req, res) => {
+    try {
+      const invite = await findPendingInviteByTokenHash(hashRefreshToken(req.params.token));
+      if (!invite) {
+        return res.status(404).json({
+          error: 'This invitation link has expired or has already been used. Ask for a new one.',
+          code: 'invite_invalid',
+        });
+      }
+
+      const [member, workspace] = await Promise.all([
+        findUserById(invite.userId),
+        findUserById(invite.workspaceId),
+      ]);
+
+      if (!member || !workspace) {
+        return res.status(404).json({ error: 'This invitation is no longer valid.', code: 'invite_invalid' });
+      }
+
+      res.json({
+        email: invite.email,
+        name: member.name,
+        invitedBy: workspace.name || workspace.email,
+        expiresAt: invite.expiresAt,
+      });
+    } catch (err) {
+      console.error('[Auth] Invite lookup failed:', err);
+      res.status(500).json({ error: 'Could not check that invitation.' });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/auth/accept-invite
+  // -------------------------------------------------------------------------
+  // Sets an invited member's first password and signs them in.
+  //
+  // This is also the fix for a pre-existing dead end. A row with a null
+  // password_hash, or with must_reset_password set, made login return 403
+  // password_reset_required — and no endpoint could clear either without first
+  // signing in successfully. Such an account was simply locked out. Now there is a
+  // route that takes a token instead of a password.
+  //
+  // The token is the only authentication, so it is treated like one: hashed for
+  // lookup, single use (marked accepted in the same request), and rate limited.
+  app.post(
+    '/api/auth/accept-invite',
+    rateLimit({ key: 'accept_invite', max: 20, windowMs: 60 * 60 * 1000 }),
+    async (req, res) => {
+      try {
+        const { token, password, name } = req.body || {};
+        if (!token) {
+          return res.status(400).json({ error: 'This link is missing its invitation token.', code: 'invite_invalid' });
+        }
+
+        const passwordError = validatePassword(password);
+        if (passwordError) {
+          return res.status(400).json({ error: passwordError });
+        }
+
+        const invite = await findPendingInviteByTokenHash(hashRefreshToken(token));
+        if (!invite) {
+          return res.status(404).json({
+            error: 'This invitation link has expired or has already been used. Ask for a new one.',
+            code: 'invite_invalid',
+          });
+        }
+
+        const member = await findUserById(invite.userId);
+        if (!member) {
+          return res.status(404).json({ error: 'This invitation is no longer valid.', code: 'invite_invalid' });
+        }
+
+        // Refuse to re-set a password through an invite. Once someone has one, the
+        // change-password route is the only way to alter it, which keeps a stale
+        // link from being an account takeover.
+        const row = await findUserForLogin(member.email);
+        if (row && row.password_hash) {
+          await markInviteAccepted(invite.id);
+          return res.status(409).json({
+            error: 'This account already has a password. Sign in instead, or use "forgot password".',
+            code: 'already_accepted',
+          });
+        }
+
+        // setPasswordHash also clears must_reset_password.
+        await setPasswordHash(member.uid, await hashPassword(password));
+
+        // They may correct the name the supervisor typed for them.
+        const displayName = String(name || '').trim().slice(0, 120);
+        const profile = (displayName && displayName !== member.name
+          ? await setMemberName(invite.workspaceId, member.uid, displayName)
+          : null) || member;
+
+        await markInviteAccepted(invite.id);
+        await recordLogin(profile.uid);
+
+        await recordAudit({
+          actorUserId: profile.uid, actorEmail: profile.email,
+          action: 'team.invite_accepted', targetUserId: profile.uid,
+          detail: { workspaceId: invite.workspaceId }, ip: clientIp(req),
+        });
+
+        console.log(`[Team] ${profile.email} accepted their invitation to workspace ${invite.workspaceId}.`);
+
+        const { accessToken, refreshToken } = await issueTokens(profile, req);
+        res.json(authResponse(profile, accessToken, refreshToken));
+      } catch (err) {
+        console.error('[Auth] Accept invite failed:', err);
+        res.status(500).json({ error: 'Could not set up the account.' });
+      }
+    }
+  );
 
   // -------------------------------------------------------------------------
   // GET /api/auth/me
