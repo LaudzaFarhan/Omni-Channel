@@ -2,6 +2,9 @@ node_modules/
 dist/
 auth_info_baileys/
 sessions/
+# Manual backups of sessions/ contain live WhatsApp credentials
+# (auth_info_*/creds.json, app-state-sync keys). Never commit these.
+sessions_backup*/
 baileys_store.json
 .DS_Store
 .env
