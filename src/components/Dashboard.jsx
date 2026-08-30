@@ -2,10 +2,11 @@ import React, { useMemo } from 'react';
 import { Send, MessageCircle, Users, Phone, TrendingUp, Clock, MessageSquare } from 'lucide-react';
 import { getChatDisplayName, getInitials } from '../utils/displayName.js';
 import InteractionHeatmap from './dashboard/InteractionHeatmap.jsx';
+import CustomerList from './dashboard/CustomerList.jsx';
 
 export default function Dashboard({
   chats, userProfile, userInfo, waSessions, messages, savedNames = {},
-  activeSessionId = 'default', connectionStatus,
+  activeSessionId = 'default', connectionStatus, onOpenChat,
 }) {
   // Calculate stats from real data
   const totalContacts = Array.isArray(chats) ? chats.length : 0;
@@ -175,12 +176,26 @@ export default function Dashboard({
         })}
       </div>
 
-      {/* When conversations actually happen. Full width because 24 hourly columns
-          need the room; it collapses to a horizontal scroll below ~570px. */}
-      <InteractionHeatmap
-        activeSessionId={activeSessionId}
-        connected={connectionStatus === 'connected'}
-      />
+      {/* "When are we busy" beside "who was that". The heatmap needs the room for 24
+          hourly columns, so the customer list gets a fixed narrow column and the
+          heatmap takes the rest; below ~1100px they stack. The list's height is
+          driven entirely by the heatmap (see .customer-panel-cell) so the two panels
+          always line up however many customers there are. */}
+      <div className="dashboard-insight-row">
+        <InteractionHeatmap
+          activeSessionId={activeSessionId}
+          connected={connectionStatus === 'connected'}
+        />
+
+        <div className="customer-panel-cell">
+          <CustomerList
+            chats={chats}
+            userInfo={userInfo}
+            savedNames={savedNames}
+            onOpenChat={onOpenChat}
+          />
+        </div>
+      </div>
 
       {/* Bottom Section */}
       <div className="dashboard-bottom-row">

@@ -1,0 +1,176 @@
+import React, { useMemo, useState } from 'react';
+import { Users, Search, ChevronRight, MessageSquare } from 'lucide-react';
+import { getChatDisplayName, getInitials, isSelfChat } from '../../utils/displayName.js';
+
+const AVATAR_COLORS = [
+  '#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444',
+  '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#6366f1',
+];
+
+// Stable per conversation, so a customer keeps the same colour between renders and
+// between sessions.
+function avatarColor(jid) {
+  let hash = 0;
+  for (let i = 0; i < (jid || '').length; i++) {
+    hash = jid.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+// Short enough to sit in a narrow column: a time today, a weekday this week, then a
+// date. The full timestamp goes in the title attribute.
+function shortWhen(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  if (!Number.isFinite(d.getTime())) return '';
+
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'Kemarin';
+
+  if (now - d < 7 * 86400000) {
+    return d.toLocaleDateString('id-ID', { weekday: 'short' });
+  }
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+}
+
+// Customers, most recently active first, beside the heatmap.
+//
+// The heatmap answers "when are we busy"; this answers "who was that". Both read from
+// the same `chats` the messages view already holds, so the panel costs no extra
+// request.
+//
+// Groups are left out: a 40-person group is not a customer, and mixing them in makes
+// the count meaningless. The self-chat is dropped for the same reason.
+export default function CustomerList({ chats = [], userInfo, savedNames = {}, onOpenChat }) {
+  const [query, setQuery] = useState('');
+
+  const customers = useMemo(() => {
+    const list = chats
+      .filter(c => c?.id)
+      .filter(c => !c.id.endsWith('@g.us'))
+      .filter(c => !isSelfChat(c, userInfo))
+      .map(c => ({
+        ...c,
+        label: getChatDisplayName(c, userInfo, savedNames[c.id]),
+      }))
+      .sort((a, b) => (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0));
+
+    const q = query.trim().toLowerCase();
+    if (!q) return list;
+
+    // Numbers are stored internationally (62811…) but people type them locally
+    // (0811…), so a leading zero has to come off the query or the two never meet.
+    // normalizePhone() handles this properly but needs a whole number; a partial
+    // search is exactly the case it rejects, hence the narrower rule here. Stored
+    // numbers never begin with 0, so stripping is unambiguous.
+    const digits = q.replace(/\D/g, '').replace(/^0+/, '');
+
+    return list.filter((c) => {
+      if (c.label.toLowerCase().includes(q)) return true;
+      if ((c.lastMessage || '').toLowerCase().includes(q)) return true;
+      // Matched against the JID AND the resolved phone, because an @lid chat carries
+      // its number in only one of the two.
+      if (digits.length >= 3) {
+        return `${c.id}${c.phoneNumber || ''}`.replace(/\D/g, '').includes(digits);
+      }
+      return false;
+    });
+  }, [chats, userInfo, savedNames, query]);
+
+  const total = useMemo(
+    () => chats.filter(c => c?.id && !c.id.endsWith('@g.us') && !isSelfChat(c, userInfo)).length,
+    [chats, userInfo]
+  );
+
+  return (
+    <div className="dashboard-panel customer-panel">
+      <div className="dashboard-panel-header">
+        <Users size={18} />
+        <span>Pelanggan</span>
+        <span className="customer-count">{total}</span>
+      </div>
+
+      {total > 0 && (
+        <div className="customer-search">
+          <Search size={13} />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Cari nama atau nomor…"
+            aria-label="Cari pelanggan"
+          />
+        </div>
+      )}
+
+      {/* The only scrolling region. Its parent is a fixed-height flex column, so the
+          list scrolls internally instead of stretching the row and pushing the
+          heatmap out of alignment. */}
+      <div className="customer-scroll">
+        {customers.length === 0 ? (
+          <div className="customer-empty">
+            <MessageSquare size={28} />
+            <p>
+              {total === 0
+                ? 'Belum ada percakapan dengan pelanggan'
+                : `Tidak ada pelanggan yang cocok dengan “${query.trim()}”`}
+            </p>
+          </div>
+        ) : (
+          <ul className="customer-list">
+            {customers.map((customer) => (
+              <li key={customer.id}>
+                {/* One button per row rather than a clickable row plus a nested
+                    button: nesting interactive elements is invalid and makes the row
+                    unreachable by keyboard. The pill on the right is the visible
+                    affordance for the same action. */}
+                <button
+                  type="button"
+                  className="customer-row"
+                  onClick={() => onOpenChat?.(customer.id)}
+                  title={`Buka riwayat chat ${customer.label}`}
+                >
+                  <span className="customer-avatar" style={{ background: avatarColor(customer.id) }}>
+                    {getInitials(customer.label)}
+                  </span>
+
+                  <span className="customer-body">
+                    <span className="customer-top">
+                      <span className="customer-name">{customer.label}</span>
+                      <span
+                        className="customer-when"
+                        title={customer.lastMessageTimestamp
+                          ? new Date(customer.lastMessageTimestamp).toLocaleString('id-ID')
+                          : undefined}
+                      >
+                        {shortWhen(customer.lastMessageTimestamp)}
+                      </span>
+                    </span>
+
+                    <span className="customer-hint">
+                      {customer.lastMessageFromMe && <span className="customer-you">Anda: </span>}
+                      {customer.lastMessage || 'Belum ada pesan'}
+                    </span>
+                  </span>
+
+                  {customer.unreadCount > 0 && (
+                    <span className="customer-unread">{customer.unreadCount}</span>
+                  )}
+
+                  <span className="customer-open">
+                    Lihat <ChevronRight size={12} />
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -1087,6 +1087,7 @@ export default function App() {
                       savedNames={savedNames}
                       activeSessionId={activeSessionId}
                       connectionStatus={connectionStatus}
+                      onOpenChat={handleOpenChatFor}
                     />
                   )}
 

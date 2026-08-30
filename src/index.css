@@ -2480,14 +2480,258 @@ input:checked + .slider:before {
 }
 
 /* ---------------------------------------------------------------------------
+   Heatmap + customer list, side by side
+   ---------------------------------------------------------------------------
+   The heatmap decides the row height. The customer list must match it exactly and
+   scroll internally, however many customers there are.
+
+   A flex/overflow column alone will not do that: a grid row sized `auto` takes the
+   MAX of both cells' content heights, so a long list would stretch the row and leave
+   the heatmap floating in whitespace. Instead the list's cell is a positioning
+   context that only the heatmap can size, and the panel fills it absolutely — so the
+   list contributes nothing to the row height at all. */
+.dashboard-insight-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 24px;
+  /* No margin: .dashboard-view is a flex column with its own 24px gap, so a margin
+     here would double the spacing. The heatmap used to carry one and did exactly
+     that. */
+}
+
+.customer-panel-cell {
+  position: relative;
+  min-width: 0;
+}
+
+.customer-panel {
+  position: absolute;
+  inset: 0;
+  /* Keeps the rounded corners while .customer-scroll does the scrolling. */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 1100px) {
+  /* Stacked: absolute positioning has nothing to size against, so the panel goes back
+     to normal flow with an explicit height to keep the list scrollable. */
+  .dashboard-insight-row {
+    grid-template-columns: 1fr;
+  }
+  .customer-panel-cell {
+    position: static;
+    height: 420px;
+  }
+  .customer-panel {
+    position: static;
+    height: 100%;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Customer list
+   --------------------------------------------------------------------------- */
+.customer-panel .dashboard-panel-header {
+  flex-shrink: 0;
+}
+
+.customer-count {
+  margin-left: auto;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: var(--primary);
+  background: rgba(0, 168, 132, 0.12);
+}
+
+.customer-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-dimmed);
+}
+
+.customer-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 0.82rem;
+  font-family: inherit;
+  outline: none;
+}
+
+/* min-height:0 is what actually allows a flex child to shrink below its content and
+   scroll, rather than growing the panel. */
+.customer-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.customer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.customer-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 11px 16px;
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.customer-row:hover {
+  background: var(--overlay-subtle);
+}
+
+.customer-row:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.customer-avatar {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+/* min-width:0 lets the two text lines below actually ellipsis instead of forcing the
+   row wider than the column. */
+.customer-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.customer-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.customer-name {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customer-when {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  color: var(--text-dimmed);
+}
+
+.customer-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customer-you {
+  color: var(--text-dimmed);
+}
+
+.customer-unread {
+  flex-shrink: 0;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The "open the history" affordance. Hidden until hover or keyboard focus so the row
+   stays readable, but always present in the accessibility tree. */
+.customer-open {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 5px;
+  color: var(--primary);
+  background: rgba(0, 168, 132, 0.12);
+  border: 1px solid rgba(0, 168, 132, 0.25);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.customer-row:hover .customer-open,
+.customer-row:focus-visible .customer-open {
+  opacity: 1;
+}
+
+/* Touch has no hover, so keep it visible there. */
+@media (hover: none) {
+  .customer-open {
+    opacity: 1;
+  }
+}
+
+.customer-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  padding: 30px 22px;
+  text-align: center;
+  color: var(--text-dimmed);
+}
+
+.customer-empty p {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+/* ---------------------------------------------------------------------------
    Interaction heatmap (weekday x hour)
    ---------------------------------------------------------------------------
    Real CSS classes rather than inline styles, because the grid needs :hover and
    :focus-visible states on 168 cells and inline styles cannot express either. */
-
-.heatmap-panel {
-  margin-bottom: 24px;
-}
 
 .heatmap-panel .dashboard-panel-header {
   justify-content: space-between;
