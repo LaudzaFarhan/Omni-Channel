@@ -9,12 +9,17 @@ import {
   FALLBACK_PLANS, normalizePlan, sortPlans,
   resolveUserPlanId, planPriceLabel, formatQuota,
 } from '../../utils/plans.js';
+import { agentRange, priceFor, formatIDR, priceBreakdownLabel } from '../../utils/pricing.js';
 
 const BLANK_FORM = {
   id: '',
   name: '',
   description: '',
   price: '0',
+  basePrice: '0',
+  includedAgents: '1',
+  addonAgentPrice: '0',
+  maxAgents: '',
   currency: 'IDR',
   messageLimit: '500',
   sessionLimit: '1',
@@ -29,7 +34,14 @@ function formToPlan(form) {
     id: form.id,
     name: form.name.trim() || form.id,
     description: form.description.trim(),
-    price: Number(form.price) || 0,
+    price: Number(form.basePrice) || Number(form.price) || 0,
+    basePrice: Number(form.basePrice) || 0,
+    includedAgents: Math.max(1, parseInt(form.includedAgents, 10) || 1),
+    addonAgentPrice: Math.max(0, parseInt(form.addonAgentPrice, 10) || 0),
+    // Blank means unlimited.
+    maxAgents: String(form.maxAgents).trim() === ''
+      ? null
+      : Math.max(1, parseInt(form.maxAgents, 10) || 1),
     currency: form.currency.trim() || 'IDR',
     messageLimit: Math.max(0, parseInt(form.messageLimit, 10) || 0),
     sessionLimit: Math.max(1, parseInt(form.sessionLimit, 10) || 1),
@@ -49,6 +61,10 @@ function planToForm(plan) {
     name: plan.name,
     description: plan.description || '',
     price: String(plan.price ?? 0),
+    basePrice: String(plan.basePrice ?? plan.price ?? 0),
+    includedAgents: String(plan.includedAgents ?? 1),
+    addonAgentPrice: String(plan.addonAgentPrice ?? 0),
+    maxAgents: plan.maxAgents === null || plan.maxAgents === undefined ? '' : String(plan.maxAgents),
     currency: plan.currency || 'IDR',
     messageLimit: String(plan.messageLimit ?? 0),
     sessionLimit: String(plan.sessionLimit ?? 1),
@@ -308,10 +324,18 @@ export default function PlansTab({ plans, loading, error, users, onPlansChanged,
                   <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', margin: 0, lineHeight: '1.5' }}>{plan.description}</p>
                 )}
 
+                {plan.addonAgentPrice > 0 && (
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', padding: '8px 10px', borderRadius: '6px', background: 'var(--overlay-subtle)', border: '1px solid var(--border-color)' }}>
+                    {formatIDR(plan.basePrice)} covers {plan.includedAgents} {plan.includedAgents === 1 ? 'agent' : 'agents'},
+                    then <strong>{formatIDR(plan.addonAgentPrice)}</strong> per extra
+                    {plan.maxAgents ? <> up to {plan.maxAgents}</> : <> (unlimited)</>}.
+                  </div>
+                )}
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
                   {[
                     { label: 'Messages', value: formatQuota(plan.messageLimit) },
-                    { label: 'Devices', value: plan.sessionLimit },
+                    { label: 'Agents', value: plan.includedAgents ?? plan.sessionLimit },
                     { label: 'Trial days', value: plan.trialDays || '—' },
                   ].map(stat => (
                     <div key={stat.label} style={{ padding: '10px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
@@ -461,11 +485,65 @@ export default function PlansTab({ plans, loading, error, users, onPlansChanged,
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
-              <div>
-                <label style={labelStyle} htmlFor="plan-price">Price</label>
-                <input id="plan-price" type="number" min="0" style={inputStyle} value={editor.form.price} onChange={(e) => updateForm({ price: e.target.value })} />
+            {/* Agent-based pricing. An "agent" is one concurrent access slot. */}
+            <div style={{ padding: '14px', borderRadius: '10px', background: 'var(--overlay-subtle)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-dimmed)' }}>
+                Agent pricing
               </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div>
+                  <label style={labelStyle} htmlFor="plan-base-price">Base price</label>
+                  <input id="plan-base-price" type="number" min="0" style={inputStyle}
+                    value={editor.form.basePrice}
+                    onChange={(e) => updateForm({ basePrice: e.target.value, price: e.target.value })} />
+                </div>
+                <div>
+                  <label style={labelStyle} htmlFor="plan-included-agents">Agents included in base</label>
+                  <input id="plan-included-agents" type="number" min="1" style={inputStyle}
+                    value={editor.form.includedAgents}
+                    onChange={(e) => updateForm({ includedAgents: e.target.value })} />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div>
+                  <label style={labelStyle} htmlFor="plan-addon-price">Price per extra agent</label>
+                  <input id="plan-addon-price" type="number" min="0" style={inputStyle}
+                    value={editor.form.addonAgentPrice}
+                    onChange={(e) => updateForm({ addonAgentPrice: e.target.value })} />
+                </div>
+                <div>
+                  <label style={labelStyle} htmlFor="plan-max-agents">Max agents (blank = unlimited)</label>
+                  <input id="plan-max-agents" type="number" min="1" style={inputStyle} placeholder="unlimited"
+                    value={editor.form.maxAgents}
+                    onChange={(e) => updateForm({ maxAgents: e.target.value })} />
+                </div>
+              </div>
+
+              {/* Live preview, using the same arithmetic the server bills with. */}
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.6' }}>
+                {(() => {
+                  const preview = formToPlan({ ...editor.form, id: editor.form.id || 'preview' });
+                  const range = agentRange(preview);
+                  if (range.max === range.min) {
+                    return <>Fixed at {range.min} {range.min === 1 ? 'agent' : 'agents'} for {formatIDR(preview.basePrice)}. Set a price per extra agent to allow add-ons.</>;
+                  }
+                  const sample = Math.min(range.max ?? range.min + 5, range.min + 5);
+                  return (
+                    <>
+                      {formatIDR(preview.basePrice)} covers {preview.includedAgents} {preview.includedAgents === 1 ? 'agent' : 'agents'},
+                      then {formatIDR(preview.addonAgentPrice)} each up to {range.max === null ? 'unlimited' : range.max}.
+                      <br />
+                      <strong>{sample} agents = {formatIDR(priceFor(preview, sample).total)}</strong>{' '}
+                      <span style={{ color: 'var(--text-dimmed)' }}>({priceBreakdownLabel(preview, sample)})</span>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
               <div>
                 <label style={labelStyle} htmlFor="plan-currency">Currency</label>
                 <input id="plan-currency" style={inputStyle} value={editor.form.currency} onChange={(e) => updateForm({ currency: e.target.value })} />

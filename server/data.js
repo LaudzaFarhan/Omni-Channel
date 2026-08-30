@@ -31,6 +31,9 @@ export function mapUser(row) {
     sessionLimit: row.session_limit,
     messagesSent: row.messages_sent,
     trialExpired: row.trial_expired,
+    // Agents the customer paid for. NULL means they inherit the plan's included
+    // count; sessionLimit above still wins as an explicit admin override.
+    purchasedAgents: row.purchased_agents ?? null,
     mustResetPassword: row.must_reset_password,
     createdAt: row.created_at,
     lastLoginAt: row.last_login_at,
@@ -52,6 +55,15 @@ export function mapPlan(row) {
     isDefault: row.is_default,
     archived: row.archived,
     sortOrder: row.sort_order,
+
+    // Quantity pricing. base_price covers included_agents; beyond that each agent
+    // costs addon_agent_price, up to max_agents (null = unlimited).
+    basePrice: Number(row.base_price ?? row.price ?? 0),
+    includedAgents: Number(row.included_agents ?? 1),
+    addonAgentPrice: Number(row.addon_agent_price ?? 0),
+    maxAgents: row.max_agents === null || row.max_agents === undefined
+      ? null
+      : Number(row.max_agents),
   };
 }
 
@@ -74,7 +86,7 @@ export function mapTransaction(row) {
 
 const USER_COLUMNS = `
   id, email, name, role, is_approved, plan_id, message_limit, session_limit,
-  messages_sent, trial_expired, must_reset_password, created_at, last_login_at
+  messages_sent, trial_expired, must_reset_password, purchased_agents, created_at, last_login_at
 `;
 
 // ---------------------------------------------------------------------------
@@ -137,6 +149,7 @@ const ADMIN_WRITABLE = {
   sessionLimit: 'session_limit',
   messagesSent: 'messages_sent',
   trialExpired: 'trial_expired',
+  purchasedAgents: 'purchased_agents',
 };
 
 // Builds a parameterised UPDATE from a whitelist. Passing null for
@@ -227,14 +240,32 @@ export async function consumeMessageQuota(userId) {
 
 // Effective device limit, resolved in one query: user override, else plan, else 1.
 // Mirrors resolveEffectiveLimits() on the client.
+// Effective agent limit: how many devices/people may be signed in at once.
+//
+// Precedence:
+//   session_limit      an admin granted it manually (override)
+//   purchased_agents   the customer paid for it
+//   included_agents    what the plan comes with
+//   session_limit(plan) legacy column, for plans predating agent pricing
+//   1                  last resort
 export async function resolveSessionLimitFor(userId) {
   const row = await queryOne(
-    `SELECT COALESCE(u.session_limit, p.session_limit, 1) AS limit_value
+    `SELECT COALESCE(u.session_limit, u.purchased_agents, p.included_agents, p.session_limit, 1) AS limit_value
        FROM users u LEFT JOIN plans p ON p.id = u.plan_id
       WHERE u.id = $1`,
     [userId]
   );
   return row ? Math.max(1, Number(row.limit_value)) : 1;
+}
+
+// Applied by the payment webhook once an invoice for N agents is paid.
+export async function setPurchasedAgents(userId, agents) {
+  const value = agents === null ? null : Math.max(1, Math.floor(Number(agents)));
+  const row = await queryOne(
+    `UPDATE users SET purchased_agents = $2 WHERE id = $1 RETURNING ${USER_COLUMNS}`,
+    [userId, value]
+  );
+  return mapUser(row);
 }
 
 // ---------------------------------------------------------------------------
@@ -270,8 +301,9 @@ export async function upsertPlan(plan) {
 
     const { rows } = await client.query(
       `INSERT INTO plans (id, name, description, price, currency, message_limit,
-                          session_limit, trial_days, features, is_default, archived, sort_order)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12)
+                          session_limit, trial_days, features, is_default, archived, sort_order,
+                          base_price, included_agents, addon_agent_price, max_agents)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16)
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name,
          description = EXCLUDED.description,
@@ -283,13 +315,21 @@ export async function upsertPlan(plan) {
          features = EXCLUDED.features,
          is_default = EXCLUDED.is_default,
          archived = EXCLUDED.archived,
-         sort_order = EXCLUDED.sort_order
+         sort_order = EXCLUDED.sort_order,
+         base_price = EXCLUDED.base_price,
+         included_agents = EXCLUDED.included_agents,
+         addon_agent_price = EXCLUDED.addon_agent_price,
+         max_agents = EXCLUDED.max_agents
        RETURNING *`,
       [
         plan.id, plan.name, plan.description || '', plan.price || 0,
         plan.currency || 'IDR', plan.messageLimit, plan.sessionLimit,
         plan.trialDays || 0, JSON.stringify(plan.features || []),
         Boolean(plan.isDefault), Boolean(plan.archived), plan.sortOrder ?? 100,
+        plan.basePrice ?? plan.price ?? 0,
+        Math.max(1, plan.includedAgents ?? 1),
+        plan.addonAgentPrice ?? 0,
+        plan.maxAgents === null || plan.maxAgents === undefined ? null : Math.max(1, plan.maxAgents),
       ]
     );
 

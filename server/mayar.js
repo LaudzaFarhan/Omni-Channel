@@ -74,30 +74,38 @@ export async function verifyWebhookToken(rawHeaderValue) {
  * `extraData` is echoed back verbatim on the webhook.
  */
 export async function createInvoice({
-  name, email, mobile, description, amount, itemDescription, extraData, expiresInHours = 24,
+  name, email, mobile, description, items, extraData, expiresInHours = 24,
 }) {
   if (!API_KEY) {
     throw Object.assign(new Error('Mayar API key is not configured'), { code: 'mayar_not_configured' });
   }
 
-  const numericAmount = Number(amount);
-  if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-    throw Object.assign(new Error('Invoice amount must be a positive number'), { code: 'invalid_amount' });
+  // Mayar sums the items array, so a base line plus an add-on line bills a
+  // variable quantity as ONE payment while still itemising it on the invoice.
+  const lines = (Array.isArray(items) ? items : [])
+    .map(line => ({
+      quantity: Math.max(1, Math.floor(Number(line.quantity) || 1)),
+      rate: Math.round(Number(line.rate) || 0),
+      description: String(line.description || 'Item').slice(0, 200),
+    }))
+    .filter(line => line.rate !== 0);
+
+  if (lines.length === 0) {
+    throw Object.assign(new Error('Invoice needs at least one line item'), { code: 'invalid_amount' });
+  }
+
+  const total = lines.reduce((sum, line) => sum + line.rate * line.quantity, 0);
+  if (total <= 0) {
+    // Mayar rejects this too, with "Invoice total must be greater than zero".
+    throw Object.assign(new Error('Invoice total must be greater than zero'), { code: 'invalid_amount' });
   }
 
   const body = {
     name: String(name || 'Customer').slice(0, 120),
     email: String(email || ''),
-    // Mobile is required by the API. Mayar rejects an empty string, so callers
-    // must supply something; this is the documented placeholder shape.
+    // Mobile is required by the API and an empty string is rejected.
     mobile: String(mobile || '').replace(/[^\d+]/g, '') || '08000000000',
-    items: [
-      {
-        quantity: 1,
-        rate: Math.round(numericAmount),
-        description: String(itemDescription || description || 'Subscription').slice(0, 200),
-      },
-    ],
+    items: lines,
     description: String(description || '').slice(0, 500),
     expiredAt: new Date(Date.now() + expiresInHours * 3600 * 1000).toISOString(),
     ...(extraData ? { extraData } : {}),
@@ -171,6 +179,8 @@ export function parseWebhookEvent(payload = {}) {
     localTransactionId: extra.localTransactionId || extra.ref || null,
     uid: extra.uid || null,
     planId: extra.planId || null,
+    // How many agents were paid for, so the webhook grants the right number.
+    agents: extra.agents ? Number(extra.agents) : null,
     mayarTransactionId: data.transactionId || data.id || payload.id || null,
     email: data.customerEmail || data.email || payload.customerEmail || null,
     amount: Number(data.amount ?? payload.amount ?? 0) || 0,

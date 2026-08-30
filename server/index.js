@@ -20,8 +20,12 @@ import { assertAuthConfigured, verifyAccessToken } from './auth.js';
 import {
   resolveSessionLimitFor, consumeMessageQuota, saveTransaction,
   markTransactionStatus, findUserById, recordAudit, isChatHeld,
-  findPlanById, updateUser,
+  findPlanById, updateUser, setPurchasedAgents,
 } from './data.js';
+// Pricing arithmetic is shared with the browser so the customer is shown exactly
+// the figure they will be charged. The server always recomputes it; the client's
+// number is never trusted.
+import { priceFor, invoiceLines, clampAgents, agentRange } from '../src/utils/pricing.js';
 import {
   mayarConfig, reportMayarConfig, createInvoice, verifyWebhookToken, parseWebhookEvent,
 } from './mayar.js';
@@ -1034,15 +1038,39 @@ app.post('/api/mayar/create-checkout', authenticated, async (req, res) => {
     if (plan.archived) {
       return res.status(400).json({ error: `Plan "${plan.name}" is no longer available.` });
     }
-    if (!plan.price || plan.price <= 0) {
+    // How many agents (concurrent access slots) they are buying. Clamped to what
+    // the plan allows, then priced here — the client's arithmetic is never trusted,
+    // only its choice of quantity.
+    const range = agentRange(plan);
+    const requestedAgents = req.body?.agents;
+    const agents = clampAgents(plan, requestedAgents ?? range.min);
+
+    if (requestedAgents !== undefined && Number(requestedAgents) !== agents) {
+      return res.status(400).json({
+        error: range.max === null
+          ? `This plan needs at least ${range.min} agents.`
+          : `This plan allows between ${range.min} and ${range.max} agents.`,
+        code: 'agents_out_of_range',
+        min: range.min,
+        max: range.max,
+      });
+    }
+
+    const pricing = priceFor(plan, agents);
+
+    if (pricing.total <= 0) {
       return res.status(400).json({
         error: `Plan "${plan.name}" is free — there is nothing to pay for.`,
         code: 'plan_is_free',
       });
     }
-    if (req.profile.planId === planId) {
+
+    // Same plan AND same agent count is a no-op; buying more agents on the plan
+    // you are already on is a legitimate upgrade.
+    const currentAgents = req.profile.purchasedAgents ?? plan.includedAgents;
+    if (req.profile.planId === planId && currentAgents === agents) {
       return res.status(409).json({
-        error: `You are already on the ${plan.name} plan.`,
+        error: `You are already on the ${plan.name} plan with ${agents} ${agents === 1 ? 'agent' : 'agents'}.`,
         code: 'already_on_plan',
       });
     }
@@ -1055,7 +1083,9 @@ app.post('/api/mayar/create-checkout', authenticated, async (req, res) => {
     }
 
     const transactionId = `WA-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-    const description = `${plan.name} plan for ${userEmail}`;
+    const description = pricing.extraAgents > 0
+      ? `${plan.name} plan, ${agents} agents (${pricing.includedAgents} included + ${pricing.extraAgents} extra)`
+      : `${plan.name} plan, ${agents} ${agents === 1 ? 'agent' : 'agents'}`;
 
     // Record the intent BEFORE calling Mayar, so a customer who pays is never
     // left without a local record if our process dies mid-request.
@@ -1065,10 +1095,12 @@ app.post('/api/mayar/create-checkout', authenticated, async (req, res) => {
       email: userEmail || '',
       item: description,
       type: planId,
-      amount: plan.price,
+      amount: pricing.total,
       currency: plan.currency || 'IDR',
       status: 'PENDING',
       paymentUrl: null,
+      planId,
+      agents,
     });
 
     let paymentUrl = '';
@@ -1080,12 +1112,13 @@ app.post('/api/mayar/create-checkout', authenticated, async (req, res) => {
         email: userEmail,
         mobile: req.body?.mobile,
         description,
-        itemDescription: `${plan.name} plan`,
-        amount: plan.price,
+        // One invoice, two lines: base plus add-on agents. Mayar sums them, so the
+        // customer pays 1_300_000 once while the breakdown stays visible.
+        items: invoiceLines(plan, agents),
         // Round-tripped by Mayar and read back in the webhook, which is what
         // makes automatic fulfilment safe: we no longer have to guess which plan
         // a payment was for.
-        extraData: { localTransactionId: transactionId, uid, planId },
+        extraData: { localTransactionId: transactionId, uid, planId, agents: String(agents) },
       });
 
       paymentUrl = invoice.link;
@@ -1103,10 +1136,12 @@ app.post('/api/mayar/create-checkout', authenticated, async (req, res) => {
       email: userEmail || '',
       item: description,
       type: planId,
-      amount: plan.price,
+      amount: pricing.total,
       currency: plan.currency || 'IDR',
       status: 'PENDING',
       paymentUrl,
+      planId,
+      agents,
       raw: mayarRef ? { mayarRef } : null,
     });
 
@@ -1115,7 +1150,7 @@ app.post('/api/mayar/create-checkout', authenticated, async (req, res) => {
       actorEmail: userEmail,
       action: 'payment.checkout_created',
       targetUserId: uid,
-      detail: { transactionId, planId, amount: plan.price, mayarRef },
+      detail: { transactionId, planId, agents, amount: pricing.total, mayarRef },
       ip: clientIp(req),
     });
 
@@ -1123,9 +1158,11 @@ app.post('/api/mayar/create-checkout', authenticated, async (req, res) => {
       success: true,
       transactionId,
       paymentUrl,
-      amount: plan.price,
+      amount: pricing.total,
       currency: plan.currency || 'IDR',
       planId,
+      agents,
+      pricing,
       description,
     });
   } catch (err) {
@@ -1174,6 +1211,7 @@ app.post('/api/webhooks/mayar', async (req, res) => {
     }
 
     let appliedPlan = null;
+    let appliedAgents = null;
 
     if (event.localTransactionId) {
       const updated = await markTransactionStatus(event.localTransactionId, 'PAID');
@@ -1196,7 +1234,17 @@ app.post('/api/webhooks/mayar', async (req, res) => {
       } else {
         await updateUser(event.uid, { planId: plan.id });
         appliedPlan = plan.id;
-        console.log(`[Mayar Webhook] Upgraded ${user.email} to ${plan.name}.`);
+
+        // Grant the agents that were paid for. Falls back to the plan's included
+        // count for a payment made before agent pricing existed.
+        const agentsPaidFor = Number.isFinite(event.agents) && event.agents > 0
+          ? clampAgents(plan, event.agents)
+          : plan.includedAgents;
+
+        await setPurchasedAgents(event.uid, agentsPaidFor);
+        appliedAgents = agentsPaidFor;
+
+        console.log(`[Mayar Webhook] Upgraded ${user.email} to ${plan.name} with ${agentsPaidFor} agent(s).`);
 
         const fresh = await findUserById(event.uid);
         io.to(event.uid).emit('profile-updated', fresh);
@@ -1217,6 +1265,7 @@ app.post('/api/webhooks/mayar', async (req, res) => {
         amount: event.amount,
         status: event.status,
         appliedPlan,
+        appliedAgents,
       },
       ip: clientIp(req),
     });
@@ -1225,11 +1274,12 @@ app.post('/api/webhooks/mayar', async (req, res) => {
       io.to(event.uid).emit('payment-success', {
         transactionId: event.localTransactionId,
         planId: appliedPlan,
+        agents: appliedAgents,
         timestamp: new Date().toISOString(),
       });
     }
 
-    res.json({ success: true, appliedPlan });
+    res.json({ success: true, appliedPlan, appliedAgents });
   } catch (err) {
     // A 500 makes Mayar retry, which is what we want for a transient failure.
     console.error('[Mayar Webhook] Processing error:', err.message);
