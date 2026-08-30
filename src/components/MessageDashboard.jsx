@@ -6,6 +6,7 @@ import { loadAllTags, loadGlobalCustomTags, PRESET_TAGS } from '../utils/contact
 
 export default function MessageDashboard({
   chats,
+  setChats,
   searchQuery,
   setSearchQuery,
   activeChatJid,
@@ -176,6 +177,7 @@ export default function MessageDashboard({
         <div style={{ flex: 1, overflowY: 'auto' }}>
           <ChatList 
             chats={chats}
+            setChats={setChats}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
             activeChatJid={activeChatJid}
