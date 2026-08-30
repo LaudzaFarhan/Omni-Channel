@@ -16,6 +16,7 @@ import {
   listTransactionsForUser, listAllTransactions, deleteTransaction, deleteTransactionsBulk,
   listAudit, recordAudit, revokeAllRefreshTokens,
   getChatSettings, listHeldChats, setChatHold, clearChatHold,
+  setChatStatus, listChatStatuses, CHAT_STATUSES,
 } from './data.js';
 import { authenticated, admin, supervisor, clientIp } from './middleware.js';
 import { getStore } from './store.js';
@@ -420,6 +421,65 @@ export function mountDataRoutes(app, io) {
     } catch (err) {
       console.error('[Hold] Update failed:', err);
       res.status(500).json({ error: 'Could not update hold state.' });
+    }
+  });
+
+  // =========================================================================
+  // chat status (prospect / closed won / dropped)
+  // =========================================================================
+  // Every conversation whose state has been set, for badging the chat list. Chats
+  // with no row are absent, which reads as 'prospect'.
+  app.get('/api/chats/status', authenticated, async (req, res) => {
+    try {
+      const sessionId = String(req.query.sessionId || 'default');
+      res.json({ statuses: await listChatStatuses(req.workspaceId, sessionId) });
+    } catch (err) {
+      console.error('[Status] List failed:', err);
+      res.status(500).json({ error: 'Could not load chat statuses.' });
+    }
+  });
+
+  // Move one conversation's state.
+  //
+  // JID handling matches the hold routes exactly: canonicalised before writing so the
+  // dashboard (@lid) and a bot (phone JID) touch the same row, with the aliases
+  // collapsed afterwards. Getting this wrong would let one conversation carry two rows
+  // with different statuses.
+  app.put('/api/chats/:jid/status', authenticated, async (req, res) => {
+    try {
+      const sessionId = String(req.body?.sessionId || req.query.sessionId || 'default');
+      const chatJid = req.params.jid;
+
+      if (!chatJid || chatJid.length > 200) {
+        return res.status(400).json({ error: 'Invalid chat id.' });
+      }
+
+      const status = String(req.body?.status || '');
+      if (!CHAT_STATUSES.includes(status)) {
+        return res.status(400).json({
+          error: `status must be one of: ${CHAT_STATUSES.join(', ')}.`,
+          code: 'invalid_status',
+        });
+      }
+
+      const store = getStore(sessionKey(req.workspaceId, sessionId));
+      const canonical = store.canonicalHoldJid(chatJid);
+
+      const settings = await setChatStatus(req.workspaceId, sessionId, canonical, {
+        status,
+        // The individual who moved it, not the workspace — with a team sharing an
+        // account, "someone marked this won" is not useful on its own.
+        statusBy: req.profile.name || req.profile.email,
+      });
+
+      // The whole workspace sees the change: a colleague should not still be working a
+      // lead that was just closed.
+      if (io) io.to(req.workspaceId).emit('chat-status-updated', settings);
+
+      res.json(settings);
+    } catch (err) {
+      console.error('[Status] Update failed:', err);
+      res.status(500).json({ error: 'Could not update the chat status.' });
     }
   });
 

@@ -912,6 +912,12 @@ export function mapChatSettings(row) {
     pausedAt: row.paused_at,
     pausedBy: row.paused_by,
     note: row.note,
+
+    // Commercial state. NULL in the column reads as 'prospect' everywhere, so the
+    // default is applied here once instead of at every call site.
+    status: row.status || 'prospect',
+    statusAt: row.status_at ?? null,
+    statusBy: row.status_by ?? null,
   };
 }
 
@@ -940,6 +946,9 @@ export async function getChatSettings(userId, sessionId, chatJids) {
     pausedAt: null,
     pausedBy: null,
     note: null,
+    status: 'prospect',
+    statusAt: null,
+    statusBy: null,
   };
 }
 
@@ -976,6 +985,60 @@ export async function setChatHold(userId, sessionId, chatJid, { botPaused, pause
     [userId, sessionId, chatJid, Boolean(botPaused), pausedBy || null, note || null]
   );
   return mapChatSettings(row);
+}
+
+export const CHAT_STATUSES = ['prospect', 'closed_won', 'dropped'];
+
+/**
+ * Move a conversation's commercial state.
+ *
+ * Shares the chat_settings row with the agent hold, so the INSERT lists only the
+ * status columns and the ON CONFLICT touches only those — a status change must not
+ * release a hold, and vice versa. Both operations use ON CONFLICT on the same natural
+ * key, so whichever happens first creates the row.
+ */
+export async function setChatStatus(userId, sessionId, chatJid, { status, statusBy }) {
+  const value = CHAT_STATUSES.includes(status) ? status : 'prospect';
+
+  const row = await queryOne(
+    `INSERT INTO chat_settings (user_id, session_id, chat_jid, status, status_at, status_by)
+     VALUES ($1, $2, $3, $4, now(), $5)
+     ON CONFLICT (user_id, session_id, chat_jid) DO UPDATE SET
+       status    = EXCLUDED.status,
+       -- Only stamped when the state actually moves, so re-marking a won deal does not
+       -- keep resetting the date it was won.
+       status_at = CASE
+                     WHEN chat_settings.status IS DISTINCT FROM EXCLUDED.status THEN now()
+                     ELSE chat_settings.status_at
+                   END,
+       status_by = CASE
+                     WHEN chat_settings.status IS DISTINCT FROM EXCLUDED.status THEN EXCLUDED.status_by
+                     ELSE chat_settings.status_by
+                   END
+     RETURNING *`,
+    [userId, sessionId, chatJid, value, statusBy || null]
+  );
+  return mapChatSettings(row);
+}
+
+/**
+ * Every conversation with a status set, for badging the chat list and counting.
+ *
+ * Rows without a status are omitted rather than reported as 'prospect': absence is the
+ * default, so returning them would mean returning every chat ever touched.
+ */
+export async function listChatStatuses(userId, sessionId) {
+  const { rows } = await query(
+    `SELECT chat_jid, status, status_at, status_by FROM chat_settings
+      WHERE user_id = $1 AND session_id = $2 AND status IS NOT NULL`,
+    [userId, sessionId]
+  );
+  return rows.map(r => ({
+    chatJid: r.chat_jid,
+    status: r.status,
+    statusAt: r.status_at,
+    statusBy: r.status_by,
+  }));
 }
 
 // Remove a hold row entirely. Used to collapse a duplicate @lid/phone row into

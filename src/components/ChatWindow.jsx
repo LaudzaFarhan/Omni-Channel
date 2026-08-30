@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown, Pause, Play, UserPlus, UserCheck } from 'lucide-react';
-import { fetchWithAuth, saveContact, updateContact } from '../utils/api.js';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown, ChevronRight, Pause, Play, UserPlus, UserCheck, MoreVertical, Search, Trophy, UserMinus, RotateCcw } from 'lucide-react';
+import { fetchWithAuth, saveContact, updateContact, setChatStatus as apiSetChatStatus } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
 import { showToast } from '../utils/toastBus.js';
 import { PRESET_TAGS, getTags, toggleTag, clearTags, createCustomTag, loadGlobalCustomTags, addGlobalCustomTag, deleteGlobalCustomTag } from '../utils/contactTags.js';
@@ -16,6 +16,19 @@ const DEFAULT_QUICK_REPLIES = [
 ];
 
 const QR_STORAGE_KEY = 'whatsapp_quick_replies';
+
+// Commercial state of a conversation. 'prospect' is the default and has no badge —
+// every untouched chat is a prospect, so badging it would badge everything.
+const STATUS_LABELS = {
+  prospect: { badge: null, toast: 'Dikembalikan ke prospek' },
+  closed_won: { badge: 'Closed Won', toast: 'Ditandai Closed Won' },
+  dropped: { badge: 'Bukan prospek', toast: 'Dihapus dari prospek' },
+};
+
+const STATUS_STYLE = {
+  closed_won: { color: 'var(--primary)', bg: 'rgba(0,168,132,0.12)', border: 'rgba(0,168,132,0.3)' },
+  dropped: { color: 'var(--text-dimmed)', bg: 'var(--overlay-subtle)', border: 'var(--border-color)' },
+};
 
 const formatMessageText = (text) => {
   if (!text) return '';
@@ -235,6 +248,36 @@ function MediaMessage({ msg, activeSessionId }) {
   return null;
 }
 
+// Rows of the header overflow menu. Extracted only because there are five of them and
+// the inline styles would otherwise be repeated verbatim five times.
+function MenuItem({ icon, label, trailing, onClick, disabled }) {
+  return (
+    <button
+      role="menuitem"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '11px', width: '100%',
+        padding: '10px 14px', border: 'none', background: 'transparent',
+        color: disabled ? 'var(--text-dimmed)' : 'var(--text-main)',
+        fontSize: '0.85rem', fontFamily: 'inherit', textAlign: 'left',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.55 : 1,
+      }}
+      onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.background = 'var(--overlay-subtle)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+    >
+      {icon}
+      <span style={{ flex: 1 }}>{label}</span>
+      {trailing}
+    </button>
+  );
+}
+
+function MenuDivider() {
+  return <div style={{ height: '1px', background: 'var(--border-color)', margin: '2px 0' }} />;
+}
+
 function hasMedia(msg) {
   const content = msg.message;
   if (!content) return false;
@@ -263,6 +306,17 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   const [holdState, setHoldState] = useState(null);
   const [holdBusy, setHoldBusy] = useState(false);
 
+  // Overflow menu, and searching within this conversation's messages.
+  const [showMenu, setShowMenu] = useState(false);
+  const [showTagSubmenu, setShowTagSubmenu] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [messageQuery, setMessageQuery] = useState('');
+  const menuRef = useRef(null);
+
+  // Commercial state of the conversation. Arrives on the same chat_settings row as the
+  // hold, so it is read from the same request.
+  const [statusBusy, setStatusBusy] = useState(false);
+
   // Load the hold state for whichever chat is open, and follow changes made in
   // another tab through the socket.
   useEffect(() => {
@@ -287,7 +341,8 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
       }
     })();
 
-    const handleHoldUpdate = (settings) => {
+    // Hold and status share the chat_settings row, so one payload updates both.
+    const handleSettingsUpdate = (settings) => {
       if (settings.chatJid === jid && settings.sessionId === activeSessionId) {
         setHoldState(settings);
       }
@@ -295,10 +350,14 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
 
     let attached = null;
     const unsubscribe = subscribeSocket((socket) => {
-      if (attached) attached.off('chat-hold-updated', handleHoldUpdate);
+      if (attached) {
+        attached.off('chat-hold-updated', handleSettingsUpdate);
+        attached.off('chat-status-updated', handleSettingsUpdate);
+      }
       attached = null;
       if (socket) {
-        socket.on('chat-hold-updated', handleHoldUpdate);
+        socket.on('chat-hold-updated', handleSettingsUpdate);
+        socket.on('chat-status-updated', handleSettingsUpdate);
         attached = socket;
       }
     });
@@ -306,11 +365,72 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
     return () => {
       cancelled = true;
       unsubscribe();
-      if (attached) attached.off('chat-hold-updated', handleHoldUpdate);
+      if (attached) {
+        attached.off('chat-hold-updated', handleSettingsUpdate);
+        attached.off('chat-status-updated', handleSettingsUpdate);
+      }
     };
   }, [activeChat?.id, activeSessionId]);
 
   const isHeld = Boolean(holdState?.botPaused);
+  // NULL in the column means untouched, which the server already maps to 'prospect'.
+  const chatStatus = holdState?.status || 'prospect';
+
+  // Close the overflow menu on an outside click or Escape, like the tag dropdown.
+  useEffect(() => {
+    if (!showMenu) return;
+
+    const onPointerDown = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setShowMenu(false);
+        setShowTagSubmenu(false);
+      }
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') { setShowMenu(false); setShowTagSubmenu(false); }
+    };
+
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [showMenu]);
+
+  // Reset the per-conversation bits when the open chat changes: a search or an open
+  // menu belonging to the previous conversation must not carry over.
+  useEffect(() => {
+    setShowMenu(false);
+    setShowTagSubmenu(false);
+    setShowSearch(false);
+    setMessageQuery('');
+  }, [activeChat?.id]);
+
+  const handleSetStatus = async (next) => {
+    if (!activeChat?.id || statusBusy) return;
+    setStatusBusy(true);
+    try {
+      // The response carries the whole chat_settings row, so applying it directly keeps
+      // the hold state in step as well.
+      setHoldState(await apiSetChatStatus(activeChat.id, next, activeSessionId));
+      setShowMenu(false);
+      showToast({
+        type: next === 'closed_won' ? 'success' : 'info',
+        title: STATUS_LABELS[next].toast,
+        message: getDisplayName(activeChat),
+      });
+    } catch (err) {
+      showToast({
+        type: 'error',
+        title: 'Gagal mengubah status',
+        message: err.message || 'Coba lagi.',
+        duration: 5000,
+      });
+    } finally {
+      setStatusBusy(false);
+    }
+  };
 
   const handleToggleHold = async () => {
     if (!activeChat?.id || holdBusy) return;
@@ -471,6 +591,18 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
     if (content.documentMessage) return '📄 Document';
     return '[Media or Unsupported Message]';
   };
+
+  // Messages actually rendered. Declared HERE rather than with the other state because
+  // it calls getMessageText above — a `const` arrow is not hoisted, so referencing it
+  // from earlier in the body is a temporal-dead-zone error that no build step catches.
+  //
+  // Unfiltered unless a search is open with a query, so the normal path returns the same
+  // array reference and costs nothing.
+  const visibleMessages = useMemo(() => {
+    const q = showSearch ? messageQuery.trim().toLowerCase() : '';
+    if (!q) return messages;
+    return messages.filter(m => getMessageText(m).toLowerCase().includes(q));
+  }, [messages, messageQuery, showSearch]);
 
   // Render WhatsApp status checks next to message time for outgoing messages
   const renderMessageStatus = (msg) => {
@@ -700,6 +832,24 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                     </button>
                   </span>
                 ))}
+
+                {/* Commercial state, next to the name so it is visible without opening
+                    the menu. 'prospect' is deliberately unbadged: it is the default for
+                    every conversation, so showing it would badge all of them. */}
+                {STATUS_LABELS[chatStatus]?.badge && (
+                  <span
+                    title={holdState?.statusBy ? `Diubah oleh ${holdState.statusBy}` : undefined}
+                    style={{
+                      fontSize: '0.65rem', fontWeight: '700', padding: '2px 8px',
+                      borderRadius: '10px', whiteSpace: 'nowrap',
+                      color: STATUS_STYLE[chatStatus].color,
+                      background: STATUS_STYLE[chatStatus].bg,
+                      border: `1px solid ${STATUS_STYLE[chatStatus].border}`,
+                    }}
+                  >
+                    {STATUS_LABELS[chatStatus].badge}
+                  </span>
+                )}
               </div>
               <div className="header-status">
                 {activeChat.id.endsWith('@g.us') 
@@ -711,13 +861,13 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
             </div>
           </div>
           <div className="header-actions" style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-            {/* Save this person to the operator's own contact list */}
-            {canSaveContact && (
+            {/* Only shown while the contact is UNSAVED, where it is a call to action.
+                Once saved, editing moves into the overflow menu — a permanent "Saved"
+                button that merely reports state is a poor use of header space. */}
+            {canSaveContact && !savedContact && (
               <button
                 onClick={() => setEditingContact(true)}
-                title={savedContact
-                  ? 'Edit this customer in your contact list'
-                  : 'Save this customer to your contact list'}
+                title="Simpan kontak ini"
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -730,14 +880,12 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
                   transition: 'all 0.2s',
-                  background: savedContact ? 'rgba(0,168,132,0.12)' : 'transparent',
-                  border: `1px solid ${savedContact ? 'rgba(0,168,132,0.35)' : 'var(--border-color)'}`,
-                  color: savedContact ? 'var(--primary)' : 'var(--text-muted)',
+                  background: 'transparent',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-muted)',
                 }}
               >
-                {savedContact
-                  ? <><UserCheck size={13} /> Saved</>
-                  : <><UserPlus size={13} /> Save Contact</>}
+                <UserPlus size={13} /> Simpan Kontak
               </button>
             )}
 
@@ -1001,6 +1149,143 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
               )}
             </div>
 
+            {/* Search within THIS conversation's messages. Filters what is already
+                loaded — the store keeps the last 100 per chat, so there is nothing
+                further back to search and no request to make. */}
+            <button
+              className="icon-button"
+              onClick={() => {
+                setShowSearch(v => !v);
+                if (showSearch) setMessageQuery('');
+              }}
+              title="Cari dalam percakapan ini"
+              aria-pressed={showSearch}
+              style={{ color: showSearch ? 'var(--primary)' : 'var(--text-muted)' }}
+            >
+              <Search size={19} />
+            </button>
+
+            {/* Overflow menu. Actions that are occasional rather than per-message live
+                here so the header stays legible; Hold Agent stays outside because it is
+                toggled constantly. */}
+            <div style={{ position: 'relative' }} ref={menuRef}>
+              <button
+                className="icon-button"
+                onClick={() => { setShowMenu(v => !v); setShowTagSubmenu(false); }}
+                title="Menu"
+                aria-haspopup="menu"
+                aria-expanded={showMenu}
+                style={{ color: showMenu ? 'var(--primary)' : 'var(--text-muted)' }}
+              >
+                <MoreVertical size={19} />
+              </button>
+
+              {showMenu && (
+                <div
+                  role="menu"
+                  style={{
+                    position: 'absolute', top: '100%', right: 0, marginTop: '6px',
+                    minWidth: '224px', zIndex: 120, overflow: 'hidden',
+                    background: 'var(--bg-panel, var(--bg-sidebar))',
+                    border: '1px solid var(--border-color)', borderRadius: '10px',
+                    boxShadow: '0 10px 30px rgba(0,0,0,0.22)',
+                  }}
+                >
+                  <MenuItem
+                    icon={<UserPlus size={15} style={{ color: 'var(--primary)' }} />}
+                    label={savedContact ? 'Edit Kontak' : 'Simpan Kontak'}
+                    disabled={!canSaveContact}
+                    onClick={() => { setShowMenu(false); setEditingContact(true); }}
+                  />
+
+                  <MenuDivider />
+
+                  {/* Whichever transition is NOT the current state. Offering "mark won"
+                      on an already-won deal would be a no-op dressed as an action. */}
+                  {chatStatus !== 'dropped' && (
+                    <MenuItem
+                      icon={<UserMinus size={15} style={{ color: '#ef4444' }} />}
+                      label="Hapus dari Prospek"
+                      disabled={statusBusy}
+                      onClick={() => handleSetStatus('dropped')}
+                    />
+                  )}
+
+                  {chatStatus !== 'closed_won' && (
+                    <MenuItem
+                      icon={<Trophy size={15} style={{ color: 'var(--primary)' }} />}
+                      label="Tandai Closed Won"
+                      disabled={statusBusy}
+                      onClick={() => handleSetStatus('closed_won')}
+                    />
+                  )}
+
+                  {chatStatus !== 'prospect' && (
+                    <MenuItem
+                      icon={<RotateCcw size={15} style={{ color: 'var(--text-muted)' }} />}
+                      label="Kembalikan ke Prospek"
+                      disabled={statusBusy}
+                      onClick={() => handleSetStatus('prospect')}
+                    />
+                  )}
+
+                  <MenuDivider />
+
+                  {/* Reuses the existing tag list rather than a second implementation,
+                      so tags set here and in the tag dropdown cannot diverge. */}
+                  <MenuItem
+                    icon={<Tag size={15} style={{ color: '#8b5cf6' }} />}
+                    label="Kelola Tag"
+                    trailing={<ChevronRight size={14} style={{ color: 'var(--text-dimmed)' }} />}
+                    onClick={() => setShowTagSubmenu(v => !v)}
+                  />
+
+                  {showTagSubmenu && (
+                    <div style={{ borderTop: '1px solid var(--border-color)', background: 'var(--overlay-subtle)', padding: '4px 0' }}>
+                      {[...PRESET_TAGS, ...globalCustomTags].map((tag) => {
+                        const on = currentTags.some(t => t.label.toLowerCase() === tag.label.toLowerCase());
+                        return (
+                          <button
+                            key={tag.value || tag.label}
+                            role="menuitemcheckbox"
+                            aria-checked={on}
+                            onClick={() => handleToggleTag(tag)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '9px', width: '100%',
+                              padding: '8px 14px 8px 30px', border: 'none', background: 'transparent',
+                              color: 'var(--text-main)', fontSize: '0.82rem', fontFamily: 'inherit',
+                              textAlign: 'left', cursor: 'pointer',
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--overlay-medium)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <span style={{
+                              width: '9px', height: '9px', borderRadius: '50%',
+                              background: tag.color, flexShrink: 0,
+                            }} />
+                            <span style={{ flex: 1 }}>{tag.label}</span>
+                            {on && <Check size={14} style={{ color: 'var(--primary)' }} />}
+                          </button>
+                        );
+                      })}
+                      {currentTags.length > 0 && (
+                        <button
+                          onClick={handleClearAllTags}
+                          style={{
+                            display: 'block', width: '100%', padding: '8px 14px 8px 30px',
+                            border: 'none', background: 'transparent', color: '#ef4444',
+                            fontSize: '0.8rem', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer',
+                          }}
+                        >
+                          Hapus semua tag
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <button 
               className="icon-button" 
               onClick={() => setShowQuickReplies(!showQuickReplies)}
@@ -1012,9 +1297,50 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
           </div>
         </div>
 
+        {/* Search within this conversation. Sits between the header and the messages so
+            it pushes the list rather than covering it. */}
+        {showSearch && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '9px', flexShrink: 0,
+            padding: '10px 16px', borderBottom: '1px solid var(--border-color)',
+            background: 'var(--overlay-subtle)',
+          }}>
+            <Search size={14} style={{ color: 'var(--text-dimmed)', flexShrink: 0 }} />
+            <input
+              autoFocus
+              value={messageQuery}
+              onChange={(e) => setMessageQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') { setShowSearch(false); setMessageQuery(''); } }}
+              placeholder="Cari pesan dalam percakapan ini…"
+              aria-label="Cari pesan"
+              style={{
+                flex: 1, minWidth: 0, border: 'none', background: 'transparent',
+                color: 'var(--text-main)', fontSize: '0.86rem', fontFamily: 'inherit', outline: 'none',
+              }}
+            />
+            {messageQuery.trim() && (
+              <span style={{ fontSize: '0.76rem', color: 'var(--text-dimmed)', whiteSpace: 'nowrap' }}>
+                {visibleMessages.length} hasil
+              </span>
+            )}
+            <button
+              onClick={() => { setShowSearch(false); setMessageQuery(''); }}
+              aria-label="Tutup pencarian"
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
         {/* Message Bubble List */}
         <div className="messages-container">
-          {messages.map((msg, index) => {
+          {showSearch && messageQuery.trim() && visibleMessages.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-dimmed)', fontSize: '0.86rem' }}>
+              Tidak ada pesan yang cocok dengan “{messageQuery.trim()}”
+            </div>
+          )}
+          {visibleMessages.map((msg, index) => {
             const isMe = msg.key.fromMe;
             const text = getMessageText(msg);
             const isGroup = activeChat.id.endsWith('@g.us');

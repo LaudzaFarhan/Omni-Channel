@@ -395,6 +395,19 @@ export async function acceptInvite({ token, password, name }) {
 }
 
 // ---------------------------------------------------------------------------
+// chat status (prospect / closed won / dropped)
+// ---------------------------------------------------------------------------
+/** Every conversation with a status set. Absent means 'prospect'. */
+export async function fetchChatStatuses(sessionId = 'default') {
+  const data = await apiFetch(`/api/chats/status?sessionId=${encodeURIComponent(sessionId)}`);
+  return data.statuses || [];
+}
+
+export async function setChatStatus(jid, status, sessionId = 'default') {
+  return apiJson(`/api/chats/${encodeURIComponent(jid)}/status`, 'PUT', { status, sessionId });
+}
+
+// ---------------------------------------------------------------------------
 // stats
 // ---------------------------------------------------------------------------
 /**
