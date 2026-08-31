@@ -3,7 +3,7 @@ import { Search, Plus, Check, CheckCheck } from 'lucide-react';
 import { loadAllTags } from '../utils/contactTags.js';
 import { getChatDisplayName, getInitials } from '../utils/displayName.js';
 
-export default function ChatList({ chats, setChats, searchQuery, setSearchQuery, activeChatJid, setActiveChatJid, userInfo, selectedTagFilter, savedNames = {} }) {
+export default function ChatList({ chats, setChats, searchQuery, setSearchQuery, activeChatJid, setActiveChatJid, userInfo, selectedTagFilter, savedNames = {}, statusFilter = null, chatStatuses = {} }) {
   // Load contact tags (reactively updated via custom event)
   const [contactTags, setContactTags] = React.useState(loadAllTags);
 
@@ -63,6 +63,12 @@ export default function ChatList({ chats, setChats, searchQuery, setSearchQuery,
     if (selectedTagFilter) {
       const tagsForChat = contactTags[chat.id] || [];
       return tagsForChat.some(t => t.label.toLowerCase() === selectedTagFilter.toLowerCase());
+    }
+
+    // Commercial state. An absent entry means 'prospect', so a conversation nobody has
+    // touched still appears under New Leads — which is the point of that filter.
+    if (statusFilter) {
+      return (chatStatuses[chat.id] || 'prospect') === statusFilter;
     }
 
     return true;

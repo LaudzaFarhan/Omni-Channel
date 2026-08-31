@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import ChatList from './ChatList.jsx';
 import ChatWindow from './ChatWindow.jsx';
 import StatsPanel from './StatsPanel.jsx';
+import ChatFilterPills from './dashboard/ChatFilterPills.jsx';
 import { loadAllTags, loadGlobalCustomTags, PRESET_TAGS } from '../utils/contactTags.js';
+import { fetchChatStatuses } from '../utils/api.js';
+import { subscribeSocket } from '../utils/socket.js';
 
 export default function MessageDashboard({
   chats,
@@ -25,9 +28,15 @@ export default function MessageDashboard({
   savedNames = {},
   savedContacts = {}
 }) {
-  const [selectedTagFilter, setSelectedTagFilter] = useState(null);
+  // One filter at a time: { kind: 'all' | 'status' | 'tag', value }. A single selection
+  // rather than independent toggles, because combining "Closed Won" with a tag produces
+  // an empty list far more often than a useful one.
+  const [filter, setFilter] = useState({ kind: 'all' });
   const [contactTags, setContactTags] = useState(loadAllTags());
   const [globalCustomTags, setGlobalCustomTags] = useState(loadGlobalCustomTags());
+
+  // Commercial state per chat JID, from chat_settings. Absent means 'prospect'.
+  const [chatStatuses, setChatStatuses] = useState({});
 
   // Listen to tag updates to keep counts reactive
   useEffect(() => {
@@ -39,145 +48,86 @@ export default function MessageDashboard({
     return () => window.removeEventListener('contact-tags-updated', handleTagsUpdated);
   }, []);
 
-  // Calculate tag counts based on current chats list
-  const totalLeads = chats.length;
-  const tagCounts = {};
+  // Statuses, plus live updates when anyone in the workspace moves a conversation.
+  useEffect(() => {
+    let cancelled = false;
 
-  // Initialize counts for preset tags
-  PRESET_TAGS.forEach(tag => {
-    tagCounts[tag.label.toLowerCase()] = 0;
-  });
+    const load = async () => {
+      try {
+        const list = await fetchChatStatuses(activeSessionId);
+        if (cancelled) return;
+        const map = {};
+        list.forEach(({ chatJid, status }) => { map[chatJid] = status; });
+        setChatStatuses(map);
+      } catch (err) {
+        // A missing status map degrades to "everything is a prospect", which is the
+        // default anyway, so this must not break the chat list.
+        console.info('[Chats] Could not load statuses:', err.message);
+      }
+    };
+    load();
 
-  // Initialize counts for global custom tags
-  globalCustomTags.forEach(tag => {
-    tagCounts[tag.label.toLowerCase()] = 0;
-  });
+    const handleStatus = (settings) => {
+      if (!settings?.chatJid) return;
+      setChatStatuses(prev => ({ ...prev, [settings.chatJid]: settings.status }));
+    };
 
-  // Calculate counts
-  chats.forEach(chat => {
-    const tagsForChat = contactTags[chat.id] || [];
-    tagsForChat.forEach(t => {
-      const key = t.label.toLowerCase();
-      tagCounts[key] = (tagCounts[key] || 0) + 1;
+    let attached = null;
+    const unsubscribe = subscribeSocket((socket) => {
+      if (attached) attached.off('chat-status-updated', handleStatus);
+      attached = null;
+      if (socket) {
+        socket.on('chat-status-updated', handleStatus);
+        attached = socket;
+      }
     });
-  });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      if (attached) attached.off('chat-status-updated', handleStatus);
+    };
+  }, [activeSessionId]);
+
+  const statusOf = (jid) => chatStatuses[jid] || 'prospect';
+
+  // Counts for the pills.
+  const statusCounts = useMemo(() => {
+    const counts = { prospect: 0, closed_won: 0, dropped: 0 };
+    chats.forEach((chat) => {
+      const s = statusOf(chat.id);
+      if (counts[s] !== undefined) counts[s]++;
+    });
+    return counts;
+  }, [chats, chatStatuses]);
+
+  const tagCounts = useMemo(() => {
+    const counts = {};
+    [...PRESET_TAGS, ...globalCustomTags].forEach(tag => {
+      counts[tag.label.toLowerCase()] = 0;
+    });
+    chats.forEach((chat) => {
+      (contactTags[chat.id] || []).forEach((t) => {
+        const key = t.label.toLowerCase();
+        counts[key] = (counts[key] || 0) + 1;
+      });
+    });
+    return counts;
+  }, [chats, contactTags, globalCustomTags]);
 
   return (
     <>
       <div className="sidebar" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        {/* Categories Section */}
-        <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)', flexShrink: 0 }}>
-          <div style={{ fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-dimmed)', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px' }}>
-            Categories
-          </div>
-          <div style={{ maxHeight: '60px', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', paddingRight: '2px', scrollbarWidth: 'none' }}>
-            {/* Total Leads Card */}
-            <div 
-              onClick={() => setSelectedTagFilter(null)}
-              style={{
-                background: selectedTagFilter === null ? 'rgba(0, 168, 132, 0.08)' : 'var(--bg-main)',
-                border: `1px solid ${selectedTagFilter === null ? 'var(--primary)' : 'var(--border-color)'}`,
-                borderRadius: '8px',
-                padding: '8px 12px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                minHeight: '52px',
-                boxSizing: 'border-box'
-              }}
-              onMouseEnter={e => {
-                if (selectedTagFilter !== null) e.currentTarget.style.borderColor = 'var(--text-dimmed)';
-              }}
-              onMouseLeave={e => {
-                if (selectedTagFilter !== null) e.currentTarget.style.borderColor = 'var(--border-color)';
-              }}
-            >
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-dimmed)', fontWeight: '600' }}>Total Leads</span>
-              <span style={{ fontSize: '1.15rem', fontWeight: '700', color: 'var(--text-main)', marginTop: '2px' }}>{totalLeads}</span>
-            </div>
-
-            {/* Preset Tag Cards */}
-            {PRESET_TAGS.map(tag => {
-              const isSelected = selectedTagFilter === tag.label.toLowerCase();
-              const count = tagCounts[tag.label.toLowerCase()] || 0;
-              return (
-                <div 
-                  key={tag.value}
-                  onClick={() => setSelectedTagFilter(isSelected ? null : tag.label.toLowerCase())}
-                  style={{
-                    background: isSelected ? tag.bg : 'var(--bg-main)',
-                    border: `1px solid ${isSelected ? tag.color : 'var(--border-color)'}`,
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    minHeight: '52px',
-                    boxSizing: 'border-box'
-                  }}
-                  onMouseEnter={e => {
-                    if (!isSelected) e.currentTarget.style.borderColor = tag.color;
-                  }}
-                  onMouseLeave={e => {
-                    if (!isSelected) e.currentTarget.style.borderColor = 'var(--border-color)';
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden' }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: tag.color, flexShrink: 0 }} />
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-dimmed)', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {tag.label}
-                    </span>
-                  </div>
-                  <span style={{ fontSize: '1.15rem', fontWeight: '700', color: 'var(--text-main)', marginTop: '2px' }}>{count}</span>
-                </div>
-              );
-            })}
-
-            {/* Global Custom Tag Cards */}
-            {globalCustomTags.map(tag => {
-              const isSelected = selectedTagFilter === tag.label.toLowerCase();
-              const count = tagCounts[tag.label.toLowerCase()] || 0;
-              return (
-                <div 
-                  key={tag.value}
-                  onClick={() => setSelectedTagFilter(isSelected ? null : tag.label.toLowerCase())}
-                  style={{
-                    background: isSelected ? tag.bg : 'var(--bg-main)',
-                    border: `1px solid ${isSelected ? tag.color : 'var(--border-color)'}`,
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    minHeight: '52px',
-                    boxSizing: 'border-box'
-                  }}
-                  onMouseEnter={e => {
-                    if (!isSelected) e.currentTarget.style.borderColor = tag.color;
-                  }}
-                  onMouseLeave={e => {
-                    if (!isSelected) e.currentTarget.style.borderColor = 'var(--border-color)';
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', overflow: 'hidden' }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: tag.color, flexShrink: 0 }} />
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-dimmed)', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {tag.label}
-                    </span>
-                  </div>
-                  <span style={{ fontSize: '1.15rem', fontWeight: '700', color: 'var(--text-main)', marginTop: '2px' }}>{count}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
+        {/* Filter pills. Replaced a grid of stat cards that ate ~110px before a single
+            conversation was visible. */}
+        <ChatFilterPills
+          filter={filter}
+          onChange={setFilter}
+          totalCount={chats.length}
+          statusCounts={statusCounts}
+          tags={[...PRESET_TAGS, ...globalCustomTags]}
+          tagCounts={tagCounts}
+        />
         {/* Chats List Section */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
           <ChatList 
@@ -188,7 +138,9 @@ export default function MessageDashboard({
             activeChatJid={activeChatJid}
             setActiveChatJid={setActiveChatJid}
             userInfo={userInfo}
-            selectedTagFilter={selectedTagFilter}
+            selectedTagFilter={filter.kind === 'tag' ? filter.value : null}
+            statusFilter={filter.kind === 'status' ? filter.value : null}
+            chatStatuses={chatStatuses}
             savedNames={savedNames}
           />
         </div>

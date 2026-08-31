@@ -36,6 +36,13 @@
   --scrollbar-thumb: rgba(0, 0, 0, 0.18);
   --shadow-card: 0 1px 3px rgba(11, 20, 26, 0.08);
 
+  /* Chat surfaces. Named rather than inlined because the selected-row fill and the
+   * wallpaper texture both need a different value per theme, and an rgba(0,0,0,x)
+   * literal is invisible on a dark background. */
+  --chat-item-active: #eef2f6;
+  --chat-wallpaper-dot: rgba(11, 20, 26, 0.035);
+  --composer-bg: #ffffff;
+
   /* Heatmap intensity ramp. Named separately from --overlay-* because the empty
    * cell has to be visible enough to read as a grid, and because the ramp runs
    * light-to-dark here but dark-to-bright in the dark theme — against a dark
@@ -84,6 +91,10 @@
   --overlay-subtle: rgba(255, 255, 255, 0.04);
   --overlay-medium: rgba(255, 255, 255, 0.08);
   --scrollbar-thumb: rgba(255, 255, 255, 0.16);
+
+  --chat-item-active: rgba(255, 255, 255, 0.09);
+  --chat-wallpaper-dot: rgba(255, 255, 255, 0.022);
+  --composer-bg: #202c33;
 
   /* Inverted ramp: busiest = brightest, so the peak still stands out against a
    * dark surface. The light theme's #00654f would read as an empty cell here. */
@@ -878,8 +889,59 @@ input:checked + .slider:before {
 }
 
 .search-container {
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 10px 14px 12px;
+}
+
+/* Filter pills above the chat list */
+.chat-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 14px 2px;
+  flex-shrink: 0;
+}
+
+.chat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.13s, color 0.13s, border-color 0.13s;
+}
+
+.chat-pill:hover {
+  color: var(--text-main);
+  border-color: var(--text-dimmed);
+}
+
+.chat-pill.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.chat-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Reads as part of the label rather than a separate badge, which is why it is not a
+   filled circle: the counts here are frequently 0 and a filled zero badge draws the eye
+   to nothing. */
+.chat-pill-count {
+  opacity: 0.7;
+  font-weight: 500;
 }
 
 .search-input-wrapper {
@@ -889,13 +951,13 @@ input:checked + .slider:before {
 
 .search-input {
   width: 100%;
-  padding: 10px 14px 10px 40px;
+  padding: 10px 14px 10px 38px;
   background: var(--bg-input);
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 10px;
   color: var(--text-main);
   font-family: var(--font-sans);
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   outline: none;
   transition: var(--transition-smooth);
 }
@@ -963,40 +1025,45 @@ input:checked + .slider:before {
   list-style: none;
 }
 
+/* Rows are cards with breathing room, not table rows separated by rules. The old
+   border-bottom + full-bleed padding made a dense ledger; an inset rounded card reads
+   as a list of people. */
 .chat-item {
   display: flex;
   align-items: center;
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--border-color);
+  gap: 12px;
+  padding: 11px 12px;
+  margin: 3px 10px;
+  border-radius: 12px;
   cursor: pointer;
-  transition: var(--transition-smooth);
+  transition: background 0.13s;
 }
 
 .chat-item:hover {
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: var(--overlay-subtle);
 }
 
+/* No left accent bar. The fill alone marks the selection, and a 3px border shifted
+   every row's contents by 3px when it appeared. */
 .chat-item.active {
-  background-color: rgba(16, 185, 129, 0.08);
-  border-left: 3px solid var(--primary);
+  background-color: var(--chat-item-active);
 }
 
 .chat-avatar-wrapper {
   position: relative;
   flex-shrink: 0;
-  margin-right: 14px;
 }
 
 .chat-avatar {
-  width: 48px;
-  height: 48px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 600;
-  font-size: 1.1rem;
-  border: 1px solid var(--border-color);
+  font-weight: 700;
+  font-size: 0.92rem;
+  border: none;
 }
 
 .chat-badge-avatar {
@@ -1028,12 +1095,13 @@ input:checked + .slider:before {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 4px;
+  gap: 8px;
+  margin-bottom: 2px;
 }
 
 .chat-name {
-  font-weight: 600;
-  font-size: 0.95rem;
+  font-weight: 700;
+  font-size: 0.88rem;
   color: var(--text-main);
   white-space: nowrap;
   overflow: hidden;
@@ -1041,7 +1109,7 @@ input:checked + .slider:before {
 }
 
 .chat-time {
-  font-size: 0.75rem;
+  font-size: 0.71rem;
   color: var(--text-dimmed);
 }
 
@@ -1052,13 +1120,17 @@ input:checked + .slider:before {
 }
 
 .chat-last-msg {
-  font-size: 0.85rem;
-  color: var(--text-muted);
+  font-size: 0.8rem;
+  color: var(--text-dimmed);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   margin-right: 8px;
   flex: 1;
+}
+
+.chat-time {
+  flex-shrink: 0;
 }
 
 .chat-badge {
@@ -1085,53 +1157,82 @@ input:checked + .slider:before {
 }
 
 .chat-window-header {
-  padding: 16px 24px;
+  padding: 12px 20px;
   background-color: var(--bg-sidebar);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
 }
 
 .header-user-info {
   display: flex;
   align-items: center;
+  gap: 12px;
+  min-width: 0;
 }
 
+/* A tinted circle, not a dark gradient. The gradient was inherited from the dark
+   palette and read as a hole punched in a light header. */
 .header-avatar {
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  background: rgba(0, 168, 132, 0.12);
   color: var(--primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 600;
-  margin-right: 12px;
-  border: 1px solid var(--border-color);
+  font-weight: 700;
+  font-size: 0.88rem;
+  border: none;
 }
 
 .header-name {
-  font-weight: 600;
-  font-size: 1rem;
+  font-weight: 700;
+  font-size: 0.98rem;
+  color: var(--text-main);
 }
 
+/* The number under the name is secondary information, so it is muted. It was primary
+   green, which made it compete with the name for attention. */
 .header-status {
-  font-size: 0.8rem;
-  color: var(--primary);
+  font-size: 0.79rem;
+  color: var(--text-dimmed);
 }
 
 /* Messages area */
 .messages-container {
   flex: 1;
-  padding: 24px;
+  padding: 20px 28px;
   overflow-y: auto;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px);
-  background-size: 20px 20px;
+  background-color: var(--bg-chat);
+  /* Faint doodle wash, the same idea as WhatsApp's wallpaper: enough texture that the
+     white bubbles sit ON something, not so much that text fights it. */
+  background-image:
+    radial-gradient(var(--chat-wallpaper-dot) 1.5px, transparent 1.6px),
+    radial-gradient(var(--chat-wallpaper-dot) 1.5px, transparent 1.6px);
+  background-size: 46px 46px, 46px 46px;
+  background-position: 0 0, 23px 23px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 4px;
+}
+
+/* Day separator: "Hari Ini" as a floating pill, centred. */
+.chat-day-divider {
+  align-self: center;
+  margin: 12px 0 8px;
+  padding: 4px 13px;
+  border-radius: 999px;
+  background: var(--bg-sidebar);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(11, 20, 26, 0.09);
+  white-space: nowrap;
 }
 
 .message-bubble-wrapper {
@@ -1177,13 +1278,16 @@ input:checked + .slider:before {
 }
 
 .message-bubble {
-  max-width: 75%;
-  padding: 10px 14px;
-  border-radius: 12px;
+  max-width: 62%;
+  min-width: 74px;
+  padding: 7px 10px 5px;
+  border-radius: 9px;
   position: relative;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
-  font-size: 0.95rem;
-  line-height: 1.4;
+  /* A tight, low-opacity shadow. 0 2px 4px at 15% was tuned for a dark background and
+     read as a grey halo on the light wallpaper. */
+  box-shadow: 0 1px 1px rgba(11, 20, 26, 0.11);
+  font-size: 0.9rem;
+  line-height: 1.35;
   word-wrap: break-word;
   white-space: pre-wrap;
 }
@@ -1191,54 +1295,113 @@ input:checked + .slider:before {
 .message-bubble-wrapper.sent .message-bubble {
   background-color: var(--msg-sent);
   color: var(--msg-sent-text);
-  border-bottom-right-radius: 2px;
+  border-top-right-radius: 3px;
 }
 
 .message-bubble-wrapper.received .message-bubble {
   background-color: var(--msg-received);
   color: var(--msg-received-text);
-  border-bottom-left-radius: 2px;
-  border: 1px solid var(--border-color);
+  border-top-left-radius: 3px;
+  /* No border: the shadow already separates it from the wallpaper, and the extra
+     hairline made every bubble look like an input field. */
+  border: none;
 }
 
+/* Right-aligned inside the bubble, on its own line. The min-width above stops a
+   one-word message collapsing narrower than its own timestamp. */
 .message-time {
   display: block;
   text-align: right;
-  font-size: 0.7rem;
-  color: rgba(17, 27, 33, 0.6);
-  margin-top: 4px;
+  font-size: 0.66rem;
+  color: rgba(17, 27, 33, 0.45);
+  margin-top: 2px;
+  line-height: 1;
 }
 
 .message-bubble-wrapper.received .message-time {
   color: var(--text-dimmed);
 }
 
-/* Input area */
+/* Input area
+   ---------------------------------------------------------------------------
+   The composer floats on the wallpaper rather than being a bordered strip bolted to
+   the bottom. The bar itself is transparent; the white rounded field inside it holds
+   the icons and the text, and the send button sits outside to its right. */
 .chat-window-input-bar {
-  padding: 16px 24px;
-  background-color: var(--bg-sidebar);
-  border-top: 1px solid var(--border-color);
+  padding: 12px 20px 16px;
+  background-color: transparent;
+  border-top: none;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.composer-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 6px 10px;
+  border-radius: 14px;
+  background: var(--composer-bg);
+  border: 1px solid transparent;
+  box-shadow: 0 1px 3px rgba(11, 20, 26, 0.08);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+/* focus-within, not :focus — the ring belongs to the whole field, which contains both
+   the icon buttons and the input. */
+.composer-field:focus-within {
+  border-color: rgba(0, 168, 132, 0.35);
+  box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+.composer-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dimmed);
+  cursor: pointer;
+  transition: background 0.13s, color 0.13s;
+}
+
+.composer-icon:hover:not(:disabled) {
+  background: var(--overlay-subtle);
+  color: var(--primary);
+}
+
+.composer-icon:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.composer-icon.active {
+  color: var(--primary);
+  background: rgba(0, 168, 132, 0.1);
 }
 
 .chat-input {
   flex: 1;
-  padding: 12px 16px;
-  background: var(--bg-input);
-  border: 1px solid transparent;
-  border-radius: 24px;
+  min-width: 0;
+  padding: 7px 6px;
+  background: transparent;
+  border: none;
   color: var(--text-main);
   font-family: var(--font-sans);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   outline: none;
-  transition: var(--transition-smooth);
 }
 
-.chat-input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-glow);
+.chat-input::placeholder {
+  color: var(--text-dimmed);
 }
 
 .send-button {

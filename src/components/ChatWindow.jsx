@@ -30,6 +30,35 @@ const STATUS_STYLE = {
   dropped: { color: 'var(--text-dimmed)', bg: 'var(--overlay-subtle)', border: 'var(--border-color)' },
 };
 
+// A short, deliberate set rather than a full emoji picker. A picker is a large
+// dependency or a large component, and the overwhelming majority of business replies
+// reach for a handful of these.
+const QUICK_EMOJI = [
+  '👍', '🙏', '😊', '😁', '❤️', '🔥', '✅', '❌',
+  '🎉', '😢', '😅', '🤝', '💰', '📦', '⏰', '📝',
+];
+
+/** Day label for a message's date, in the customer's own words. */
+function dayLabel(timestampSeconds) {
+  const ms = Number(timestampSeconds) * 1000;
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+
+  const date = new Date(ms);
+  const now = new Date();
+
+  if (date.toDateString() === now.toDateString()) return 'Hari Ini';
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return 'Kemarin';
+
+  // Within the last week, the weekday alone is more readable than a date.
+  if (now - date < 7 * 86400000) {
+    return date.toLocaleDateString('id-ID', { weekday: 'long' });
+  }
+  return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
 const formatMessageText = (text) => {
   if (!text) return '';
 
@@ -316,6 +345,9 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   // Commercial state of the conversation. Arrives on the same chat_settings row as the
   // hold, so it is read from the same request.
   const [statusBusy, setStatusBusy] = useState(false);
+
+  const [showEmoji, setShowEmoji] = useState(false);
+  const emojiRef = useRef(null);
 
   // Load the hold state for whichever chat is open, and follow changes made in
   // another tab through the socket.
@@ -604,6 +636,33 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
     return messages.filter(m => getMessageText(m).toLowerCase().includes(q));
   }, [messages, messageQuery, showSearch]);
 
+  // Templates matching what follows a leading '/', or null when the composer is not in
+  // slash mode. Null rather than an empty array so "no slash" and "slash with no
+  // matches" stay distinguishable — the second one shows a message.
+  const slashMatches = useMemo(() => {
+    if (!inputText.startsWith('/')) return null;
+    const q = inputText.slice(1).trim().toLowerCase();
+    if (!q) return quickReplies;
+    return quickReplies.filter(r =>
+      r.title.toLowerCase().includes(q) || r.text.toLowerCase().includes(q)
+    );
+  }, [inputText, quickReplies]);
+
+  // Close the emoji tray on an outside click, like the other popovers.
+  useEffect(() => {
+    if (!showEmoji) return;
+    const onPointerDown = (e) => {
+      if (emojiRef.current && !emojiRef.current.contains(e.target)) setShowEmoji(false);
+    };
+    const onKeyDown = (e) => { if (e.key === 'Escape') setShowEmoji(false); };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [showEmoji]);
+
   // Render WhatsApp status checks next to message time for outgoing messages
   const renderMessageStatus = (msg) => {
     if (!msg.key.fromMe) return null;
@@ -776,6 +835,13 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
     setFormTitle('');
     setFormText('');
   };
+
+  // Last day heading printed, so the divider logic can look past messages the loop
+  // discards (empty bodies, and free-tier messages older than 7 days). Local to this
+  // render pass: comparing against visibleMessages[index - 1] instead would print a
+  // heading for a day whose only message was skipped, and a module-level variable would
+  // leak between conversations.
+  let lastRenderedDay = null;
 
   return (
     <div style={{ display: 'flex', flex: 1, height: '100%' }}>
@@ -1404,9 +1470,20 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
             // Get sender initials for the mini avatar
             const getSenderInitials = () => getInitials(senderName);
 
+            // Day separator before the first message of each day.
+            //
+            // Compared against the PREVIOUS RENDERED message rather than
+            // visibleMessages[index - 1], because the loop skips messages above (empty
+            // bodies, and free-tier messages older than 7 days). Using the raw index
+            // would print a divider for a day whose only message was skipped.
+            const label = dayLabel(msg.messageTimestamp);
+            const showDivider = label !== null && label !== lastRenderedDay;
+            if (showDivider) lastRenderedDay = label;
+
             return (
+              <React.Fragment key={msg.key.id || index}>
+              {showDivider && <div className="chat-day-divider">{label}</div>}
               <div 
-                key={msg.key.id || index}
                 className={`message-bubble-wrapper ${isMe ? 'sent' : 'received'}`}
               >
                 {/* Mini avatar for group received messages */}
@@ -1437,6 +1514,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                   </span>
                 </div>
               </div>
+              </React.Fragment>
             );
           })}
           <div ref={messagesEndRef} />
@@ -1516,15 +1594,6 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
               <AlertCircle size={18} /> Usage limit reached. Upgrade your plan to send more messages.
             </div>
           )}
-          <button 
-            className="icon-button"
-            onClick={() => fileInputRef.current?.click()}
-            title="Attach file"
-            disabled={sending}
-            style={{ color: 'var(--text-muted)', marginRight: '8px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '4px' }}
-          >
-            <Paperclip size={20} />
-          </button>
           <input 
             type="file"
             ref={fileInputRef}
@@ -1532,15 +1601,117 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
             style={{ display: 'none' }}
             disabled={sending}
           />
-          <input 
-            type="text" 
-            placeholder="Type a message..." 
-            className="chat-input"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyDown={handleKeyPress}
-            disabled={sending || (userProfile && userProfile.role !== 'admin' && (userProfile.messagesSent || 0) >= (userProfile.messageLimit ?? 500))}
-          />
+
+          {/* Everything the operator types or attaches lives in one rounded field, with
+              the send button outside it. */}
+          <div className="composer-field">
+            <button
+              className="composer-icon"
+              onClick={() => fileInputRef.current?.click()}
+              title="Lampirkan berkas"
+              disabled={sending}
+            >
+              <Plus size={19} />
+            </button>
+
+            <button
+              className={`composer-icon ${showQuickReplies ? 'active' : ''}`}
+              onClick={() => setShowQuickReplies(v => !v)}
+              title="Template pesan"
+              disabled={sending}
+            >
+              <FileText size={17} />
+            </button>
+
+            <div style={{ position: 'relative', display: 'flex' }} ref={emojiRef}>
+              <button
+                className={`composer-icon ${showEmoji ? 'active' : ''}`}
+                onClick={() => setShowEmoji(v => !v)}
+                title="Emoji"
+                disabled={sending}
+                aria-expanded={showEmoji}
+              >
+                <Smile size={18} />
+              </button>
+
+              {showEmoji && (
+                <div style={{
+                  position: 'absolute', bottom: 'calc(100% + 10px)', left: 0, zIndex: 60,
+                  width: '236px', padding: '8px',
+                  display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: '2px',
+                  background: 'var(--bg-panel, var(--bg-sidebar))',
+                  border: '1px solid var(--border-color)', borderRadius: '12px',
+                  boxShadow: '0 10px 28px rgba(0,0,0,0.2)',
+                }}>
+                  {QUICK_EMOJI.map((emoji) => (
+                    <button
+                      key={emoji}
+                      onClick={() => { setInputText(t => t + emoji); setShowEmoji(false); }}
+                      style={{
+                        border: 'none', background: 'transparent', cursor: 'pointer',
+                        fontSize: '1.15rem', lineHeight: 1, padding: '5px', borderRadius: '6px',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--overlay-subtle)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <input 
+              type="text" 
+              placeholder="Ketik pesan... atau gunakan '/' untuk memilih template" 
+              className="chat-input"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={handleKeyPress}
+              disabled={sending || (userProfile && userProfile.role !== 'admin' && (userProfile.messagesSent || 0) >= (userProfile.messageLimit ?? 500))}
+            />
+          </div>
+
+          {/* Template picker, opened by typing '/'. The placeholder advertises it, so it
+              has to exist — an advertised shortcut that does nothing is worse than no
+              shortcut. Filters on whatever follows the slash. */}
+          {slashMatches !== null && (
+            <div style={{
+              position: 'absolute', bottom: 'calc(100% - 4px)', left: '20px', right: '76px',
+              zIndex: 60, maxHeight: '260px', overflowY: 'auto', padding: '6px',
+              background: 'var(--bg-panel, var(--bg-sidebar))',
+              border: '1px solid var(--border-color)', borderRadius: '12px',
+              boxShadow: '0 12px 30px rgba(0,0,0,0.2)',
+            }}>
+              {slashMatches.length === 0 ? (
+                <div style={{ padding: '12px 14px', fontSize: '0.83rem', color: 'var(--text-dimmed)' }}>
+                  Tidak ada template yang cocok
+                </div>
+              ) : slashMatches.map((reply) => (
+                <button
+                  key={reply.id}
+                  onClick={() => { setInputText(reply.text); }}
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'left', border: 'none',
+                    background: 'transparent', cursor: 'pointer', padding: '9px 12px',
+                    borderRadius: '8px', fontFamily: 'inherit',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--overlay-subtle)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <div style={{ fontSize: '0.84rem', fontWeight: '600', color: 'var(--text-main)' }}>
+                    {reply.title}
+                  </div>
+                  <div style={{
+                    fontSize: '0.78rem', color: 'var(--text-muted)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {reply.text}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
           <button 
             className="send-button"
             onClick={() => handleSend()}
