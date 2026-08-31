@@ -1397,6 +1397,46 @@ input:checked + .slider:before {
   line-height: 1;
 }
 
+/* Footer row used only when a message carries an agent badge: name on the left,
+   time and ticks on the right. Without a badge the time keeps its standalone layout. */
+.msg-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 3px;
+}
+
+.msg-footer .message-time {
+  margin-top: 0;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Which teammate sent this. Indigo rather than the theme green, so it never reads as
+   part of the delivery ticks next to it. Truncated so a long name cannot shove the
+   timestamp out of the bubble. */
+.msg-agent-badge {
+  display: inline-block;
+  max-width: 62%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background-color: rgba(79, 70, 229, 0.12);
+  color: #4f46e5;
+}
+
+[data-theme='dark'] .msg-agent-badge {
+  background-color: rgba(165, 180, 252, 0.16);
+  color: #a5b4fc;
+}
+
 .message-bubble-wrapper.received .message-time {
   color: var(--text-dimmed);
 }

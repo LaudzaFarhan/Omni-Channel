@@ -1198,6 +1198,21 @@ app.post('/api/messages/send', approved, async (req, res) => {
       response = await session.sock.sendMessage(jid, { text }, sendOptions);
     }
     
+    // Attribute the message to the human who sent it from the dashboard.
+    //
+    // The point of this is team accounts: several agents share one WhatsApp number,
+    // and a badge under the bubble is the only way to tell who typed what. Only human
+    // dashboard sends are stamped — an automated/bot send is not "someone on the team",
+    // and an incoming message is the customer, so neither carries a name.
+    //
+    // pushName is deliberately NOT used: on our own outgoing messages WhatsApp fills it
+    // with the business name, so it cannot identify the operator.
+    if (!isAutomated) {
+      const agentName = req.profile.name
+        || (req.profile.email ? req.profile.email.split('@')[0] : null);
+      if (agentName) response.agentName = agentName;
+    }
+
     // Cache the message
     store.addMessage(jid, response);
     io.to(ownerId).emit('new-message', { sessionId: sid, jid, message: response });

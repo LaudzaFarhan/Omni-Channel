@@ -1820,10 +1820,26 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                   ) : (
                     formatMessageText(text)
                   )}
-                  <span className="message-time">
-                    {formatMsgTime(msg.messageTimestamp)}
-                    {isMe && renderMessageStatus(msg)}
-                  </span>
+                  {/* Who on the team sent this, for messages sent from the dashboard.
+                      Only our own messages are ever stamped, so the badge sits on a
+                      footer row with the time; without a badge the time keeps its
+                      original standalone layout. */}
+                  {isMe && msg.agentName ? (
+                    <div className="msg-footer">
+                      <span className="msg-agent-badge" title={`Dikirim oleh ${msg.agentName}`}>
+                        {msg.agentName}
+                      </span>
+                      <span className="message-time">
+                        {formatMsgTime(msg.messageTimestamp)}
+                        {renderMessageStatus(msg)}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="message-time">
+                      {formatMsgTime(msg.messageTimestamp)}
+                      {isMe && renderMessageStatus(msg)}
+                    </span>
+                  )}
                 </div>
               </div>
               </React.Fragment>

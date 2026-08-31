@@ -545,8 +545,17 @@ export default function App() {
       const currentActiveJid = activeChatJidRef.current;
       if (currentActiveJid && data.jid === currentActiveJid) {
         setMessages(prev => {
-          const exists = prev.some(m => m.key.id === data.message.key.id);
-          return exists ? prev : [...prev, data.message];
+          const idx = prev.findIndex(m => m.key.id === data.message.key.id);
+          if (idx === -1) return [...prev, data.message];
+          // The same message can arrive twice: once from our own send (carrying the
+          // agent who sent it) and once echoed back by WhatsApp (without it). If the
+          // unstamped echo won the race, backfill the name so the badge is not lost.
+          if (data.message.agentName && !prev[idx].agentName) {
+            const next = prev.slice();
+            next[idx] = { ...next[idx], agentName: data.message.agentName };
+            return next;
+          }
+          return prev;
         });
       }
 

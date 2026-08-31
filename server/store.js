@@ -579,8 +579,8 @@ class UserStore {
     
     // Avoid duplicates
     const msgId = message.key.id;
-    const exists = this.messages[jid].some(m => m.key.id === msgId);
-    if (!exists) {
+    const existingMsg = this.messages[jid].find(m => m.key.id === msgId);
+    if (!existingMsg) {
       this.messages[jid].push(message);
       
       // Sort messages by timestamp
@@ -594,6 +594,13 @@ class UserStore {
       if (this.messages[jid].length > 100) {
         this.messages[jid] = this.messages[jid].slice(-100);
       }
+    } else if (message.agentName && !existingMsg.agentName) {
+      // The send path stamps the sending agent, but WhatsApp also echoes our own
+      // message back through messages.upsert with no such field, and the two can
+      // arrive in either order. Copy the name onto the stored copy when we have it,
+      // and never clear an existing one — so a later history re-sync (also unstamped)
+      // cannot wipe the attribution.
+      existingMsg.agentName = message.agentName;
     }
     
     // Update chat last message info
