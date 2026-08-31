@@ -931,6 +931,97 @@ app.get('/api/stats/activity', approved, (req, res) => {
   });
 });
 
+// Who produced the interactions in ONE cell of the heatmap.
+//
+// The grid endpoint above returns counts, which answers "when are we busy" but not "who
+// was that" — and a count with no way to reach the conversations behind it is a dead end.
+// This returns the chats that contributed to a single (weekday, hour) bucket, so clicking
+// a cell can filter the customer list beside it.
+//
+// A separate request rather than shipping contributors with the grid: 168 cells x every
+// chat that has ever spoken in them is orders of magnitude more data than the 336 integers
+// the grid costs, and all but one cell of it would be discarded.
+//
+// Every filter the grid applied has to be applied identically here, or the drill-down
+// disagrees with the number the operator just clicked. That means tzOffset, the from/to
+// range, and the incoming/outgoing view.
+app.get('/api/stats/activity/contributors', approved, (req, res) => {
+  const ownerId = req.workspaceId;
+  const sid = req.query.sessionId || 'default';
+  const store = getStore(sessionKey(ownerId, sid));
+
+  const day = Number(req.query.day);
+  const hour = Number(req.query.hour);
+  if (!Number.isInteger(day) || day < 0 || day > 6) {
+    return res.status(400).json({ error: 'day must be an integer from 0 (Sunday) to 6.' });
+  }
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+    return res.status(400).json({ error: 'hour must be an integer from 0 to 23.' });
+  }
+
+  const rawOffset = Number(req.query.tzOffset);
+  const tzOffset = Number.isFinite(rawOffset) ? Math.max(-900, Math.min(900, rawOffset)) : 0;
+
+  const bound = (raw) => {
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  };
+  let fromMs = bound(req.query.from);
+  let toMs = bound(req.query.to);
+  if (fromMs !== null && toMs !== null && fromMs > toMs) [fromMs, toMs] = [toMs, fromMs];
+
+  // 'all' | 'incoming' | 'outgoing', matching the panel's toggle.
+  const view = ['incoming', 'outgoing'].includes(req.query.view) ? req.query.view : 'all';
+
+  const byChat = new Map();
+  let total = 0;
+  let groupTotal = 0;
+
+  for (const [jid, messages] of Object.entries(store.messages)) {
+    for (const message of messages) {
+      const seconds = Number(message?.messageTimestamp);
+      if (!Number.isFinite(seconds) || seconds <= 0) continue;
+
+      const ms = seconds * 1000;
+      if (ms > Date.now() + 86400000) continue;
+      if (fromMs !== null && ms < fromMs) continue;
+      if (toMs !== null && ms > toMs) continue;
+
+      const shifted = new Date(ms - tzOffset * 60000);
+      if (shifted.getUTCDay() !== day || shifted.getUTCHours() !== hour) continue;
+
+      const fromMe = Boolean(message.key?.fromMe);
+      if (view === 'incoming' && fromMe) continue;
+      if (view === 'outgoing' && !fromMe) continue;
+
+      const entry = byChat.get(jid) || { chatJid: jid, count: 0, incoming: 0, outgoing: 0 };
+      entry.count++;
+      if (fromMe) entry.outgoing++;
+      else entry.incoming++;
+      byChat.set(jid, entry);
+
+      total++;
+      // Reported separately so the UI can explain a shortfall: the customer list excludes
+      // groups, so a cell whose interactions were partly group traffic would otherwise
+      // look like it had lost rows.
+      if (jid.endsWith('@g.us')) groupTotal++;
+    }
+  }
+
+  const contributors = [...byChat.values()].sort((a, b) => b.count - a.count);
+
+  res.json({
+    day,
+    hour,
+    view,
+    total,
+    groupTotal,
+    // Distinct conversations, which is what the customer list will show a subset of.
+    chatCount: contributors.length,
+    contributors,
+  });
+});
+
 app.get('/api/chats/:jid/messages', approved, (req, res) => {
   const ownerId = req.workspaceId;
   const sid = req.query.sessionId || 'default';

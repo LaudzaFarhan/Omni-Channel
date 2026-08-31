@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Users, Search, ChevronRight, MessageSquare } from 'lucide-react';
+import { Users, Search, ChevronRight, MessageSquare, Clock, X } from 'lucide-react';
 import { getChatDisplayName, getInitials, isSelfChat } from '../../utils/displayName.js';
 
 const AVATAR_COLORS = [
@@ -47,19 +47,39 @@ function shortWhen(ms) {
 //
 // Groups are left out: a 40-person group is not a customer, and mixing them in makes
 // the count meaningless. The self-chat is dropped for the same reason.
-export default function CustomerList({ chats = [], userInfo, savedNames = {}, onOpenChat }) {
+export default function CustomerList({
+  chats = [], userInfo, savedNames = {}, onOpenChat,
+  // Set by clicking a heatmap cell: { label, count, groupTotal, contributors }.
+  cellSelection = null,
+  onClearCellSelection,
+}) {
   const [query, setQuery] = useState('');
+
+  // Interaction count per chat for the selected cell, or null when nothing is selected.
+  const cellCounts = useMemo(() => {
+    if (!cellSelection) return null;
+    const map = new Map();
+    (cellSelection.contributors || []).forEach(({ chatJid, count }) => map.set(chatJid, count));
+    return map;
+  }, [cellSelection]);
 
   const customers = useMemo(() => {
     const list = chats
       .filter(c => c?.id)
       .filter(c => !c.id.endsWith('@g.us'))
       .filter(c => !isSelfChat(c, userInfo))
+      // Only the conversations that produced interactions in the selected hour.
+      .filter(c => !cellCounts || cellCounts.has(c.id))
       .map(c => ({
         ...c,
         label: getChatDisplayName(c, userInfo, savedNames[c.id]),
+        cellCount: cellCounts ? (cellCounts.get(c.id) || 0) : null,
       }))
-      .sort((a, b) => (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0));
+      // Under a cell filter, "who talked most in that hour" is the useful order. Otherwise
+      // recency is.
+      .sort((a, b) => (cellCounts
+        ? b.cellCount - a.cellCount
+        : (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0)));
 
     const q = query.trim().toLowerCase();
     if (!q) return list;
@@ -81,7 +101,7 @@ export default function CustomerList({ chats = [], userInfo, savedNames = {}, on
       }
       return false;
     });
-  }, [chats, userInfo, savedNames, query]);
+  }, [chats, userInfo, savedNames, query, cellCounts]);
 
   const total = useMemo(
     () => chats.filter(c => c?.id && !c.id.endsWith('@g.us') && !isSelfChat(c, userInfo)).length,
@@ -93,8 +113,43 @@ export default function CustomerList({ chats = [], userInfo, savedNames = {}, on
       <div className="dashboard-panel-header">
         <Users size={18} />
         <span>Pelanggan</span>
-        <span className="customer-count">{total}</span>
+        {/* Under a cell filter the badge counts the people in that hour, not the whole
+            book — a badge saying 340 above eleven rows contradicts itself. */}
+        <span className="customer-count">
+          {cellCounts ? `${customers.length}/${total}` : total}
+        </span>
       </div>
+
+      {/* Drill-down banner. Explains what the list is showing and how to get out of it —
+          a silently filtered list looks like missing data. */}
+      {cellSelection && (
+        <div className="customer-cellfilter">
+          <Clock size={13} style={{ flexShrink: 0, color: 'var(--primary)' }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <strong>{cellSelection.label}</strong>
+            <div className="customer-cellfilter-sub">
+              {cellSelection.count === 0
+                ? 'Tidak ada interaksi pada jam ini'
+                : <>
+                    {cellSelection.count} interaksi
+                    {/* The count includes group traffic, which this list cannot show. Said
+                        out loud, because otherwise the rows visibly fail to add up. */}
+                    {cellSelection.groupTotal > 0 && (
+                      <> · {cellSelection.groupTotal} dari grup (tidak ditampilkan)</>
+                    )}
+                  </>}
+            </div>
+          </div>
+          <button
+            onClick={onClearCellSelection}
+            className="customer-cellfilter-clear"
+            aria-label="Hapus filter jam"
+            title="Tampilkan semua pelanggan"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {total > 0 && (
         <div className="customer-search">
@@ -118,7 +173,13 @@ export default function CustomerList({ chats = [], userInfo, savedNames = {}, on
             <p>
               {total === 0
                 ? 'Belum ada percakapan dengan pelanggan'
-                : `Tidak ada pelanggan yang cocok dengan “${query.trim()}”`}
+                : query.trim()
+                  ? `Tidak ada pelanggan yang cocok dengan “${query.trim()}”`
+                  : cellSelection
+                    // Reached when every interaction in the cell came from groups, which
+                    // this list excludes. Without this the panel would look broken.
+                    ? 'Interaksi pada jam ini hanya dari grup, bukan pelanggan'
+                    : 'Belum ada percakapan dengan pelanggan'}
             </p>
           </div>
         ) : (
@@ -158,7 +219,11 @@ export default function CustomerList({ chats = [], userInfo, savedNames = {}, on
                     </span>
                   </span>
 
-                  {customer.unreadCount > 0 && (
+                  {/* Under a cell filter, this person's share of that hour is more useful
+                      than their unread count, and showing both crowds the row. */}
+                  {customer.cellCount !== null ? (
+                    <span className="customer-cellcount">{customer.cellCount}</span>
+                  ) : customer.unreadCount > 0 && (
                     <span className="customer-unread">{customer.unreadCount}</span>
                   )}
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Clock, MessageSquare, CalendarRange } from 'lucide-react';
-import { fetchActivityHeatmap } from '../../utils/api.js';
+import { fetchActivityHeatmap, fetchActivityContributors } from '../../utils/api.js';
 import { subscribeSocket } from '../../utils/socket.js';
 import { RANGES, boundsFor, toDayKey } from '../../utils/dateRange.js';
 import DateRangePicker from './DateRangePicker.jsx';
@@ -54,7 +54,14 @@ function formatRange(from, to) {
  * Every cell is a real button so the grid works by keyboard and by touch — a
  * hover-only tooltip would make the whole panel unreadable on a phone.
  */
-export default function InteractionHeatmap({ activeSessionId = 'default', connected = true }) {
+export default function InteractionHeatmap({
+  activeSessionId = 'default',
+  connected = true,
+  // Called with { day, hour, label, count, contributors, groupTotal } when a cell is
+  // pinned, and with null when it is cleared. The heatmap does the drill-down fetch
+  // itself because it owns the range, the view and the timezone offset the query needs.
+  onCellSelect,
+}) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -172,8 +179,16 @@ export default function InteractionHeatmap({ activeSessionId = 'default', connec
     return { matrix: grid, max: peak, total: sum, busiest: top };
   }, [data, view]);
 
-  // Clear a pinned cell when the numbers underneath it change meaning.
-  useEffect(() => { setPinned(null); }, [view]);
+  // Clear a pinned cell, and the drill-down it produced, whenever the numbers underneath
+  // change meaning. The contributor list was computed under the previous view and range,
+  // so leaving it up would show people who are no longer in the cell they came from.
+  useEffect(() => {
+    setPinned(null);
+    onCellSelect?.(null);
+    // onCellSelect is intentionally omitted: parents pass an inline arrow, so including it
+    // would re-run this on every parent render and clear the selection immediately.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, range, customFrom, customTo, activeSessionId]);
 
   const active = hovered || pinned;
 
@@ -192,13 +207,20 @@ export default function InteractionHeatmap({ activeSessionId = 'default', connec
     });
   };
 
-  const togglePin = (day, hour, element) => {
+  // Pinning a cell is also the drill-down: it asks the server which conversations
+  // produced that bucket and hands them up, so the customer list beside the panel can
+  // show exactly the people behind the number that was clicked.
+  const togglePin = async (day, hour, element) => {
     const grid = gridRef.current;
     if (!grid || !element) return;
+
+    // Clicking the pinned cell again clears both the pin and the filter.
     if (pinned && pinned.day === day && pinned.hour === hour) {
       setPinned(null);
+      onCellSelect?.(null);
       return;
     }
+
     const gridBox = grid.getBoundingClientRect();
     const cellBox = element.getBoundingClientRect();
     setPinned({
@@ -206,6 +228,40 @@ export default function InteractionHeatmap({ activeSessionId = 'default', connec
       x: cellBox.left - gridBox.left + cellBox.width / 2,
       y: cellBox.top - gridBox.top,
     });
+
+    const count = matrix[day][hour];
+
+    // An empty cell has nothing to drill into, and filtering the list to nothing would
+    // look like a bug rather than an answer.
+    if (count === 0) {
+      onCellSelect?.({
+        day, hour, count: 0, contributors: [], groupTotal: 0,
+        label: `${DAY_NAMES[day]} jam ${hour}:00`,
+      });
+      return;
+    }
+
+    try {
+      const bounds = customIncomplete ? { from: null, to: null } : boundsFor(range, customFrom, customTo);
+      const data = await fetchActivityContributors({
+        sessionId: activeSessionId,
+        day, hour, view,
+        from: bounds.from ?? undefined,
+        to: bounds.to ?? undefined,
+      });
+
+      onCellSelect?.({
+        day, hour,
+        count: data.total,
+        groupTotal: data.groupTotal,
+        contributors: data.contributors,
+        label: `${DAY_NAMES[day]} jam ${hour}:00`,
+      });
+    } catch (err) {
+      console.info('[Heatmap] Could not load the conversations for that cell:', err.message);
+      // The pin stays, so the tooltip still answers "how many". Only the who is missing.
+      onCellSelect?.(null);
+    }
   };
 
   // The span the returned numbers actually cover, which is not the same as the span

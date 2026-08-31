@@ -434,6 +434,28 @@ export async function fetchActivityHeatmap(sessionId = 'default', { from, to } =
   return apiFetch(`/api/stats/activity?${params.toString()}`);
 }
 
+/**
+ * The conversations behind one heatmap cell.
+ *
+ * Takes the same range/view/offset the grid was drawn with, because a drill-down computed
+ * under different filters would not add up to the number the operator clicked.
+ */
+export async function fetchActivityContributors({
+  sessionId = 'default', day, hour, view = 'all', from, to,
+} = {}) {
+  const params = new URLSearchParams({
+    sessionId,
+    tzOffset: String(new Date().getTimezoneOffset()),
+    day: String(day),
+    hour: String(hour),
+    view,
+  });
+  if (Number.isFinite(from)) params.set('from', String(Math.floor(from)));
+  if (Number.isFinite(to)) params.set('to', String(Math.floor(to)));
+
+  return apiFetch(`/api/stats/activity/contributors?${params.toString()}`);
+}
+
 // ---------------------------------------------------------------------------
 // contacts (the operator's saved address book)
 // ---------------------------------------------------------------------------

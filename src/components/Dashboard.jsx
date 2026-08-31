@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Send, MessageCircle, Users, Phone, TrendingUp, Clock, MessageSquare } from 'lucide-react';
 import { getChatDisplayName, getInitials } from '../utils/displayName.js';
 import InteractionHeatmap from './dashboard/InteractionHeatmap.jsx';
@@ -8,6 +8,9 @@ export default function Dashboard({
   chats, userProfile, userInfo, waSessions, messages, savedNames = {},
   activeSessionId = 'default', connectionStatus, onOpenChat,
 }) {
+  // Which heatmap cell is drilled into, and the conversations behind it. Held here rather
+  // than in either panel because it is produced by one and consumed by the other.
+  const [cellSelection, setCellSelection] = useState(null);
   // Calculate stats from real data
   const totalContacts = Array.isArray(chats) ? chats.length : 0;
   const activeNumbers = Array.isArray(waSessions) 
@@ -185,6 +188,7 @@ export default function Dashboard({
         <InteractionHeatmap
           activeSessionId={activeSessionId}
           connected={connectionStatus === 'connected'}
+          onCellSelect={setCellSelection}
         />
 
         <div className="customer-panel-cell">
@@ -193,6 +197,8 @@ export default function Dashboard({
             userInfo={userInfo}
             savedNames={savedNames}
             onOpenChat={onOpenChat}
+            cellSelection={cellSelection}
+            onClearCellSelection={() => setCellSelection(null)}
           />
         </div>
       </div>
