@@ -24,6 +24,7 @@ import TopBar from './components/TopBar.jsx';
 import NotificationsView from './components/NotificationsView.jsx';
 import Contacts from './components/Contacts.jsx';
 import Team from './components/Team.jsx';
+import AgentActivity from './components/AgentActivity.jsx';
 import AcceptInvite from './components/AcceptInvite.jsx';
 import { showToast } from './utils/toastBus.js';
 
@@ -1134,6 +1135,18 @@ export default function App() {
                   too so a stale activeTab cannot render it for a member. */}
               {activeTab === 'team' && isSupervisor && (
                 <Team userProfile={activeProfile} />
+              )}
+
+              {/* Supervisor-only, guarded here as well as in the sidebar so a stale
+                  activeTab cannot render it for an invited member. */}
+              {activeTab === 'activity' && isSupervisor && (
+                <AgentActivity
+                  chats={chats}
+                  userInfo={userInfo}
+                  savedNames={savedNames}
+                  activeSessionId={activeSessionId}
+                  onOpenChat={handleOpenChatFor}
+                />
               )}
 
               {activeTab === 'notifications' && (

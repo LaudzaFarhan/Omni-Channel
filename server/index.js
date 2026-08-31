@@ -1022,6 +1022,99 @@ app.get('/api/stats/activity/contributors', approved, (req, res) => {
   });
 });
 
+// Per-agent activity: which customers each teammate has been messaging.
+//
+// The whole feature rests on the agent attribution stamped onto outgoing messages by
+// the send handler. This walks those and groups them by agent, so a supervisor can see
+// who has been talking to whom.
+//
+// Supervisor-only: it is oversight of the whole team, not something an invited agent
+// needs. The `supervisor` chain also loads req.workspaceId, same as `approved`.
+//
+// Two honesty constraints shape the response. Only the last 100 messages per chat are
+// kept, and only messages sent AFTER this feature shipped carry a name — so this is a
+// rolling recent view, never a full audit log. `unattributed` counts our own messages
+// with no agent (sent from the phone, by a bot, or before the feature) so the client
+// can say the picture is partial rather than pretending it is complete.
+app.get('/api/stats/agent-activity', supervisor, (req, res) => {
+  const ownerId = req.workspaceId;
+  const sid = req.query.sessionId || 'default';
+  const store = getStore(sessionKey(ownerId, sid));
+
+  // agentKey -> { uid, name, totalMessages, lastActiveTs, chats: Map<jid, {...}> }
+  const byAgent = new Map();
+  let unattributed = 0;
+
+  for (const [jid, messages] of Object.entries(store.messages)) {
+    for (const message of messages) {
+      // Only our own outgoing messages carry attribution; an incoming one is the
+      // customer, never a teammate.
+      if (!message?.key?.fromMe) continue;
+
+      const name = message.agentName || null;
+      const uid = message.agentUid || null;
+      if (!name && !uid) { unattributed++; continue; }
+
+      const seconds = Number(message.messageTimestamp);
+      const ms = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
+
+      // Prefer the uid; fall back to a name-scoped key for messages stamped by the
+      // first version of the feature, which had no uid.
+      const agentKey = uid || `name:${name}`;
+      let agent = byAgent.get(agentKey);
+      if (!agent) {
+        agent = { uid, name: name || 'Agen', totalMessages: 0, lastActiveTs: null, chats: new Map() };
+        byAgent.set(agentKey, agent);
+      }
+      // Keep the most recently seen name, since it can be edited over time.
+      if (name) agent.name = name;
+      agent.totalMessages++;
+      if (ms && (agent.lastActiveTs === null || ms > agent.lastActiveTs)) agent.lastActiveTs = ms;
+
+      let c = agent.chats.get(jid);
+      if (!c) {
+        const chat = store.chats[jid] || {};
+        c = {
+          jid,
+          // A fallback label so the client can render even a chat that has aged out of
+          // its own list. The client still prefers its own resolution (saved names).
+          name: chat.name || null,
+          phoneNumber: chat.phoneNumber || null,
+          isGroup: jid.endsWith('@g.us'),
+          count: 0,
+          lastTs: null,
+        };
+        agent.chats.set(jid, c);
+      }
+      c.count++;
+      if (ms && (c.lastTs === null || ms > c.lastTs)) c.lastTs = ms;
+    }
+  }
+
+  const agents = [...byAgent.values()]
+    .map(a => {
+      const chats = [...a.chats.values()].sort((x, y) => (y.lastTs || 0) - (x.lastTs || 0));
+      return {
+        uid: a.uid,
+        name: a.name,
+        totalMessages: a.totalMessages,
+        lastActiveTs: a.lastActiveTs,
+        // Distinct non-group conversations — the "customers" count. Groups are kept in
+        // the list but excluded from this headline number.
+        customerCount: chats.filter(c => !c.isGroup).length,
+        chats,
+      };
+    })
+    // Most recently active agent first.
+    .sort((x, y) => (y.lastActiveTs || 0) - (x.lastActiveTs || 0));
+
+  res.json({
+    agents,
+    unattributed,
+    chatsCounted: Object.keys(store.messages).length,
+  });
+});
+
 app.get('/api/chats/:jid/messages', approved, (req, res) => {
   const ownerId = req.workspaceId;
   const sid = req.query.sessionId || 'default';
@@ -1210,7 +1303,13 @@ app.post('/api/messages/send', approved, async (req, res) => {
     if (!isAutomated) {
       const agentName = req.profile.name
         || (req.profile.email ? req.profile.email.split('@')[0] : null);
-      if (agentName) response.agentName = agentName;
+      if (agentName) {
+        response.agentName = agentName;
+        // The stable grouping key for the activity view. A name can be shared by two
+        // people or edited later; the uid cannot, so tracking keys on it and only
+        // shows the name.
+        response.agentUid = req.profile.uid;
+      }
     }
 
     // Cache the message

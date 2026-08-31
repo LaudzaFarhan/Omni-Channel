@@ -597,10 +597,11 @@ class UserStore {
     } else if (message.agentName && !existingMsg.agentName) {
       // The send path stamps the sending agent, but WhatsApp also echoes our own
       // message back through messages.upsert with no such field, and the two can
-      // arrive in either order. Copy the name onto the stored copy when we have it,
-      // and never clear an existing one — so a later history re-sync (also unstamped)
-      // cannot wipe the attribution.
+      // arrive in either order. Copy the attribution onto the stored copy when we have
+      // it, and never clear an existing one — so a later history re-sync (also
+      // unstamped) cannot wipe it. Name and uid are stamped together.
       existingMsg.agentName = message.agentName;
+      if (message.agentUid) existingMsg.agentUid = message.agentUid;
     }
     
     // Update chat last message info

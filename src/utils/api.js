@@ -456,6 +456,17 @@ export async function fetchActivityContributors({
   return apiFetch(`/api/stats/activity/contributors?${params.toString()}`);
 }
 
+/**
+ * Which customers each teammate has been messaging, built from the agent name stamped
+ * on outgoing messages. Supervisor-only on the server.
+ *
+ * A rolling recent view, not a full log: only the last 100 messages per chat are kept
+ * and only ones sent after the attribution feature shipped carry a name.
+ */
+export async function fetchAgentActivity(sessionId = 'default') {
+  return apiFetch(`/api/stats/agent-activity?sessionId=${encodeURIComponent(sessionId)}`);
+}
+
 // ---------------------------------------------------------------------------
 // contacts (the operator's saved address book)
 // ---------------------------------------------------------------------------

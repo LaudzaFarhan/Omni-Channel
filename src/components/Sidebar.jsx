@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, MessageSquare, BookUser, Users, CreditCard, User, Settings, LogOut, Bell } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, BookUser, Users, CreditCard, User, Settings, LogOut, Bell, Activity } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab, onLogout, collapsed, notifications = [], isSupervisor = true }) {
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -84,6 +84,20 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout, collapsed, 
           >
             <Users size={22} />
             {!collapsed && <span className="nav-label">Team</span>}
+          </button>
+        )}
+
+        {/* Oversight of the whole team, so it belongs to the owner alongside Team.
+            An invited agent has no business auditing colleagues, and the endpoint
+            behind it is supervisor-gated anyway. */}
+        {isSupervisor && (
+          <button 
+            className={`nav-item ${activeTab === 'activity' ? 'active' : ''}`}
+            onClick={() => setActiveTab('activity')}
+            title="Activity"
+          >
+            <Activity size={22} />
+            {!collapsed && <span className="nav-label">Activity</span>}
           </button>
         )}
 
