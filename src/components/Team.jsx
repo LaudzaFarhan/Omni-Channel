@@ -10,8 +10,8 @@ import { subscribeSocket } from '../utils/socket.js';
 import { showToast } from '../utils/toastBus.js';
 
 const STATUS = {
-  owner: { label: 'Owner', color: 'var(--primary)', bg: 'rgba(0,168,132,0.12)', border: 'rgba(0,168,132,0.25)', icon: Crown },
-  active: { label: 'Active', color: 'var(--primary)', bg: 'rgba(0,168,132,0.12)', border: 'rgba(0,168,132,0.25)', icon: ShieldCheck },
+  owner: { label: 'Owner', color: 'var(--success)', bg: 'var(--success-soft)', border: 'var(--success-border)', icon: Crown },
+  active: { label: 'Active', color: 'var(--success)', bg: 'var(--success-soft)', border: 'var(--success-border)', icon: ShieldCheck },
   invited: { label: 'Invite pending', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.25)', icon: Clock },
   expired: { label: 'Invite expired', color: '#ef4444', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.25)', icon: AlertTriangle },
 };
@@ -58,7 +58,7 @@ function InviteLinkPanel({ invite, onDone }) {
   return (
     <div style={{
       padding: '18px', borderRadius: '12px', marginBottom: '18px',
-      background: 'rgba(0,168,132,0.06)', border: '1px solid rgba(0,168,132,0.25)',
+      background: 'var(--primary-subtle)', border: '1px solid var(--primary-border)',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '12px' }}>
         <div>

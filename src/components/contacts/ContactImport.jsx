@@ -171,7 +171,7 @@ export default function ContactImport({ onImport, onClose }) {
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '10px' }}>
             <button type="button" onClick={() => fileRef.current?.click()}
               style={{
-                background: 'rgba(0,168,132,0.1)', border: '1px solid rgba(0,168,132,0.3)',
+                background: 'var(--primary-soft)', border: '1px solid var(--primary-border)',
                 color: 'var(--primary)', padding: '8px 14px', borderRadius: '8px',
                 fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer',
                 display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -259,8 +259,8 @@ export default function ContactImport({ onImport, onClose }) {
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', fontSize: '0.82rem' }}>
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 11px',
-                borderRadius: '6px', color: 'var(--primary)',
-                background: 'rgba(0,168,132,0.12)', border: '1px solid rgba(0,168,132,0.25)', fontWeight: '600',
+                borderRadius: '6px', color: 'var(--success)',
+                background: 'var(--success-soft)', border: '1px solid var(--success-border)', fontWeight: '600',
               }}>
                 <CheckCircle2 size={14} /> {valid.length} ready
               </span>

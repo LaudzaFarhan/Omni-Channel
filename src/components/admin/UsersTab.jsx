@@ -38,7 +38,7 @@ const SOURCE_LABEL = {
 
 function SourceBadge({ source }) {
   const meta = SOURCE_LABEL[source] || SOURCE_LABEL.plan;
-  const accent = source === 'override' ? '#f59e0b' : source === 'purchased' ? 'var(--primary)' : null;
+  const accent = source === 'override' ? '#f59e0b' : source === 'purchased' ? 'var(--success)' : null;
 
   return (
     <span
@@ -51,11 +51,11 @@ function SourceBadge({ source }) {
         padding: '1px 6px',
         borderRadius: '4px',
         background: source === 'override' ? 'rgba(245,158,11,0.12)'
-          : source === 'purchased' ? 'rgba(0,168,132,0.12)'
+          : source === 'purchased' ? 'var(--success-soft)'
           : 'rgba(255,255,255,0.06)',
         color: accent || 'var(--text-dimmed)',
         border: `1px solid ${source === 'override' ? 'rgba(245,158,11,0.25)'
-          : source === 'purchased' ? 'rgba(0,168,132,0.25)'
+          : source === 'purchased' ? 'var(--success-border)'
           : 'var(--border-color)'}`,
       }}
     >
@@ -308,7 +308,7 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
   const statCards = [
     {
       id: 'all', label: 'Total Registrations', value: totalUsers,
-      icon: Users, accent: 'var(--primary)', glow: 'rgba(0,168,132,0.2)',
+      icon: Users, accent: 'var(--primary)', glow: 'var(--primary-glow)',
     },
     {
       id: 'pending', label: 'Pending Verification', value: pendingUsers,
@@ -316,7 +316,7 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
     },
     {
       id: 'approved', label: 'Approved Customers', value: approvedUsers,
-      icon: UserCheck, accent: 'var(--primary)', glow: 'rgba(0,168,132,0.2)',
+      icon: UserCheck, accent: 'var(--success)', glow: 'var(--success-glow)',
     },
   ];
 
@@ -409,7 +409,7 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
             <button
               onClick={handleExportCSV}
               style={{
-                background: 'rgba(0,168,132,0.1)', border: '1px solid rgba(0,168,132,0.3)',
+                background: 'var(--primary-soft)', border: '1px solid var(--primary-border)',
                 color: 'var(--primary)', padding: '8px 14px', borderRadius: '8px',
                 fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer',
                 display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -489,8 +489,8 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
                           disabled={isMe || busy}
                           title={isMe ? 'You cannot modify your own role' : 'Click to toggle role'}
                           style={{
-                            background: u.role === 'admin' ? 'rgba(0,168,132,0.1)' : 'rgba(255,255,255,0.05)',
-                            border: '1px solid ' + (u.role === 'admin' ? 'rgba(0,168,132,0.2)' : 'var(--border-color)'),
+                            background: u.role === 'admin' ? 'var(--primary-soft)' : 'rgba(255,255,255,0.05)',
+                            border: '1px solid ' + (u.role === 'admin' ? 'var(--primary-border)' : 'var(--border-color)'),
                             color: u.role === 'admin' ? 'var(--primary)' : 'var(--text-muted)',
                             padding: '4px 10px', borderRadius: '4px', fontSize: '0.8rem',
                             fontWeight: '600', cursor: isMe || busy ? 'not-allowed' : 'pointer',
@@ -517,9 +517,9 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
                           disabled={busy}
                           title="Click to change the assigned plan"
                           style={{
-                            background: effective.plan.price > 0 ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.05)',
-                            border: '1px solid ' + (effective.plan.price > 0 ? 'rgba(16,185,129,0.2)' : 'var(--border-color)'),
-                            color: effective.plan.price > 0 ? 'var(--primary)' : 'var(--text-muted)',
+                            background: effective.plan.price > 0 ? 'var(--success-soft)' : 'rgba(255,255,255,0.05)',
+                            border: '1px solid ' + (effective.plan.price > 0 ? 'var(--success-border)' : 'var(--border-color)'),
+                            color: effective.plan.price > 0 ? 'var(--success)' : 'var(--text-muted)',
                             padding: '4px 10px', borderRadius: '4px', fontSize: '0.8rem',
                             fontWeight: '600', cursor: busy ? 'not-allowed' : 'pointer',
                           }}
@@ -617,9 +617,9 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
                               onClick={() => handleToggleApproval(u.uid, u.isApproved)}
                               disabled={busy}
                               style={{
-                                background: u.isApproved ? 'rgba(239, 68, 68, 0.1)' : 'rgba(0, 168, 132, 0.1)',
-                                border: '1px solid ' + (u.isApproved ? 'rgba(239, 68, 68, 0.2)' : 'rgba(0, 168, 132, 0.2)'),
-                                color: u.isApproved ? '#ef4444' : 'var(--primary)',
+                                background: u.isApproved ? 'rgba(239, 68, 68, 0.1)' : 'var(--success-soft)',
+                                border: '1px solid ' + (u.isApproved ? 'rgba(239, 68, 68, 0.2)' : 'var(--success-border)'),
+                                color: u.isApproved ? '#ef4444' : 'var(--success)',
                                 padding: '6px 12px', borderRadius: '6px', fontSize: '0.85rem',
                                 fontWeight: '600', cursor: busy ? 'not-allowed' : 'pointer',
                                 display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -907,7 +907,7 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
                 style={{
                   background: activeModal.type === 'deleteUser' ? '#ef4444' : 'var(--primary)',
                   border: 'none',
-                  color: activeModal.type === 'deleteUser' ? '#fff' : '#000',
+                  color: activeModal.type === 'deleteUser' ? '#fff' : 'var(--primary-contrast)',
                   fontWeight: '600', padding: '8px 18px', borderRadius: '8px',
                   fontSize: '0.85rem',
                   cursor: isPending(activeModal.userObj?.uid) ? 'wait' : 'pointer',

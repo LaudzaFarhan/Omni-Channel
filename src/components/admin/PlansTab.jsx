@@ -236,7 +236,7 @@ export default function PlansTab({ plans, loading, error, users, onPlansChanged,
         <button
           onClick={openCreate}
           style={{
-            background: 'var(--primary)', border: 'none', color: '#000', fontWeight: '600',
+            background: 'var(--primary)', border: 'none', color: 'var(--primary-contrast)', fontWeight: '600',
             padding: '10px 16px', borderRadius: '8px', fontSize: '0.85rem', cursor: 'pointer',
             display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap',
           }}
@@ -268,7 +268,7 @@ export default function PlansTab({ plans, loading, error, users, onPlansChanged,
               onClick={handleSeedDefaults}
               disabled={seeding}
               style={{
-                background: 'var(--primary)', border: 'none', color: '#000', fontWeight: '600',
+                background: 'var(--primary)', border: 'none', color: 'var(--primary-contrast)', fontWeight: '600',
                 padding: '10px 16px', borderRadius: '8px', fontSize: '0.85rem',
                 cursor: seeding ? 'wait' : 'pointer', opacity: seeding ? 0.6 : 1,
               }}
@@ -310,7 +310,7 @@ export default function PlansTab({ plans, loading, error, users, onPlansChanged,
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: '1.1rem', fontWeight: '700' }}>{plan.name}</span>
                       {isDefault && (
-                        <span style={{ fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase', padding: '2px 7px', borderRadius: '4px', background: 'rgba(0,168,132,0.12)', color: 'var(--primary)', border: '1px solid rgba(0,168,132,0.25)' }}>
+                        <span style={{ fontSize: '0.65rem', fontWeight: '700', textTransform: 'uppercase', padding: '2px 7px', borderRadius: '4px', background: 'var(--primary-soft)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
                           Signup default
                         </span>
                       )}
@@ -332,7 +332,7 @@ export default function PlansTab({ plans, loading, error, users, onPlansChanged,
                 )}
 
                 {plan.isAddon ? (
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', padding: '8px 10px', borderRadius: '6px', background: 'rgba(0,168,132,0.08)', border: '1px solid rgba(0,168,132,0.25)' }}>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', padding: '8px 10px', borderRadius: '6px', background: 'var(--primary-subtle)', border: '1px solid var(--primary-border)' }}>
                     <strong>Add-on.</strong> {formatIDR(plan.basePrice)} per unit granting{' '}
                     {plan.includedAgents} {plan.includedAgents === 1 ? 'agent' : 'agents'}, up to{' '}
                     {plan.maxAgents ?? 20} at a time. Adds to the customer's current plan
@@ -510,8 +510,8 @@ export default function PlansTab({ plans, loading, error, users, onPlansChanged,
               <label style={{
                 display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer',
                 padding: '12px 14px', borderRadius: '8px',
-                background: editor.form.isAddon ? 'rgba(0,168,132,0.08)' : 'var(--overlay-subtle)',
-                border: `1px solid ${editor.form.isAddon ? 'rgba(0,168,132,0.3)' : 'var(--border-color)'}`,
+                background: editor.form.isAddon ? 'var(--primary-subtle)' : 'var(--overlay-subtle)',
+                border: `1px solid ${editor.form.isAddon ? 'var(--primary-border)' : 'var(--border-color)'}`,
               }}>
                 <input
                   type="checkbox"
@@ -683,7 +683,7 @@ export default function PlansTab({ plans, loading, error, users, onPlansChanged,
                 onClick={handleSavePlan}
                 disabled={busy}
                 style={{
-                  background: 'var(--primary)', border: 'none', color: '#000', fontWeight: '600',
+                  background: 'var(--primary)', border: 'none', color: 'var(--primary-contrast)', fontWeight: '600',
                   padding: '9px 18px', borderRadius: '8px', fontSize: '0.85rem',
                   cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.6 : 1,
                 }}
@@ -760,7 +760,7 @@ export default function PlansTab({ plans, loading, error, users, onPlansChanged,
                 disabled={busy}
                 style={{
                   background: confirmAction.type === 'delete' ? '#ef4444' : 'var(--primary)',
-                  border: 'none', color: confirmAction.type === 'delete' ? '#fff' : '#000',
+                  border: 'none', color: confirmAction.type === 'delete' ? '#fff' : 'var(--primary-contrast)',
                   fontWeight: '600', padding: '8px 18px', borderRadius: '8px', fontSize: '0.85rem',
                   cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.6 : 1,
                 }}

@@ -129,7 +129,7 @@ export default function ChatList({ chats, setChats, searchQuery, setSearchQuery,
               alignItems: 'center', 
               gap: '10px', 
               cursor: 'pointer', 
-              background: 'rgba(16,185,129,0.04)' 
+              background: 'var(--primary-subtle)'
             }}
             onClick={() => handleStartNewChat(normalizedDigits)}
           >
@@ -223,7 +223,7 @@ export default function ChatList({ chats, setChats, searchQuery, setSearchQuery,
                     {chat.lastMessageFromMe && (
                       <span style={{ marginRight: '4px', display: 'inline-flex', alignSelf: 'center', flexShrink: 0 }}>
                         {chat.lastMessageStatus === 3 || chat.lastMessageStatus === 4 || chat.lastMessageStatus === 'READ' || chat.lastMessageStatus === 'PLAYED' ? (
-                          <CheckCheck size={15} style={{ color: '#34b7f1' }} />
+                          <CheckCheck size={15} style={{ color: 'var(--wa-read-receipt)', filter: 'drop-shadow(0 0 1px var(--wa-read-receipt-outline))' }} />
                         ) : chat.lastMessageStatus === 2 || chat.lastMessageStatus === 'DELIVERY_ACK' ? (
                           <CheckCheck size={15} style={{ color: 'var(--text-dimmed)' }} />
                         ) : (

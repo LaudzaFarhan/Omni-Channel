@@ -7,7 +7,7 @@ import { showToast } from '../../utils/toastBus.js';
 import { formatIDR } from '../../utils/pricing.js';
 
 const STATUS_STYLE = {
-  PAID: { color: 'var(--primary)', bg: 'rgba(0,168,132,0.12)', border: 'rgba(0,168,132,0.25)' },
+  PAID: { color: 'var(--success)', bg: 'var(--success-soft)', border: 'var(--success-border)' },
   PENDING: { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.25)' },
   FAILED: { color: '#ef4444', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.25)' },
   EXPIRED: { color: 'var(--text-dimmed)', bg: 'var(--overlay-subtle)', border: 'var(--border-color)' },
@@ -131,7 +131,7 @@ export default function TransactionsTab({ users }) {
         <button
           onClick={load}
           style={{
-            background: 'rgba(0,168,132,0.1)', border: '1px solid rgba(0,168,132,0.3)',
+            background: 'var(--primary-soft)', border: '1px solid var(--primary-border)',
             color: 'var(--primary)', padding: '8px 14px', borderRadius: '8px',
             fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer',
             display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -207,7 +207,7 @@ export default function TransactionsTab({ users }) {
                 style={{
                   background: active ? 'var(--primary)' : 'transparent',
                   border: `1px solid ${active ? 'var(--primary)' : 'var(--border-color)'}`,
-                  color: active ? '#000' : 'var(--text-muted)',
+                  color: active ? 'var(--primary-contrast)' : 'var(--text-muted)',
                   padding: '5px 12px', borderRadius: '999px', fontSize: '0.8rem',
                   fontWeight: '600', cursor: 'pointer',
                 }}

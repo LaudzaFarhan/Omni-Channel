@@ -421,7 +421,7 @@ export default function Contacts({ activeSessionId = 'default', onOpenChat }) {
                                   style={{
                                     fontSize: '0.72rem', fontWeight: '600', padding: '2px 8px',
                                     borderRadius: '5px', color: 'var(--primary)', cursor: 'pointer',
-                                    background: 'rgba(0,168,132,0.12)', border: '1px solid rgba(0,168,132,0.25)',
+                                    background: 'var(--primary-soft)', border: '1px solid var(--primary-border)',
                                   }}
                                 >
                                   {tag}
@@ -448,7 +448,7 @@ export default function Contacts({ activeSessionId = 'default', onOpenChat }) {
                           <div style={{ display: 'inline-flex', gap: '6px' }}>
                             <button onClick={() => openChat(contact)} title="Open the conversation"
                               aria-label={`Message ${contact.name || contact.phone}`}
-                              style={{ ...buttonStyle, padding: '5px 8px', color: 'var(--primary)', borderColor: 'rgba(0,168,132,0.3)' }}>
+                              style={{ ...buttonStyle, padding: '5px 8px', color: 'var(--primary)', borderColor: 'var(--primary-border)' }}>
                               <MessageSquare size={13} />
                             </button>
                             <button onClick={() => setEditing(contact)} title="Edit"

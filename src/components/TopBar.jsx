@@ -50,7 +50,7 @@ export default function TopBar({
   };
 
   const getStatusIcon = (status) => {
-    if (status === 'connected') return <Check size={14} style={{ color: '#10b981' }} />;
+    if (status === 'connected') return <Check size={14} style={{ color: 'var(--success)' }} />;
     if (status === 'qr') return <QrCode size={14} style={{ color: '#f59e0b' }} />;
     if (status === 'connecting') return <Loader2 size={14} className="spin-icon" style={{ color: '#3b82f6' }} />;
     return <Phone size={14} style={{ color: 'var(--text-muted)' }} />;

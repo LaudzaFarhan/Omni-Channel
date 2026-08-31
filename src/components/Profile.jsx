@@ -13,7 +13,7 @@ export default function Profile({ user, userProfile }) {
         <div className="card glass" style={{ maxWidth: '600px' }}>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '30px' }}>
-            <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', fontWeight: 'bold' }}>
+            <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--primary)', color: 'var(--primary-contrast)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', fontWeight: 'bold' }}>
               {user?.email?.charAt(0).toUpperCase() || <User size={40} />}
             </div>
             <div>
@@ -33,7 +33,7 @@ export default function Profile({ user, userProfile }) {
             </div>
             <div className="form-group">
               <label>Verification Status</label>
-              <input type="text" value={userProfile?.isApproved ? 'Approved' : 'Pending'} disabled className="modern-input" style={{ color: userProfile?.isApproved ? 'var(--primary)' : '#f59e0b', fontWeight: '600' }} />
+              <input type="text" value={userProfile?.isApproved ? 'Approved' : 'Pending'} disabled className="modern-input" style={{ color: userProfile?.isApproved ? 'var(--success)' : '#f59e0b', fontWeight: '600' }} />
             </div>
           </div>
         </div>

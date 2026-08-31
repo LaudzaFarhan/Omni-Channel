@@ -162,7 +162,7 @@ export default function Subscription({ userProfile, activeSessionCount, plans = 
           {/* Message Usage Card */}
           <div className="card glass">
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-              <div style={{ background: 'rgba(16, 185, 129, 0.1)', padding: '10px', borderRadius: '10px', color: 'var(--primary)' }}>
+              <div style={{ background: 'var(--primary-soft)', padding: '10px', borderRadius: '10px', color: 'var(--primary)' }}>
                 <Zap size={24} />
               </div>
               <div>
@@ -211,7 +211,7 @@ export default function Subscription({ userProfile, activeSessionCount, plans = 
           {/* Device Sessions Card */}
           <div className="card glass">
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-              <div style={{ background: 'rgba(16, 185, 129, 0.1)', padding: '10px', borderRadius: '10px', color: 'var(--primary)' }}>
+              <div style={{ background: 'var(--primary-soft)', padding: '10px', borderRadius: '10px', color: 'var(--primary)' }}>
                 <Smartphone size={24} />
               </div>
               <div>
@@ -320,9 +320,9 @@ export default function Subscription({ userProfile, activeSessionCount, plans = 
                             borderRadius: '12px',
                             fontSize: '0.75rem',
                             fontWeight: '700',
-                            background: isPaid ? 'rgba(16,185,129,0.12)' : isPending ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)',
-                            color: isPaid ? 'var(--primary)' : isPending ? '#f59e0b' : '#ef4444',
-                            border: `1px solid ${isPaid ? 'rgba(16,185,129,0.3)' : isPending ? 'rgba(245,158,11,0.3)' : 'rgba(239,68,68,0.3)'}`
+                            background: isPaid ? 'var(--success-soft)' : isPending ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)',
+                            color: isPaid ? 'var(--success)' : isPending ? '#f59e0b' : '#ef4444',
+                            border: `1px solid ${isPaid ? 'var(--success-border)' : isPending ? 'rgba(245,158,11,0.3)' : 'rgba(239,68,68,0.3)'}`
                           }}>
                             {(tx.status || 'PENDING').toUpperCase()}
                           </span>
@@ -492,7 +492,7 @@ export default function Subscription({ userProfile, activeSessionCount, plans = 
               </>
             ) : (
               <>
-                <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(0,168,132,0.06)', border: '1px solid rgba(0,168,132,0.2)' }}>
+                <div style={{ padding: '16px', borderRadius: '12px', background: 'var(--primary-subtle)', border: '1px solid var(--primary-border)' }}>
                   <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Checkout Invoice ID:</div>
                   <div style={{ fontFamily: 'monospace', fontWeight: '700', fontSize: '0.95rem', color: 'var(--primary)' }}>
                     {activePaymentModal.transactionId}

@@ -33,7 +33,7 @@ export default function NotificationsView({ notifications = [], setNotifications
   const getIcon = (type) => {
     switch (type) {
       case 'success':
-        return <CheckCircle size={18} style={{ color: '#10b981' }} />;
+        return <CheckCircle size={18} style={{ color: 'var(--success)' }} />;
       case 'warning':
       case 'error':
         return <ShieldAlert size={18} style={{ color: '#ef4444' }} />;
@@ -140,7 +140,7 @@ export default function NotificationsView({ notifications = [], setNotifications
                   padding: '16px', 
                   borderRadius: '12px', 
                   border: '1px solid var(--border-color)', 
-                  backgroundColor: notification.read ? 'var(--bg-sidebar)' : 'rgba(16, 185, 129, 0.03)',
+                  backgroundColor: notification.read ? 'var(--bg-sidebar)' : 'var(--primary-subtle)',
                   transition: 'all 0.2s',
                   cursor: 'pointer',
                   alignItems: 'flex-start',

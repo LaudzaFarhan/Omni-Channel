@@ -278,10 +278,10 @@ export default function LandingPage({ onGoToDashboard }) {
                       padding: '6px 14px',
                       fontSize: '0.72rem',
                       fontWeight: '600',
-                      border: '1px solid rgba(16, 185, 129, 0.4)',
+                      border: '1px solid var(--success-border)',
                       borderRadius: '6px',
-                      background: 'rgba(16, 185, 129, 0.15)',
-                      color: '#10b981',
+                      background: 'var(--success-soft)',
+                      color: 'var(--success)',
                       cursor: 'pointer',
                       transition: 'all 0.2s',
                       animation: 'pulse 1.5s ease-in-out infinite'
@@ -425,7 +425,7 @@ export default function LandingPage({ onGoToDashboard }) {
                 <span>10 Agents</span>
               </div>
               {agentCount > 3 && (
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '12px', background: 'rgba(16, 185, 129, 0.08)', padding: '8px', borderRadius: '4px', borderLeft: '3.5px solid var(--primary)' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '12px', background: 'var(--primary-subtle)', padding: '8px', borderRadius: '4px', borderLeft: '3.5px solid var(--primary)' }}>
                   Rp 300.000 (Base) + Rp {formatPrice((agentCount - 3) * 200000)} ({agentCount - 3} extra)
                 </div>
               )}

@@ -124,7 +124,7 @@ export default function AcceptInvite({ token, onAccepted, onGoToLogin }) {
             <div style={{
               width: '52px', height: '52px', borderRadius: '50%', margin: '0 auto 16px',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(0,168,132,0.1)', color: 'var(--primary)',
+              background: 'var(--primary-soft)', color: 'var(--primary)',
             }}>
               <UserPlus size={26} />
             </div>

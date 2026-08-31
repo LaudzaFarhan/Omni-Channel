@@ -182,7 +182,7 @@ export default function ContactEditor({ contact, knownTags = [], onSave, onClose
                   display: 'inline-flex', alignItems: 'center', gap: '5px',
                   fontSize: '0.75rem', fontWeight: '600', padding: '3px 6px 3px 9px',
                   borderRadius: '5px', color: 'var(--primary)',
-                  background: 'rgba(0,168,132,0.12)', border: '1px solid rgba(0,168,132,0.25)',
+                  background: 'var(--primary-soft)', border: '1px solid var(--primary-border)',
                 }}>
                   {tag}
                   <button type="button" onClick={() => removeTag(tag)} aria-label={`Remove tag ${tag}`}

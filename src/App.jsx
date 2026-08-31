@@ -1233,7 +1233,7 @@ export default function App() {
                       padding: '12px', 
                       borderRadius: '8px', 
                       border: '1px solid var(--border-color)', 
-                      backgroundColor: n.read ? 'var(--bg-main)' : 'rgba(16, 185, 129, 0.03)',
+                      backgroundColor: n.read ? 'var(--bg-main)' : 'var(--primary-subtle)',
                       cursor: 'pointer',
                       position: 'relative'
                     }}
@@ -1272,7 +1272,7 @@ export default function App() {
               style={{ 
                 width: '100%', 
                 padding: '10px', 
-                backgroundColor: 'rgba(0,168,132,0.1)', 
+                backgroundColor: 'var(--primary-soft)',
                 color: 'var(--primary)', 
                 border: 'none', 
                 borderRadius: '8px', 

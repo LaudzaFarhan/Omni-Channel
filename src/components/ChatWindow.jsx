@@ -27,7 +27,7 @@ const STATUS_LABELS = {
 };
 
 const STATUS_STYLE = {
-  closed_won: { color: 'var(--primary)', bg: 'rgba(0,168,132,0.12)', border: 'rgba(0,168,132,0.3)' },
+  closed_won: { color: 'var(--success)', bg: 'var(--success-soft)', border: 'var(--success-border)' },
   dropped: { color: 'var(--text-dimmed)', bg: 'var(--overlay-subtle)', border: 'var(--border-color)' },
 };
 
@@ -81,7 +81,7 @@ const formatMessageText = (text) => {
   
   // Clickable links
   const urlPattern = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
-  formatted = formatted.replace(urlPattern, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: #34b7f1; text-decoration: underline;">$1</a>');
+  formatted = formatted.replace(urlPattern, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: var(--link-color); text-decoration: underline;">$1</a>');
 
   return <span dangerouslySetInnerHTML={{ __html: formatted }} />;
 };
@@ -266,7 +266,7 @@ function MediaMessage({ msg, activeSessionId }) {
           <a 
             href={mediaUrl} 
             download={fileName}
-            style={{ fontSize: '0.8rem', color: 'var(--primary)', textDecoration: 'underline', fontWeight: '500' }}
+            style={{ fontSize: '0.8rem', color: 'var(--link-color)', textDecoration: 'underline', fontWeight: '500' }}
           >
             Download
           </a>
@@ -863,7 +863,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
     
     // Status 3 (READ) or 4 (PLAYED) -> Double blue check
     if (status === 3 || status === 4 || status === 'READ' || status === 'PLAYED') {
-      return <CheckCheck size={14} style={{ color: '#34b7f1', marginLeft: '4px', display: 'inline-block', verticalAlign: 'middle' }} />;
+      return <CheckCheck size={14} style={{ color: 'var(--wa-read-receipt)', filter: 'drop-shadow(0 0 1px var(--wa-read-receipt-outline))', marginLeft: '4px', display: 'inline-block', verticalAlign: 'middle' }} />;
     }
     
     // Status 2 (DELIVERY_ACK) -> Double gray check
@@ -1555,7 +1555,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
 
                   {chatStatus !== 'closed_won' && (
                     <MenuItem
-                      icon={<Trophy size={15} style={{ color: 'var(--primary)' }} />}
+                      icon={<Trophy size={15} style={{ color: 'var(--success)' }} />}
                       label="Tandai Closed Won"
                       disabled={statusBusy}
                       onClick={() => handleSetStatus('closed_won')}
@@ -1896,7 +1896,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
         })()}
 
         {selectedFile && (
-          <div className="file-preview-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'rgba(0,168,132,0.05)', borderTop: '1px solid var(--border-color)', gap: '12px' }}>
+          <div className="file-preview-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'var(--primary-subtle)', borderTop: '1px solid var(--border-color)', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
               <FileText size={18} style={{ color: 'var(--primary)', flexShrink: 0 }} />
               <span style={{ fontSize: '0.85rem', fontWeight: '500', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

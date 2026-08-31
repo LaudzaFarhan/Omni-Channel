@@ -83,7 +83,7 @@ export default function PlanPicker({ plans = [], userProfile, onCheckout, buying
                   <span style={{
                     fontSize: '0.68rem', fontWeight: '700', textTransform: 'uppercase',
                     padding: '2px 8px', borderRadius: '4px', color: 'var(--primary)',
-                    background: 'rgba(0,168,132,0.12)', border: '1px solid rgba(0,168,132,0.25)',
+                    background: 'var(--primary-soft)', border: '1px solid var(--primary-border)',
                   }}>
                     Current
                   </span>

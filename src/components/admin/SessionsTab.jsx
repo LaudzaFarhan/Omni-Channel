@@ -27,7 +27,7 @@ function formatUptime(seconds) {
 }
 
 const STATUS_STYLES = {
-  connected: { color: 'var(--primary)', background: 'rgba(0,168,132,0.12)', border: 'rgba(0,168,132,0.25)' },
+  connected: { color: 'var(--success)', background: 'var(--success-soft)', border: 'var(--success-border)' },
   connecting: { color: '#f59e0b', background: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.25)' },
   qr: { color: '#f59e0b', background: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.25)' },
   disconnected: { color: '#ef4444', background: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.25)' },
@@ -159,7 +159,7 @@ export default function SessionsTab({ users }) {
 
   const summaryCards = [
     { label: 'Live sessions', value: summary?.total ?? '—', icon: Smartphone, accent: 'var(--primary)' },
-    { label: 'Connected', value: summary?.connected ?? '—', icon: Activity, accent: 'var(--primary)' },
+    { label: 'Connected', value: summary?.connected ?? '—', icon: Activity, accent: 'var(--success)' },
     { label: 'Customers with sessions', value: summary?.distinctUsers ?? '—', icon: UsersIcon, accent: '#f59e0b' },
     { label: 'Open browser tabs', value: summary?.onlineBrowsers ?? '—', icon: Server, accent: '#f59e0b' },
   ];
@@ -185,7 +185,7 @@ export default function SessionsTab({ users }) {
           <button
             onClick={() => load(false)}
             style={{
-              background: 'rgba(0,168,132,0.1)', border: '1px solid rgba(0,168,132,0.3)',
+              background: 'var(--primary-soft)', border: '1px solid var(--primary-border)',
               color: 'var(--primary)', padding: '8px 14px', borderRadius: '8px',
               fontSize: '0.85rem', fontWeight: '600', cursor: 'pointer',
               display: 'inline-flex', alignItems: 'center', gap: '6px',

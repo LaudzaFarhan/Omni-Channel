@@ -10,22 +10,49 @@
 [data-theme='light'] {
   --bg-main: #f0f2f5;
   --bg-sidebar: #ffffff;
-  --bg-chat: #efeae2;
+  --bg-chat: #f3f5fa;
   --bg-input: #f0f2f5;
 
-  --primary: #00a884;
-  --primary-hover: #008069;
-  --primary-glow: rgba(0, 168, 132, 0.1);
+  /* Omni Reach brand family. `--primary` remains the compatibility token used
+   * throughout the existing UI; the related surface and alpha tokens replace
+   * one-off green literals so controls stay coherent in both themes. */
+  --omni-blue: #3f67d8;
+  --omni-blue-dark: #294da8;
+  --omni-blue-soft: #f0f3fc;
+  --brand-gradient: linear-gradient(135deg, #4f7df0 0%, #3155bd 100%);
+  --primary: var(--omni-blue);
+  --primary-hover: #3154b4;
+  --primary-active: #29478f;
+  --primary-glow: rgba(63, 103, 216, 0.18);
+  --primary-subtle: rgba(63, 103, 216, 0.06);
+  --primary-soft: var(--omni-blue-soft);
+  --primary-border: rgba(63, 103, 216, 0.28);
+  --primary-ring: rgba(63, 103, 216, 0.38);
+  --primary-contrast: #ffffff;
+
+  /* Semantic success is intentionally separate from brand blue. Connected,
+   * approved, paid, and won states remain green after the primary migration. */
+  --success: #047857;
+  --success-hover: #065f46;
+  --success-subtle: rgba(16, 185, 129, 0.06);
+  --success-soft: #e2f7f0;
+  --success-border: rgba(16, 185, 129, 0.28);
+  --success-glow: rgba(16, 185, 129, 0.4);
+  --wa-read-receipt: #34b7f1;
+  --wa-read-receipt-outline: #075985;
+  --link-color: #294da8;
 
   --text-main: #111b21;
   --text-muted: #3b4a54;
   --text-dimmed: #667781;
 
-  --border-color: #e9edef;
-  --card-bg: rgba(255, 255, 255, 0.9);
+  --border-color: #e4e9f2;
+  --card-bg: rgba(255, 255, 255, 0.92);
 
-  --msg-sent: #d9fdd3;
-  --msg-sent-text: #111b21;
+  /* The operator's outgoing bubbles are part of the Omni Reach workspace, so they
+   * use a quiet blue tint while WhatsApp delivery/read semantics remain unchanged. */
+  --msg-sent: #e4ebff;
+  --msg-sent-text: #17213d;
   --msg-received: #ffffff;
   --msg-received-text: #111b21;
 
@@ -34,28 +61,21 @@
   --overlay-subtle: rgba(0, 0, 0, 0.03);
   --overlay-medium: rgba(0, 0, 0, 0.06);
   --scrollbar-thumb: rgba(0, 0, 0, 0.18);
-  --shadow-card: 0 1px 3px rgba(11, 20, 26, 0.08);
+  --shadow-card: 0 1px 3px rgba(25, 39, 74, 0.09);
 
-  /* Chat surfaces. Named rather than inlined because the selected-row fill and the
-   * wallpaper texture both need a different value per theme, and an rgba(0,0,0,x)
-   * literal is invisible on a dark background. */
-  --chat-item-active: #eef2f6;
-  --chat-wallpaper-dot: rgba(11, 20, 26, 0.035);
+  /* Chat surfaces. */
+  --chat-item-active: #edf1fb;
+  --chat-wallpaper-dot: rgba(36, 57, 105, 0.032);
   --composer-bg: #ffffff;
 
-  /* Heatmap intensity ramp. Named separately from --overlay-* because the empty
-   * cell has to be visible enough to read as a grid, and because the ramp runs
-   * light-to-dark here but dark-to-bright in the dark theme — against a dark
-   * background the busiest cell has to be the brightest one, not the deepest. */
-  --heat-0: #eceff3;
-  --heat-1: rgba(0, 168, 132, 0.28);
-  --heat-2: rgba(0, 168, 132, 0.52);
-  --heat-3: rgba(0, 168, 132, 0.76);
-  --heat-4: #00654f;
+  /* Omni-blue heatmap ramp. */
+  --heat-0: #eceff5;
+  --heat-1: rgba(63, 103, 216, 0.24);
+  --heat-2: rgba(63, 103, 216, 0.46);
+  --heat-3: rgba(63, 103, 216, 0.70);
+  --heat-4: #294da8;
 
-  /* Translucent nav bar (landing page and admin console header). */
-  --nav-bg: rgba(255, 255, 255, 0.8);
-  /* Floating panels that sit above the page: toasts, popovers. */
+  --nav-bg: rgba(255, 255, 255, 0.82);
   --bg-panel: #ffffff;
 
   --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -64,27 +84,47 @@
   color-scheme: light;
 }
 
-/* Dark theme. Values follow WhatsApp Web's dark palette so the chat surfaces
- * stay familiar, with contrast ratios kept at or above 4.5:1 for body text. */
+/* Dark theme keeps familiar neutral WhatsApp-like surfaces but uses the brighter
+ * end of Omni Reach blue so interactive states remain visible against them. */
 [data-theme='dark'] {
   --bg-main: #0b141a;
   --bg-sidebar: #111b21;
-  --bg-chat: #0b141a;
-  --bg-input: #202c33;
+  --bg-chat: #0d1521;
+  --bg-input: #202c3a;
 
-  --primary: #00a884;
-  --primary-hover: #06cf9c;
-  --primary-glow: rgba(0, 168, 132, 0.16);
+  --omni-blue: #6f8ff0;
+  --omni-blue-dark: #89a5f5;
+  --omni-blue-soft: #16223a;
+  --brand-gradient: linear-gradient(135deg, #89a5f5 0%, #5276df 100%);
+  --primary: var(--omni-blue);
+  --primary-hover: #89a5f5;
+  --primary-active: #5274d5;
+  --primary-glow: rgba(111, 143, 240, 0.22);
+  --primary-subtle: rgba(111, 143, 240, 0.08);
+  --primary-soft: var(--omni-blue-soft);
+  --primary-border: rgba(111, 143, 240, 0.34);
+  --primary-ring: rgba(111, 143, 240, 0.46);
+  --primary-contrast: #0b1020;
+
+  --success: #34d399;
+  --success-hover: #6ee7b7;
+  --success-subtle: rgba(52, 211, 153, 0.08);
+  --success-soft: #112f2c;
+  --success-border: rgba(52, 211, 153, 0.32);
+  --success-glow: rgba(52, 211, 153, 0.42);
+  --wa-read-receipt: #34b7f1;
+  --wa-read-receipt-outline: #075985;
+  --link-color: #b5c4ff;
 
   --text-main: #e9edef;
   --text-muted: #aebac1;
   --text-dimmed: #8696a0;
 
-  --border-color: #2a3942;
-  --card-bg: rgba(32, 44, 51, 0.9);
+  --border-color: #2a3948;
+  --card-bg: rgba(32, 44, 58, 0.92);
 
-  --msg-sent: #005c4b;
-  --msg-sent-text: #e9edef;
+  --msg-sent: #233b70;
+  --msg-sent-text: #eef3ff;
   --msg-received: #202c33;
   --msg-received-text: #e9edef;
 
@@ -92,21 +132,20 @@
   --overlay-medium: rgba(255, 255, 255, 0.08);
   --scrollbar-thumb: rgba(255, 255, 255, 0.16);
 
-  --chat-item-active: rgba(255, 255, 255, 0.09);
-  --chat-wallpaper-dot: rgba(255, 255, 255, 0.022);
-  --composer-bg: #202c33;
+  --chat-item-active: rgba(111, 143, 240, 0.13);
+  --chat-wallpaper-dot: rgba(137, 165, 245, 0.024);
+  --composer-bg: #202c3a;
 
-  /* Inverted ramp: busiest = brightest, so the peak still stands out against a
-   * dark surface. The light theme's #00654f would read as an empty cell here. */
+  /* Inverted blue ramp: busiest = brightest against a dark surface. */
   --heat-0: rgba(255, 255, 255, 0.06);
-  --heat-1: rgba(0, 168, 132, 0.30);
-  --heat-2: rgba(0, 168, 132, 0.52);
-  --heat-3: rgba(37, 211, 102, 0.78);
-  --heat-4: #25d366;
+  --heat-1: rgba(111, 143, 240, 0.28);
+  --heat-2: rgba(111, 143, 240, 0.48);
+  --heat-3: rgba(111, 143, 240, 0.72);
+  --heat-4: #8da8f7;
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
 
-  --nav-bg: rgba(17, 27, 33, 0.85);
-  --bg-panel: #202c33;
+  --nav-bg: rgba(17, 27, 33, 0.88);
+  --bg-panel: #202c3a;
 
   color-scheme: dark;
 }
@@ -200,7 +239,7 @@ body {
 .sidebar-header h1 {
   font-size: 1.25rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+  background: var(--brand-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -297,7 +336,7 @@ body {
   height: 28px;
   border-radius: 50%;
   background: var(--primary);
-  color: white;
+  color: var(--primary-contrast);
   font-weight: 700;
   font-size: 0.75rem;
   display: flex;
@@ -358,8 +397,8 @@ body {
 }
 
 .status-dot-sm.connected {
-  background-color: #10b981;
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+  background-color: var(--success);
+  box-shadow: 0 0 6px var(--success-glow);
 }
 
 .status-dot-sm.qr {
@@ -426,7 +465,7 @@ body {
 
 .session-count-badge {
   background: var(--primary);
-  color: white;
+  color: var(--primary-contrast);
   font-size: 0.65rem;
   font-weight: 700;
   min-width: 18px;
@@ -458,7 +497,7 @@ body {
 }
 
 .session-dropdown-item.active {
-  background: rgba(16, 185, 129, 0.06);
+  background: var(--primary-subtle);
   border-left: 3px solid var(--primary);
 }
 
@@ -504,7 +543,7 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--primary);
-  background: rgba(16, 185, 129, 0.1);
+  background: var(--primary-soft);
   padding: 2px 8px;
   border-radius: 10px;
 }
@@ -543,7 +582,7 @@ body {
 }
 
 .session-add-btn:hover {
-  background: rgba(16, 185, 129, 0.06);
+  background: var(--primary-subtle);
 }
 
 @keyframes spin {
@@ -621,7 +660,7 @@ body {
   height: 32px;
   min-width: 32px;
   background: var(--primary);
-  color: white;
+  color: var(--primary-contrast);
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -670,7 +709,7 @@ body {
 }
 
 .nav-item.active {
-  background: rgba(16, 185, 129, 0.15);
+  background: var(--primary-soft);
   color: var(--primary);
 }
 
@@ -768,17 +807,17 @@ body {
 
 .upgrade-btn {
   background: var(--primary);
-  color: white;
+  color: var(--primary-contrast);
   border: none;
   padding: 12px 24px;
   border-radius: 8px;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: background 0.2s;
 }
 
 .upgrade-btn:hover {
-  opacity: 0.9;
+  background: var(--primary-hover);
 }
 
 /* Modern Form & Settings UI */
@@ -810,7 +849,7 @@ body {
 .modern-input:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
 .modern-input:disabled {
@@ -971,7 +1010,7 @@ input:checked + .slider:before {
 .chat-pill.active {
   background: var(--primary);
   border-color: var(--primary);
-  color: #fff;
+  color: var(--primary-contrast);
 }
 
 .chat-pill-dot {
@@ -1116,7 +1155,7 @@ input:checked + .slider:before {
   top: -2px;
   right: -2px;
   background-color: var(--primary);
-  color: #ffffff;
+  color: var(--primary-contrast);
   font-size: 0.7rem;
   font-weight: 700;
   min-width: 18px;
@@ -1180,7 +1219,7 @@ input:checked + .slider:before {
 
 .chat-badge {
   background-color: var(--primary);
-  color: #fff;
+  color: var(--primary-contrast);
   font-size: 0.7rem;
   font-weight: 700;
   min-width: 18px;
@@ -1259,7 +1298,7 @@ input:checked + .slider:before {
   height: 40px;
   min-width: 40px;
   border-radius: 50%;
-  background: rgba(0, 168, 132, 0.12);
+  background: var(--primary-soft);
   color: var(--primary);
   display: flex;
   align-items: center;
@@ -1602,7 +1641,7 @@ input:checked + .slider:before {
 /* focus-within, not :focus — the ring belongs to the whole field, which contains both
    the icon buttons and the input. */
 .composer-field:focus-within {
-  border-color: rgba(0, 168, 132, 0.35);
+  border-color: var(--primary-ring);
   box-shadow: 0 0 0 3px var(--primary-glow);
 }
 
@@ -1633,7 +1672,7 @@ input:checked + .slider:before {
 
 .composer-icon.active {
   color: var(--primary);
-  background: rgba(0, 168, 132, 0.1);
+  background: var(--primary-soft);
 }
 
 .chat-input {
@@ -1663,7 +1702,7 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--primary-contrast);
   cursor: pointer;
   transition: background 0.15s, transform 0.1s, opacity 0.15s;
   box-shadow: 0 1px 4px var(--primary-glow);
@@ -1714,7 +1753,7 @@ input:checked + .slider:before {
   background: #fff;
   padding: 16px;
   border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+  box-shadow: 0 4px 12px var(--primary-glow);
   margin: 24px 0;
   display: flex;
   align-items: center;
@@ -1780,7 +1819,7 @@ input:checked + .slider:before {
 
 .step-number {
   background: var(--primary);
-  color: #fff;
+  color: var(--primary-contrast);
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -1820,9 +1859,9 @@ input:checked + .slider:before {
 }
 
 .status-badge.connected {
-  background-color: rgba(16, 185, 129, 0.1);
-  color: var(--primary);
-  border-color: rgba(16, 185, 129, 0.2);
+  background-color: var(--success-soft);
+  color: var(--success);
+  border-color: var(--success-border);
 }
 
 .status-badge.disconnected {
@@ -1845,7 +1884,7 @@ input:checked + .slider:before {
   display: inline-block;
 }
 
-.status-badge.connected .status-dot { background-color: var(--primary); }
+.status-badge.connected .status-dot { background-color: var(--success); }
 .status-badge.disconnected .status-dot { background-color: #ef4444; }
 .status-badge.connecting .status-dot { 
   background-color: #f59e0b; 
@@ -1899,7 +1938,7 @@ input:checked + .slider:before {
   color: var(--primary);
   margin-bottom: 20px;
   border: 1px solid var(--border-color);
-  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.08);
+  box-shadow: 0 4px 14px var(--primary-glow);
 }
 
 .welcome-screen h2 {
@@ -1955,7 +1994,7 @@ input:checked + .slider:before {
   height: 32px;
   border-radius: 8px;
   border: 1px dashed var(--primary);
-  background: rgba(16, 185, 129, 0.06);
+  background: var(--primary-subtle);
   color: var(--primary);
   cursor: pointer;
   display: flex;
@@ -1965,7 +2004,7 @@ input:checked + .slider:before {
 }
 
 .qr-add-btn:hover {
-  background: rgba(16, 185, 129, 0.15);
+  background: var(--primary-soft);
   border-style: solid;
 }
 
@@ -2074,7 +2113,7 @@ input:checked + .slider:before {
   border: none;
   border-radius: 8px;
   background: var(--primary);
-  color: white;
+  color: var(--primary-contrast);
   font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
@@ -2121,7 +2160,7 @@ input:checked + .slider:before {
 }
 
 .quick-reply-btn:hover {
-  background: rgba(16, 185, 129, 0.06);
+  background: var(--primary-subtle);
   border-color: var(--primary);
 }
 
@@ -2187,8 +2226,8 @@ input:checked + .slider:before {
   height: 100vh;
   width: 100vw;
   background-color: var(--bg-main);
-  background-image: radial-gradient(circle at 10% 20%, rgba(16, 185, 129, 0.04) 0%, transparent 45%),
-                    radial-gradient(circle at 90% 80%, rgba(52, 211, 153, 0.04) 0%, transparent 45%);
+  background-image: radial-gradient(circle at 10% 20%, var(--primary-subtle) 0%, transparent 45%),
+                    radial-gradient(circle at 90% 80%, var(--primary-subtle) 0%, transparent 45%);
   color: var(--text-main);
   font-family: var(--font-sans);
   overflow-y: auto;
@@ -2216,7 +2255,7 @@ input:checked + .slider:before {
 .nav-logo {
   font-size: 1.4rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+  background: var(--brand-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   display: flex;
@@ -2252,7 +2291,7 @@ input:checked + .slider:before {
 
 .nav-btn {
   background: var(--primary);
-  color: #fff;
+  color: var(--primary-contrast);
   border: none;
   padding: 10px 20px;
   border-radius: 8px;
@@ -2282,8 +2321,8 @@ input:checked + .slider:before {
 }
 
 .hero-badge {
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border);
   color: var(--primary);
   padding: 6px 16px;
   border-radius: 20px;
@@ -2302,7 +2341,7 @@ input:checked + .slider:before {
 }
 
 .hero-title span {
-  background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+  background: var(--brand-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -2382,13 +2421,13 @@ input:checked + .slider:before {
   width: 50px;
   height: 50px;
   border-radius: 12px;
-  background: rgba(16, 185, 129, 0.1);
+  background: var(--primary-soft);
   color: var(--primary);
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 24px;
-  border: 1px solid rgba(16, 185, 129, 0.15);
+  border: 1px solid var(--primary-border);
 }
 
 .feature-card h3 {
@@ -2429,7 +2468,7 @@ input:checked + .slider:before {
 
 .pricing-card.popular {
   border-color: var(--primary);
-  box-shadow: 0 10px 30px rgba(16, 185, 129, 0.1);
+  box-shadow: 0 10px 30px var(--primary-glow);
 }
 
 .popular-tag {
@@ -2437,7 +2476,7 @@ input:checked + .slider:before {
   top: 15px;
   right: 15px;
   background: var(--primary);
-  color: #fff;
+  color: var(--primary-contrast);
   font-size: 0.75rem;
   font-weight: 700;
   padding: 4px 12px;
@@ -2512,7 +2551,7 @@ input:checked + .slider:before {
 
 .pricing-btn.primary {
   background: var(--primary);
-  color: #fff;
+  color: var(--primary-contrast);
   box-shadow: 0 4px 12px var(--primary-glow);
 }
 
@@ -2580,17 +2619,8 @@ input:checked + .slider:before {
 }
 
 /* Omni Reach brand lockup --------------------------------------------------
-   Sidebar, landing, and admin headers used to share `.nav-logo`, even though one is a
-   vertical-rail heading and the others are horizontal navbar links. The horizontal
-   headers therefore inherited sidebar-only margin, padding, clipping, and a green text
-   gradient. These dedicated classes keep each layout independent while BrandLockup
-   keeps the artwork and typography identical. */
-:root {
-  --omni-blue: #3f67d8;
-  --omni-blue-dark: #294da8;
-  --omni-blue-soft: rgba(63, 103, 216, 0.12);
-}
-
+   Sidebar, landing, and admin headers use dedicated layout classes while
+   BrandLockup keeps the artwork, typography, and blue identity consistent. */
 .brand-lockup {
   display: inline-flex;
   align-items: center;
@@ -2606,7 +2636,7 @@ input:checked + .slider:before {
 }
 
 .brand-wordmark {
-  color: var(--omni-blue);
+  color: var(--primary);
   font-family: 'Outfit', sans-serif;
   font-size: 1rem;
   font-weight: 800;
@@ -2650,7 +2680,7 @@ input:checked + .slider:before {
 }
 
 .landing-brand:focus-visible {
-  outline: 2px solid var(--omni-blue);
+  outline: 2px solid var(--primary);
   outline-offset: 5px;
   border-radius: 6px;
 }
@@ -2691,30 +2721,27 @@ input:checked + .slider:before {
 
 .admin-console-badge {
   padding: 2px 8px;
-  border: 1px solid rgba(63, 103, 216, 0.2);
+  border: 1px solid var(--primary-border);
   border-radius: 999px;
-  background: var(--omni-blue-soft);
-  color: var(--omni-blue);
+  background: var(--primary-soft);
+  color: var(--primary);
   font-size: 0.72rem;
   font-weight: 700;
   line-height: 1.45;
   white-space: nowrap;
 }
 
-/* Keep the landing navbar's interaction colour in the same family as its blue logo.
-   The rest of the application remains green because this is a navbar consistency fix,
-   not a theme rewrite. */
 .landing-container > .landing-nav .nav-btn {
-  background: var(--omni-blue);
-  box-shadow: 0 4px 12px rgba(63, 103, 216, 0.25);
+  background: var(--primary);
+  box-shadow: 0 4px 12px var(--primary-glow);
 }
 
 .landing-container > .landing-nav .nav-btn:hover {
-  background: var(--omni-blue-dark);
+  background: var(--primary-hover);
 }
 
 .landing-container > .landing-nav .nav-links a:hover {
-  color: var(--omni-blue);
+  color: var(--primary);
 }
 
 /* Responsive adjustments */
@@ -2944,7 +2971,7 @@ input:checked + .slider:before {
   width: 100%;
   max-width: 48px;
   border-radius: 8px 8px 4px 4px;
-  background: linear-gradient(180deg, var(--primary), #059669);
+  background: linear-gradient(180deg, var(--primary), var(--primary-hover));
   transition: height 0.4s ease;
   min-height: 8px;
 }
@@ -2989,7 +3016,7 @@ input:checked + .slider:before {
   min-width: 38px;
   border-radius: 50%;
   background: var(--primary);
-  color: white;
+  color: var(--primary-contrast);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3040,7 +3067,7 @@ input:checked + .slider:before {
   padding: 0 6px;
   border-radius: 10px;
   background: var(--primary);
-  color: white;
+  color: var(--primary-contrast);
   font-size: 0.7rem;
   font-weight: 700;
   display: flex;
@@ -3113,7 +3140,7 @@ input:checked + .slider:before {
   padding: 2px 8px;
   border-radius: 10px;
   color: var(--primary);
-  background: rgba(0, 168, 132, 0.12);
+  background: var(--primary-soft);
 }
 
 .customer-search {
@@ -3241,7 +3268,7 @@ input:checked + .slider:before {
   padding: 0 6px;
   border-radius: 10px;
   background: var(--primary);
-  color: #fff;
+  color: var(--primary-contrast);
   font-size: 0.68rem;
   font-weight: 700;
   display: flex;
@@ -3257,8 +3284,8 @@ input:checked + .slider:before {
   height: 19px;
   padding: 0 6px;
   border-radius: 10px;
-  background: rgba(0, 168, 132, 0.12);
-  border: 1px solid rgba(0, 168, 132, 0.28);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border);
   color: var(--primary);
   font-size: 0.68rem;
   font-weight: 700;
@@ -3274,8 +3301,8 @@ input:checked + .slider:before {
   gap: 8px;
   flex-shrink: 0;
   padding: 9px 14px;
-  background: rgba(0, 168, 132, 0.07);
-  border-bottom: 1px solid rgba(0, 168, 132, 0.2);
+  background: var(--primary-subtle);
+  border-bottom: 1px solid var(--primary-border);
   font-size: 0.79rem;
   color: var(--text-main);
 }
@@ -3317,8 +3344,8 @@ input:checked + .slider:before {
   padding: 3px 7px;
   border-radius: 5px;
   color: var(--primary);
-  background: rgba(0, 168, 132, 0.12);
-  border: 1px solid rgba(0, 168, 132, 0.25);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border);
   opacity: 0;
   transition: opacity 0.12s;
 }
@@ -3389,8 +3416,8 @@ input:checked + .slider:before {
 }
 
 .heatmap-view-btn.active {
-  background: rgba(0, 168, 132, 0.12);
-  border-color: rgba(0, 168, 132, 0.35);
+  background: var(--primary-soft);
+  border-color: var(--primary-ring);
   color: var(--primary);
 }
 
@@ -3470,7 +3497,7 @@ input:checked + .slider:before {
 
 .heatmap-calendar-trigger.has-value {
   color: var(--text-main);
-  border-color: rgba(0, 168, 132, 0.35);
+  border-color: var(--primary-ring);
 }
 
 .heatmap-calendar-count {
@@ -3479,7 +3506,7 @@ input:checked + .slider:before {
   padding: 1px 6px;
   border-radius: 4px;
   color: var(--primary);
-  background: rgba(0, 168, 132, 0.12);
+  background: var(--primary-soft);
 }
 
 .heatmap-calendar-clear {
@@ -3629,13 +3656,13 @@ input:checked + .slider:before {
 }
 
 .heatmap-day.in-range {
-  background: rgba(0, 168, 132, 0.14);
+  background: var(--primary-soft);
 }
 
 .heatmap-day.is-start,
 .heatmap-day.is-end {
   background: var(--primary);
-  color: #fff;
+  color: var(--primary-contrast);
   font-weight: 700;
 }
 
@@ -3747,7 +3774,7 @@ input:checked + .slider:before {
 /* A pinned cell keeps its ring after the pointer leaves. */
 .heatmap-cell.is-pinned {
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(0, 168, 132, 0.25);
+  box-shadow: 0 0 0 2px var(--primary-border);
 }
 
 .heatmap-tooltip {
@@ -4137,8 +4164,8 @@ input:checked + .slider:before {
 }
 
 /* Per-type accents */
-.toast-success { border-left-color: #10b981; }
-.toast-success .toast-icon { color: #10b981; }
+.toast-success { border-left-color: var(--success); }
+.toast-success .toast-icon { color: var(--success); }
 
 .toast-logout { border-left-color: #64748b; }
 .toast-logout .toast-icon { color: #64748b; }
