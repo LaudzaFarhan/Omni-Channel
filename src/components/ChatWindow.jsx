@@ -313,7 +313,11 @@ function hasMedia(msg) {
   return !!(content.imageMessage || content.videoMessage || content.audioMessage || content.documentMessage || content.stickerMessage);
 }
 
-export default function ChatWindow({ activeChat, messages, setMessages, userProfile, user, activeSessionId, userInfo, savedNames = {}, savedContacts = {} }) {
+export default function ChatWindow({ activeChat, messages, setMessages, userProfile, user, activeSessionId, userInfo, savedNames = {}, savedContacts = {},
+  // Fullscreen is owned by MessageDashboard: the element that expands has to contain the
+  // chat list as well, and that is a sibling of this component. The button lives here
+  // because the conversation header is where it belongs.
+  isFullscreen = false, onToggleFullscreen = null }) {
   // Saving the person you are talking to is the main way contacts get created —
   // expecting the operator to copy a number over to the contacts page instead
   // would mean the address book stays empty.
@@ -353,19 +357,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   const [showTemplates, setShowTemplates] = useState(false);
   const templatesRef = useRef(null);
 
-  // Fullscreen conversation.
-  //
-  // `nativeFullscreen` is never assigned by the toggle — only by the fullscreenchange
-  // listener, so it cannot drift from what the browser is actually doing. Esc and F11
-  // bypass our button entirely, and a hand-tracked flag would leave the icon lying.
-  //
-  // `fallbackFullscreen` covers the case where the Fullscreen API is missing or refused
-  // (an iframe without allow="fullscreen", or a permissions policy). Then we cover the
-  // app instead of the screen, so the button is never dead.
-  const chatRootRef = useRef(null);
-  const [nativeFullscreen, setNativeFullscreen] = useState(false);
-  const [fallbackFullscreen, setFallbackFullscreen] = useState(false);
-  const isFullscreen = nativeFullscreen || fallbackFullscreen;
+
 
   // Load the hold state for whichever chat is open, and follow changes made in
   // another tab through the socket.
@@ -678,57 +670,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
     setShowTemplates(false);
   };
 
-  const toggleFullscreen = () => {
-    if (isFullscreen) {
-      // Leaving native fullscreen goes through the browser; the listener clears the flag.
-      const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
-      if (nativeFullscreen && exit) {
-        Promise.resolve(exit.call(document)).catch(() => {});
-      }
-      setFallbackFullscreen(false);
-      return;
-    }
 
-    const el = chatRootRef.current;
-    const request = el && (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen);
-    if (!request) {
-      setFallbackFullscreen(true);
-      return;
-    }
-    // On success the fullscreenchange listener sets the state, not this call.
-    Promise.resolve(request.call(el)).catch(() => setFallbackFullscreen(true));
-  };
-
-  // Mirror the browser's fullscreen state. This is the only writer of nativeFullscreen.
-  useEffect(() => {
-    const sync = () => {
-      const el = document.fullscreenElement || document.webkitFullscreenElement || null;
-      setNativeFullscreen(!!el && el === chatRootRef.current);
-    };
-    document.addEventListener('fullscreenchange', sync);
-    document.addEventListener('webkitfullscreenchange', sync);
-    sync();
-    return () => {
-      document.removeEventListener('fullscreenchange', sync);
-      document.removeEventListener('webkitfullscreenchange', sync);
-    };
-  }, []);
-
-  // Escape only needs handling for the fallback — native fullscreen exits on its own.
-  useEffect(() => {
-    if (!fallbackFullscreen) return;
-    const onKeyDown = (e) => { if (e.key === 'Escape') setFallbackFullscreen(false); };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [fallbackFullscreen]);
-
-  // Leaving the conversation must not strand the app under a fixed overlay.
-  useEffect(() => () => {
-    if (document.fullscreenElement === chatRootRef.current) {
-      const exit = document.exitFullscreen || document.webkitExitFullscreen;
-      if (exit) Promise.resolve(exit.call(document)).catch(() => {});
-    }
-  }, []);
 
   // Close the emoji tray on an outside click, like the other popovers.
   useEffect(() => {
@@ -964,13 +906,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   let lastRenderedDay = null;
 
   return (
-    // The fullscreen element is this wrapper, not `.chat-window`, so the quick-replies
-    // panel beside it stays reachable while expanded.
-    <div
-      ref={chatRootRef}
-      className={`chat-fullscreen-root ${fallbackFullscreen ? 'chat-fullscreen-fallback' : ''}`}
-      style={{ display: 'flex', flex: 1, height: '100%' }}
-    >
+    <div style={{ display: 'flex', flex: 1, height: '100%', minWidth: 0 }}>
       {/* Active Conversation Area */}
       <div className="chat-window">
         {/* Header */}
@@ -1344,17 +1280,20 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
               )}
             </div>
 
-            {/* Fullscreen. Expands the conversation over the nav sidebar, top bar and
-                chat list, which all live outside this component's tree. */}
-            <button
-              className="icon-button"
-              onClick={toggleFullscreen}
-              title={isFullscreen ? 'Keluar dari layar penuh (Esc)' : 'Buka layar penuh'}
-              aria-pressed={isFullscreen}
-              style={{ color: isFullscreen ? 'var(--primary)' : 'var(--text-muted)' }}
-            >
-              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-            </button>
+            {/* Fullscreen. Expands the chat list and this conversation together over the
+                nav sidebar and top bar. Rendered only when a handler is supplied, so the
+                button is never present without something behind it. */}
+            {onToggleFullscreen && (
+              <button
+                className="icon-button"
+                onClick={onToggleFullscreen}
+                title={isFullscreen ? 'Keluar dari layar penuh (Esc)' : 'Buka layar penuh'}
+                aria-pressed={isFullscreen}
+                style={{ color: isFullscreen ? 'var(--primary)' : 'var(--text-muted)' }}
+              >
+                {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+              </button>
+            )}
 
             {/* Search within THIS conversation's messages. Filters what is already
                 loaded — the store keeps the last 100 per chat, so there is nothing

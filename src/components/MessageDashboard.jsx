@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ChatList from './ChatList.jsx';
 import ChatWindow from './ChatWindow.jsx';
 import StatsPanel from './StatsPanel.jsx';
@@ -89,6 +89,69 @@ export default function MessageDashboard({
     };
   }, [activeSessionId]);
 
+  // Fullscreen lives here rather than in ChatWindow because the element that expands has
+  // to hold the chat list too — switching conversations while expanded is the whole point,
+  // and the list is a sibling of ChatWindow, not a child. The button stays in the
+  // conversation header; only the state moved.
+  //
+  // `nativeFullscreen` is written only by the fullscreenchange listener, never by the
+  // toggle. Esc and F11 leave fullscreen without going through the button, so a
+  // hand-tracked flag would leave the icon showing the wrong state.
+  //
+  // `fallbackFullscreen` handles the Fullscreen API being absent or refused (an iframe
+  // without allow="fullscreen", or a permissions policy), so the button is never dead.
+  const fullscreenRef = useRef(null);
+  const [nativeFullscreen, setNativeFullscreen] = useState(false);
+  const [fallbackFullscreen, setFallbackFullscreen] = useState(false);
+  const isFullscreen = nativeFullscreen || fallbackFullscreen;
+
+  const toggleFullscreen = () => {
+    if (isFullscreen) {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+      if (nativeFullscreen && exit) Promise.resolve(exit.call(document)).catch(() => {});
+      setFallbackFullscreen(false);
+      return;
+    }
+    const el = fullscreenRef.current;
+    const request = el && (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen);
+    if (!request) {
+      setFallbackFullscreen(true);
+      return;
+    }
+    // On success the listener below sets the state, not this call.
+    Promise.resolve(request.call(el)).catch(() => setFallbackFullscreen(true));
+  };
+
+  useEffect(() => {
+    const sync = () => {
+      const el = document.fullscreenElement || document.webkitFullscreenElement || null;
+      setNativeFullscreen(!!el && el === fullscreenRef.current);
+    };
+    document.addEventListener('fullscreenchange', sync);
+    document.addEventListener('webkitfullscreenchange', sync);
+    sync();
+    return () => {
+      document.removeEventListener('fullscreenchange', sync);
+      document.removeEventListener('webkitfullscreenchange', sync);
+    };
+  }, []);
+
+  // Only the fallback needs an Escape handler; native fullscreen exits on its own.
+  useEffect(() => {
+    if (!fallbackFullscreen) return;
+    const onKeyDown = (e) => { if (e.key === 'Escape') setFallbackFullscreen(false); };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [fallbackFullscreen]);
+
+  // Switching tabs unmounts this, which must not strand the app under a fixed overlay.
+  useEffect(() => () => {
+    if (document.fullscreenElement === fullscreenRef.current) {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) Promise.resolve(exit.call(document)).catch(() => {});
+    }
+  }, []);
+
   const statusOf = (jid) => chatStatuses[jid] || 'prospect';
 
   // Counts for the pills.
@@ -116,7 +179,13 @@ export default function MessageDashboard({
   }, [chats, contactTags, globalCustomTags]);
 
   return (
-    <>
+    // This wrapper exists to be the fullscreen element. It replaces a fragment, so it has
+    // to reproduce the row layout the two panels previously got from App's flex container.
+    <div
+      ref={fullscreenRef}
+      className={`chat-fullscreen-root ${fallbackFullscreen ? 'chat-fullscreen-fallback' : ''}`}
+      style={{ display: 'flex', flex: 1, height: '100%', minWidth: 0 }}
+    >
       <div className="sidebar" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* Filter pills. Replaced a grid of stat cards that ate ~110px before a single
             conversation was visible. */}
@@ -156,6 +225,8 @@ export default function MessageDashboard({
           userInfo={userInfo}
           savedNames={savedNames}
           savedContacts={savedContacts}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={toggleFullscreen}
         />
       ) : (
         <div className="empty-chat-window" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-main)' }}>
@@ -165,6 +236,6 @@ export default function MessageDashboard({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
