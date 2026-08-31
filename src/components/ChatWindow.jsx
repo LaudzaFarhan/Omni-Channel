@@ -349,6 +349,10 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   const [showEmoji, setShowEmoji] = useState(false);
   const emojiRef = useRef(null);
 
+  // Explicit open state for the template picker, separate from the implicit '/' trigger.
+  const [showTemplates, setShowTemplates] = useState(false);
+  const templatesRef = useRef(null);
+
   // Load the hold state for whichever chat is open, and follow changes made in
   // another tab through the socket.
   useEffect(() => {
@@ -437,6 +441,8 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
     setShowTagSubmenu(false);
     setShowSearch(false);
     setMessageQuery('');
+    setShowTemplates(false);
+    setShowEmoji(false);
   }, [activeChat?.id]);
 
   const handleSetStatus = async (next) => {
@@ -636,17 +642,27 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
     return messages.filter(m => getMessageText(m).toLowerCase().includes(q));
   }, [messages, messageQuery, showSearch]);
 
-  // Templates matching what follows a leading '/', or null when the composer is not in
-  // slash mode. Null rather than an empty array so "no slash" and "slash with no
-  // matches" stay distinguishable — the second one shows a message.
-  const slashMatches = useMemo(() => {
-    if (!inputText.startsWith('/')) return null;
-    const q = inputText.slice(1).trim().toLowerCase();
-    if (!q) return quickReplies;
+  // The template picker opens two ways, and they share one list.
+  //
+  // '/' filters as you type; the composer's template button opens it unfiltered. The
+  // button used to toggle the quick-replies side drawer instead, which is a panel action
+  // sitting on a composer control — the header's panel button is where that belongs.
+  const slashQuery = inputText.startsWith('/') ? inputText.slice(1).trim().toLowerCase() : null;
+
+  const templateMatches = useMemo(() => {
+    if (!slashQuery) return quickReplies;
     return quickReplies.filter(r =>
-      r.title.toLowerCase().includes(q) || r.text.toLowerCase().includes(q)
+      r.title.toLowerCase().includes(slashQuery) || r.text.toLowerCase().includes(slashQuery)
     );
-  }, [inputText, quickReplies]);
+  }, [slashQuery, quickReplies]);
+
+  // Typing a slash opens it implicitly; the button opens it explicitly. Either counts.
+  const templatesOpen = showTemplates || slashQuery !== null;
+
+  const applyTemplate = (reply) => {
+    setInputText(reply.text);
+    setShowTemplates(false);
+  };
 
   // Close the emoji tray on an outside click, like the other popovers.
   useEffect(() => {
@@ -662,6 +678,28 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [showEmoji]);
+
+  // Same for the template picker, but only for the button-opened case. A '/' in the
+  // composer keeps it open on purpose, and dismissing that on an outside click would
+  // fight the text still sitting in the field.
+  useEffect(() => {
+    if (!showTemplates) return;
+
+    const onPointerDown = (e) => {
+      const insidePicker = templatesRef.current?.contains(e.target);
+      // The composer, including the button that opened this, is not "outside".
+      const insideComposer = e.target.closest?.('.chat-window-input-bar');
+      if (!insidePicker && !insideComposer) setShowTemplates(false);
+    };
+    const onKeyDown = (e) => { if (e.key === 'Escape') setShowTemplates(false); };
+
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [showTemplates]);
 
   // Render WhatsApp status checks next to message time for outgoing messages
   const renderMessageStatus = (msg) => {
@@ -1371,10 +1409,13 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
               )}
             </div>
 
+            {/* The only control that hides the side panel. The composer's template button
+                picks a template instead — two different jobs, two different places. */}
             <button 
               className="icon-button" 
               onClick={() => setShowQuickReplies(!showQuickReplies)}
-              title="Toggle Quick Replies"
+              title={showQuickReplies ? 'Sembunyikan panel template' : 'Tampilkan panel template'}
+              aria-expanded={showQuickReplies}
               style={{ color: showQuickReplies ? 'var(--primary)' : 'var(--text-muted)' }}
             >
               <PanelRight size={20} />
@@ -1634,9 +1675,10 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
             </button>
 
             <button
-              className={`composer-icon ${showQuickReplies ? 'active' : ''}`}
-              onClick={() => setShowQuickReplies(v => !v)}
-              title="Template pesan"
+              className={`composer-icon ${templatesOpen ? 'active' : ''}`}
+              onClick={() => setShowTemplates(v => !v)}
+              title="Pilih template pesan"
+              aria-expanded={templatesOpen}
               disabled={sending}
             >
               <FileText size={17} />
@@ -1691,25 +1733,27 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
             />
           </div>
 
-          {/* Template picker, opened by typing '/'. The placeholder advertises it, so it
-              has to exist — an advertised shortcut that does nothing is worse than no
-              shortcut. Filters on whatever follows the slash. */}
-          {slashMatches !== null && (
-            <div style={{
+          {/* Template picker. Opened either by the composer's template button or by typing
+              '/', which the placeholder advertises — an advertised shortcut that does
+              nothing is worse than no shortcut. */}
+          {templatesOpen && (
+            <div ref={templatesRef} style={{
               position: 'absolute', bottom: 'calc(100% - 4px)', left: '20px', right: '76px',
               zIndex: 60, maxHeight: '260px', overflowY: 'auto', padding: '6px',
               background: 'var(--bg-panel, var(--bg-sidebar))',
               border: '1px solid var(--border-color)', borderRadius: '12px',
               boxShadow: '0 12px 30px rgba(0,0,0,0.2)',
             }}>
-              {slashMatches.length === 0 ? (
+              {templateMatches.length === 0 ? (
                 <div style={{ padding: '12px 14px', fontSize: '0.83rem', color: 'var(--text-dimmed)' }}>
-                  Tidak ada template yang cocok
+                  {quickReplies.length === 0
+                    ? 'Belum ada template. Tambahkan dari panel di kanan.'
+                    : 'Tidak ada template yang cocok'}
                 </div>
-              ) : slashMatches.map((reply) => (
+              ) : templateMatches.map((reply) => (
                 <button
                   key={reply.id}
-                  onClick={() => { setInputText(reply.text); }}
+                  onClick={() => applyTemplate(reply)}
                   style={{
                     display: 'block', width: '100%', textAlign: 'left', border: 'none',
                     background: 'transparent', cursor: 'pointer', padding: '9px 12px',
