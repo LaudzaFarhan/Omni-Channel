@@ -892,6 +892,51 @@ input:checked + .slider:before {
   padding: 10px 14px 12px;
 }
 
+/* Borderless icon button, used across the chat header and composer.
+   ---------------------------------------------------------------------------
+   This class was referenced in the markup but never actually defined, so every
+   `.icon-button` was rendering as a native <button>: grey fill, 2px bevelled border,
+   square corners. That is the box around the header icons. */
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.13s, color 0.13s;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--overlay-medium);
+  color: var(--text-main);
+}
+
+.icon-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.icon-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* The tag control pairs an icon with a chevron, so it needs to be wider than a circle
+   and keep its contents together. */
+.icon-button.has-chevron {
+  width: auto;
+  gap: 1px;
+  padding: 0 6px;
+  border-radius: 8px;
+}
+
 /* Filter pills above the chat list */
 .chat-pill-row {
   display: flex;
@@ -1408,24 +1453,34 @@ input:checked + .slider:before {
   background-color: var(--primary);
   border: none;
   border-radius: 50%;
-  width: 44px;
-  height: 44px;
+  /* Matches the composer field's height so the two sit on one line. */
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   cursor: pointer;
-  transition: var(--transition-smooth);
-  box-shadow: 0 2px 8px var(--primary-glow);
+  transition: background 0.15s, transform 0.1s, opacity 0.15s;
+  box-shadow: 0 1px 4px var(--primary-glow);
 }
 
-.send-button:hover {
+.send-button:hover:not(:disabled) {
   background-color: var(--primary-hover);
   transform: scale(1.05);
 }
 
-.send-button:active {
+.send-button:active:not(:disabled) {
   transform: scale(0.95);
+}
+
+/* Was unstyled, so an empty composer still showed a fully saturated, apparently
+   clickable button. */
+.send-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 /* Connection Overlay Screen */

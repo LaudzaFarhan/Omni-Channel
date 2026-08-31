@@ -5,7 +5,7 @@ import { subscribeSocket } from '../utils/socket.js';
 import { showToast } from '../utils/toastBus.js';
 import { PRESET_TAGS, getTags, toggleTag, clearTags, createCustomTag, loadGlobalCustomTags, addGlobalCustomTag, deleteGlobalCustomTag } from '../utils/contactTags.js';
 import { getChatDisplayName, getInitials } from '../utils/displayName.js';
-import { jidToPhone } from '../utils/phone.js';
+import { jidToPhone, formatPhone } from '../utils/phone.js';
 import ContactEditor from './contacts/ContactEditor.jsx';
 
 const DEFAULT_QUICK_REPLIES = [
@@ -700,6 +700,22 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
     && !activeChat.id.endsWith('@g.us')
     && Boolean(savedContact || contactPhone);
 
+  // Second line of the header. Only shows the number when the name is something else,
+  // otherwise it would print the same string twice.
+  const headerSubtitle = useMemo(() => {
+    if (!activeChat) return '';
+
+    const name = getDisplayName(activeChat);
+    const pretty = contactPhone ? formatPhone(contactPhone) : null;
+    const shownDigits = String(name).replace(/\D/g, '');
+
+    // The name already IS this number, in some formatting.
+    if (pretty && shownDigits && shownDigits === contactPhone) {
+      return savedContact ? pretty : 'Belum disimpan sebagai kontak';
+    }
+    return pretty || '';
+  }, [activeChat, contactPhone, savedContact, savedNames]);
+
   const handleSaveContact = async (payload) => {
     if (savedContact?.id) {
       await updateContact(savedContact.id, payload);
@@ -850,8 +866,11 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
         {/* Header */}
         <div className="chat-window-header">
           <div className="header-user-info">
+            {/* Same helper the chat list uses. A raw substring(0,2) of the name gave
+                "+6" for every unsaved number — identical for every such contact, and
+                inconsistent with the list beside it, which shows the last two digits. */}
             <div className="header-avatar">
-              {(activeChat.name || activeChat.id).substring(0, 2).toUpperCase()}
+              {getInitials(getDisplayName(activeChat))}
             </div>
             <div>
               <div className="header-name" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -917,12 +936,15 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                   </span>
                 )}
               </div>
+              {/* The secondary line, which must not simply repeat the primary one.
+                  An unsaved contact has no name, so getDisplayName returns the number —
+                  and this line then printed the same number again. It now falls back to
+                  the save prompt, which is both different information and the next
+                  useful action. */}
               <div className="header-status">
-                {activeChat.id.endsWith('@g.us') 
-                  ? 'Group Chat' 
-                  : activeChat.phoneNumber 
-                    ? activeChat.phoneNumber 
-                    : getDisplayName(activeChat)}
+                {activeChat.id.endsWith('@g.us')
+                  ? 'Group Chat'
+                  : headerSubtitle}
               </div>
             </div>
           </div>
@@ -987,14 +1009,11 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
             {/* Tag Selector */}
             <div style={{ position: 'relative' }} ref={tagDropdownRef}>
               <button 
-                className="icon-button" 
+                className="icon-button has-chevron" 
                 onClick={() => setShowTagDropdown(!showTagDropdown)}
                 title="Set Contact Tag"
                 style={{ 
                   color: currentTags.length > 0 ? currentTags[0].color : 'var(--text-muted)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '3px'
                 }}
               >
                 <Tag size={17} />
