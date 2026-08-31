@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { adminListUsers, fetchPlans } from '../utils/api.js';
+import { adminListUsers, fetchPlans, adminListFeatures } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
-import { LogOut, Users, Layers, Activity, CreditCard } from 'lucide-react';
+import { LogOut, Users, Layers, Activity, CreditCard, ToggleLeft } from 'lucide-react';
 import { BrandLockup } from './BrandMark.jsx';
 import { normalizePlan, sortPlans } from '../utils/plans.js';
 import VersionBadge from './VersionBadge.jsx';
@@ -10,10 +10,12 @@ import UsersTab from './admin/UsersTab.jsx';
 import PlansTab from './admin/PlansTab.jsx';
 import SessionsTab from './admin/SessionsTab.jsx';
 import TransactionsTab from './admin/TransactionsTab.jsx';
+import FeaturesTab from './admin/FeaturesTab.jsx';
 
 const TABS = [
   { id: 'users', label: 'Customers', icon: Users },
   { id: 'plans', label: 'Plans', icon: Layers },
+  { id: 'features', label: 'Features', icon: ToggleLeft },
   { id: 'sessions', label: 'Live Sessions', icon: Activity },
   { id: 'transactions', label: 'Transactions', icon: CreditCard },
 ];
@@ -36,6 +38,13 @@ export default function AdminDashboard({ user, onLogout }) {
   const [plans, setPlans] = useState([]);
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [plansError, setPlansError] = useState(null);
+
+  // The feature catalogue and its rollout state. Owned here rather than in the tab for the
+  // same reason as the other two: the socket listener below keeps it current whether or not
+  // that tab happens to be open.
+  const [features, setFeatures] = useState([]);
+  const [loadingFeatures, setLoadingFeatures] = useState(true);
+  const [featuresError, setFeaturesError] = useState(null);
 
   // The registry is fetched rather than subscribed to. The tabs call
   // refreshUsers() after a mutation, and the socket events below cover changes
@@ -71,10 +80,23 @@ export default function AdminDashboard({ user, onLogout }) {
     }
   }, []);
 
+  const refreshFeatures = useCallback(async () => {
+    try {
+      setFeatures(await adminListFeatures());
+      setFeaturesError(null);
+    } catch (err) {
+      console.error('[Admin] Error fetching features:', err);
+      setFeaturesError(err.message || 'Could not read the feature list.');
+    } finally {
+      setLoadingFeatures(false);
+    }
+  }, []);
+
   useEffect(() => {
     refreshUsers();
     refreshPlans();
-  }, [refreshUsers, refreshPlans]);
+    refreshFeatures();
+  }, [refreshUsers, refreshPlans, refreshFeatures]);
 
   // Keep the console live without polling: the server broadcasts plan changes and
   // pushes a profile update to the affected user, and an admin watching this
@@ -88,16 +110,23 @@ export default function AdminDashboard({ user, onLogout }) {
       setUsers(prev => prev.map(u => (u.uid === profile.uid ? { ...u, ...profile } : u)));
     };
 
+    // A bare signal: the effective map differs per account once exceptions exist, so the
+    // server sends no payload and every listener re-reads what it needs. Here that is the
+    // admin catalogue, so a second admin's change lands on this screen too.
+    const handleFeatures = () => { refreshFeatures(); };
+
     let attached = null;
     const unsubscribe = subscribeSocket((socket) => {
       if (attached) {
         attached.off('plans-updated', handlePlans);
         attached.off('profile-updated', handleProfile);
+        attached.off('features-updated', handleFeatures);
         attached = null;
       }
       if (socket) {
         socket.on('plans-updated', handlePlans);
         socket.on('profile-updated', handleProfile);
+        socket.on('features-updated', handleFeatures);
         attached = socket;
       }
     });
@@ -107,9 +136,10 @@ export default function AdminDashboard({ user, onLogout }) {
       if (attached) {
         attached.off('plans-updated', handlePlans);
         attached.off('profile-updated', handleProfile);
+        attached.off('features-updated', handleFeatures);
       }
     };
-  }, []);
+  }, [refreshFeatures]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', background: 'var(--bg-main)' }}>
@@ -189,6 +219,17 @@ export default function AdminDashboard({ user, onLogout }) {
             users={users}
             onPlansChanged={setPlans}
             onRefresh={refreshPlans}
+          />
+        )}
+
+        {activeTab === 'features' && (
+          <FeaturesTab
+            features={features}
+            loading={loadingFeatures}
+            error={featuresError}
+            users={users}
+            onFeaturesChanged={setFeatures}
+            onRefresh={refreshFeatures}
           />
         )}
 

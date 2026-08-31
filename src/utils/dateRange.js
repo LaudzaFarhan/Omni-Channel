@@ -1,4 +1,4 @@
-// Calendar-day arithmetic for the heatmap's range filter.
+// Calendar-day arithmetic for the heat map's range filter.
 //
 // Extracted from InteractionHeatmap so the calendar picker and the component that
 // queries the server share one definition. Two of these have already been the source
@@ -11,21 +11,21 @@
 
 /** Rolling windows offered as presets. `days: null` means unbounded. */
 export const RANGES = [
-  { key: '7d', label: '7 hari', days: 7 },
-  { key: '30d', label: '30 hari', days: 30 },
-  { key: '90d', label: '90 hari', days: 90 },
-  { key: 'all', label: 'Semua', days: null },
-  { key: 'custom', label: 'Kustom', days: null },
+  { key: '7d', label: '7 days', days: 7 },
+  { key: '30d', label: '30 days', days: 30 },
+  { key: '90d', label: '90 days', days: 90 },
+  { key: 'all', label: 'All', days: null },
+  { key: 'custom', label: 'Custom', days: null },
 ];
 
 export const MONTH_NAMES = [
-  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-// Sunday first, matching the heatmap's own rows so the two calendars read the same
+// Sunday first, matching the heat map's own rows so the two calendars read the same
 // way round.
-export const WEEKDAY_LABELS = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+export const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export function startOfDay(date) {
   const d = new Date(date);
@@ -90,7 +90,7 @@ export function boundsFor(rangeKey, customFrom, customTo) {
   const preset = RANGES.find(r => r.key === rangeKey);
   if (!preset?.days) return { from: null, to: null };
 
-  // Inclusive of today, so "7 hari" is today plus the six before it rather than
+  // Inclusive of today, so "7 days" is today plus the six before it rather than
   // today plus seven.
   const start = new Date();
   start.setDate(start.getDate() - (preset.days - 1));

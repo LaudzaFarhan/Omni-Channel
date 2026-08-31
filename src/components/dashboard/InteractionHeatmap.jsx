@@ -5,22 +5,30 @@ import { subscribeSocket } from '../../utils/socket.js';
 import { RANGES, boundsFor, toDayKey } from '../../utils/dateRange.js';
 import DateRangePicker from './DateRangePicker.jsx';
 
-const DAY_LABELS = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
-const DAY_NAMES = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const VIEWS = [
-  { key: 'all', label: 'Semua' },
-  { key: 'incoming', label: 'Masuk' },
-  { key: 'outgoing', label: 'Keluar' },
+  { key: 'all', label: 'All' },
+  { key: 'incoming', label: 'Incoming' },
+  { key: 'outgoing', label: 'Outgoing' },
 ];
+
+// One conversation reads as "1 interaction", not "1 interactions". Spelled out here
+// because the same phrase appears in the tooltip, the cell's screen-reader label and the
+// footer total, and they must not disagree.
+const interactions = (count) => `${count} ${count === 1 ? 'interaction' : 'interactions'}`;
+
+/** How a cell is described in prose: "Monday at 14:00". */
+const cellLabel = (day, hour) => `${DAY_NAMES[day]} at ${hour}:00`;
 
 // RANGES, boundsFor and the day-key helpers live in utils/dateRange.js, shared with
 // the calendar picker. They were local to this file until the picker needed the same
 // arithmetic, and duplicating timezone-sensitive date maths across two components is
 // how the reversed-range bug got in the first time.
 
-// Five buckets, matching the "Sepi -> Ramai" legend. Level 0 is a distinct
-// neutral rather than the lightest green, so "no messages at all" reads
+// Five buckets, matching the "Quiet -> Busy" legend. Level 0 is a distinct
+// neutral rather than the lightest shade, so "no messages at all" reads
 // differently from "one message" at a glance.
 const LEVELS = 4;
 
@@ -42,8 +50,8 @@ function levelFor(count, max) {
 function formatRange(from, to) {
   if (!from || !to) return null;
   const opts = { day: 'numeric', month: 'short' };
-  const start = new Date(from).toLocaleDateString('id-ID', opts);
-  const end = new Date(to).toLocaleDateString('id-ID', opts);
+  const start = new Date(from).toLocaleDateString('en-US', opts);
+  const end = new Date(to).toLocaleDateString('en-US', opts);
   return start === end ? start : `${start} – ${end}`;
 }
 
@@ -236,7 +244,7 @@ export default function InteractionHeatmap({
     if (count === 0) {
       onCellSelect?.({
         day, hour, count: 0, contributors: [], groupTotal: 0,
-        label: `${DAY_NAMES[day]} jam ${hour}:00`,
+        label: cellLabel(day, hour),
       });
       return;
     }
@@ -255,7 +263,7 @@ export default function InteractionHeatmap({
         count: data.total,
         groupTotal: data.groupTotal,
         contributors: data.contributors,
-        label: `${DAY_NAMES[day]} jam ${hour}:00`,
+        label: cellLabel(day, hour),
       });
     } catch (err) {
       console.info('[Heatmap] Could not load the conversations for that cell:', err.message);
@@ -283,9 +291,9 @@ export default function InteractionHeatmap({
     <div className="dashboard-panel heatmap-panel">
       <div className="dashboard-panel-header">
         <Clock size={18} />
-        <span>Peta Panas Waktu Interaksi</span>
+        <span>Heat Map Interaction Time</span>
 
-        <div className="heatmap-view-toggle" role="group" aria-label="Jenis interaksi">
+        <div className="heatmap-view-toggle" role="group" aria-label="Interaction type">
           {VIEWS.map(({ key, label }) => (
             <button
               key={key}
@@ -306,10 +314,10 @@ export default function InteractionHeatmap({
       {connected && !error && (
         <div className="heatmap-rangebar">
           <span className="heatmap-rangebar-label">
-            <CalendarRange size={14} /> Rentang
+            <CalendarRange size={14} /> Range
           </span>
 
-          <div className="heatmap-range-toggle" role="group" aria-label="Rentang tanggal">
+          <div className="heatmap-range-toggle" role="group" aria-label="Date range">
             {RANGES.map(({ key, label }) => (
               <button
                 key={key}
@@ -345,7 +353,7 @@ export default function InteractionHeatmap({
         ) : !connected ? (
           <div className="dashboard-empty-state">
             <div className="dashboard-empty-icon"><MessageSquare size={40} /></div>
-            <p>Hubungkan WhatsApp untuk melihat jam-jam tersibuk Anda</p>
+            <p>Connect WhatsApp to see your busiest hours</p>
           </div>
         ) : error ? (
           <div className="dashboard-empty-state">
@@ -359,20 +367,20 @@ export default function InteractionHeatmap({
                 problems with different fixes, so they get different wording. */}
             {isFiltered ? (
               <>
-                <p>Tidak ada interaksi pada rentang ini</p>
+                <p>No interactions in this range</p>
                 <button
                   type="button"
                   className="heatmap-view-btn"
                   onClick={() => { setRange('all'); setCustomFrom(''); setCustomTo(''); }}
                 >
-                  Tampilkan semua
+                  Show all
                 </button>
               </>
             ) : (
               <p>
                 {view === 'all'
-                  ? 'Peta panas akan terisi setelah ada percakapan'
-                  : `Belum ada pesan ${view === 'incoming' ? 'masuk' : 'keluar'} yang tercatat`}
+                  ? 'The heat map fills in once there are conversations'
+                  : `No ${view === 'incoming' ? 'incoming' : 'outgoing'} messages recorded yet`}
               </p>
             )}
           </div>
@@ -408,7 +416,7 @@ export default function InteractionHeatmap({
                         onClick={(e) => togglePin(day, hour, e.currentTarget)}
                         /* The visible tooltip is decorative; this is what a
                            screen reader actually reads out. */
-                        aria-label={`${DAY_NAMES[day]} jam ${hour}:00 — ${count} interaksi`}
+                        aria-label={`${cellLabel(day, hour)} — ${interactions(count)}`}
                       />
                     );
                   })}
@@ -424,7 +432,7 @@ export default function InteractionHeatmap({
                   {/* Count read from the current matrix rather than from what was
                       captured when the cell was pinned, so a background refresh
                       or a view switch cannot leave a stale number on screen. */}
-                  {DAY_NAMES[active.day]} jam {active.hour}:00 — {matrix[active.day][active.hour]} interaksi
+                  {cellLabel(active.day, active.hour)} — {interactions(matrix[active.day][active.hour])}
                 </div>
               )}
             </div>
@@ -433,19 +441,21 @@ export default function InteractionHeatmap({
               <div className="heatmap-summary">
                 {busiest && busiest.count > 0 && (
                   <span>
-                    Paling ramai <strong>{DAY_NAMES[busiest.day]} jam {busiest.hour}:00</strong>
+                    Busiest <strong>{cellLabel(busiest.day, busiest.hour)}</strong>
                     {' '}({busiest.count})
                   </span>
                 )}
-                {coveredLabel && <span className="heatmap-range">{total} interaksi · {coveredLabel}</span>}
+                {coveredLabel && (
+                  <span className="heatmap-range">{interactions(total)} · {coveredLabel}</span>
+                )}
               </div>
 
               <div className="heatmap-legend" aria-hidden="true">
-                <span>Sepi</span>
+                <span>Quiet</span>
                 {Array.from({ length: LEVELS + 1 }, (_, level) => (
                   <i key={level} className={`heatmap-cell level-${level}`} />
                 ))}
-                <span>Ramai</span>
+                <span>Busy</span>
               </div>
             </div>
           </div>

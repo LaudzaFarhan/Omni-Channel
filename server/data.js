@@ -10,6 +10,7 @@
 // exactly what a missing Firestore field used to mean.
 
 import { query, queryOne, withTransaction } from './db.js';
+import { resolveFeatures } from './features.js';
 import { hashRefreshToken, refreshTokenExpiry } from './auth.js';
 
 // ---------------------------------------------------------------------------
@@ -1095,4 +1096,121 @@ export async function listAudit(limit = 200) {
     [limit]
   );
   return rows;
+}
+
+// ---------------------------------------------------------------------------
+// feature flags
+// ---------------------------------------------------------------------------
+// Storage only. What a status or an override *means* lives in ./features.js, so the
+// precedence rules can be checked without a database.
+//
+// Both tables are small — one row per configured feature, and a handful of deliberate
+// exceptions — so these are plain reads with no caching. If a flag lookup ever shows up in
+// the slow-query log, cache the global map and invalidate it in setFeatureFlag; the
+// per-account read is already a primary-key hit.
+
+export function mapFeatureFlag(row) {
+  if (!row) return null;
+  return {
+    key: row.key,
+    status: row.status,
+    note: row.note ?? null,
+    updatedAt: row.updated_at,
+    updatedBy: row.updated_by ?? null,
+  };
+}
+
+/** Every configured flag. Unconfigured features are simply absent; the resolver defaults them. */
+export async function listFeatureFlags() {
+  const { rows } = await query('SELECT * FROM feature_flags ORDER BY key');
+  return rows.map(mapFeatureFlag);
+}
+
+export async function setFeatureFlag(key, { status, note, updatedBy }) {
+  const row = await queryOne(
+    `INSERT INTO feature_flags (key, status, note, updated_by)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (key) DO UPDATE SET
+       status     = EXCLUDED.status,
+       note       = EXCLUDED.note,
+       updated_by = EXCLUDED.updated_by
+     RETURNING *`,
+    [key, status, note || null, updatedBy || null]
+  );
+  return mapFeatureFlag(row);
+}
+
+/**
+ * Every account exception, with the account's identity joined in.
+ *
+ * The console lists exceptions per feature and has to name the customer, so joining here
+ * avoids the caller cross-referencing against a separately fetched user list — and avoids
+ * showing a bare uid when that list is stale.
+ */
+export async function listFeatureAccess() {
+  const { rows } = await query(
+    `SELECT fa.feature_key, fa.user_id, fa.access, fa.created_at, fa.updated_at,
+            u.email, u.name
+       FROM feature_access fa
+       JOIN users u ON u.id = fa.user_id
+      ORDER BY fa.feature_key, u.email`
+  );
+  return rows.map(r => ({
+    featureKey: r.feature_key,
+    userId: r.user_id,
+    access: r.access,
+    email: r.email,
+    name: r.name,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+}
+
+/** The exceptions for one account, which is what resolving that account's features needs. */
+export async function listFeatureAccessForUser(userId) {
+  const { rows } = await query(
+    'SELECT feature_key, access FROM feature_access WHERE user_id = $1',
+    [userId]
+  );
+  return rows.map(r => ({ featureKey: r.feature_key, access: r.access }));
+}
+
+export async function setFeatureAccess(featureKey, userId, { access, grantedBy }) {
+  const row = await queryOne(
+    `INSERT INTO feature_access (user_id, feature_key, access, granted_by)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (user_id, feature_key) DO UPDATE SET
+       access     = EXCLUDED.access,
+       granted_by = EXCLUDED.granted_by
+     RETURNING *`,
+    [userId, featureKey, access, grantedBy || null]
+  );
+  return {
+    featureKey: row.feature_key,
+    userId: row.user_id,
+    access: row.access,
+  };
+}
+
+export async function clearFeatureAccess(featureKey, userId) {
+  const { rowCount } = await query(
+    'DELETE FROM feature_access WHERE user_id = $1 AND feature_key = $2',
+    [userId, featureKey]
+  );
+  return rowCount > 0;
+}
+
+/**
+ * The effective status of every feature for one account, ready to send to a client.
+ *
+ * Takes the workspace id, not the caller's own uid: an invited agent must see exactly what
+ * their supervisor's account has, for the same reason the plan and quota are resolved that
+ * way. Passing the member's id would give them an unconfigured parallel set.
+ */
+export async function resolveFeaturesForWorkspace(workspaceId) {
+  const [flags, overrides] = await Promise.all([
+    listFeatureFlags(),
+    listFeatureAccessForUser(workspaceId),
+  ]);
+  return resolveFeatures({ flags, overrides });
 }

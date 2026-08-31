@@ -457,14 +457,16 @@ export async function fetchActivityContributors({
 }
 
 /**
- * Which customers each teammate has been messaging, built from the agent name stamped
- * on outgoing messages. Supervisor-only on the server.
+ * The team's conversation history: one entry per customer conversation, newest activity
+ * first, carrying who started it and which teammates answered. Supervisor-only on the
+ * server.
  *
- * A rolling recent view, not a full log: only the last 100 messages per chat are kept
- * and only ones sent after the attribution feature shipped carry a name.
+ * A rolling recent view, not a full log: only the last `retainedPerChat` messages per
+ * chat are kept, and only messages sent after attribution shipped carry an agent name.
+ * `initiatedBy` is 'unknown' for any conversation longer than that window.
  */
-export async function fetchAgentActivity(sessionId = 'default') {
-  return apiFetch(`/api/stats/agent-activity?sessionId=${encodeURIComponent(sessionId)}`);
+export async function fetchConversationLog(sessionId = 'default') {
+  return apiFetch(`/api/stats/conversation-log?sessionId=${encodeURIComponent(sessionId)}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -546,4 +548,48 @@ export async function adminListTransactions() {
 export async function adminListAudit(limit = 200) {
   const data = await apiFetch(`/api/admin/audit?limit=${limit}`);
   return data.entries || [];
+}
+
+// ---------------------------------------------------------------------------
+// feature control
+// ---------------------------------------------------------------------------
+/**
+ * What this account is allowed to see, as { featureKey: 'released' | 'coming_soon' | 'hidden' }.
+ *
+ * Resolved server-side against the workspace, so a team sees one product. The server
+ * fails open — an unreadable flag table reports everything released rather than blanking
+ * the navigation — so a caller never has to decide what an error means.
+ */
+export async function fetchFeatures() {
+  const data = await apiFetch('/api/features');
+  return data.features || {};
+}
+
+// The admin catalogue: every feature with its configured status, note and account
+// exceptions. Writes return the full refreshed list, like the plan endpoints.
+export async function adminListFeatures() {
+  const data = await apiFetch('/api/admin/features');
+  return data.features || [];
+}
+
+export async function adminSetFeature(key, { status, note }) {
+  const data = await apiJson(`/api/admin/features/${encodeURIComponent(key)}`, 'PUT', { status, note });
+  return data.features || [];
+}
+
+export async function adminSetFeatureAccess(key, uid, access) {
+  const data = await apiJson(
+    `/api/admin/features/${encodeURIComponent(key)}/access/${encodeURIComponent(uid)}`,
+    'PUT',
+    { access }
+  );
+  return data.features || [];
+}
+
+export async function adminClearFeatureAccess(key, uid) {
+  const data = await apiJson(
+    `/api/admin/features/${encodeURIComponent(key)}/access/${encodeURIComponent(uid)}`,
+    'DELETE'
+  );
+  return data.features || [];
 }

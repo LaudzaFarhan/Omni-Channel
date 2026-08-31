@@ -36,6 +36,14 @@ const toMillis = (ts) => {
 // an older code path) so they can't pin a chat to the top of the list.
 const isSaneMs = (ms) => typeof ms === 'number' && Number.isFinite(ms) && ms > 0 && ms < Date.now() + 172800000;
 
+// How many messages are kept per chat.
+//
+// Exported rather than inlined because anything that reasons about the OLDEST message it
+// can see needs to know whether it is looking at the start of the conversation or merely
+// at the edge of this window. The conversation log depends on that distinction to avoid
+// claiming a customer started a chat when the opening message has simply aged out.
+export const MESSAGES_PER_CHAT = 100;
+
 class UserStore {
   constructor(uid) {
     this.uid = uid;
@@ -590,9 +598,9 @@ class UserStore {
         return tA - tB;
       });
 
-      // Keep only last 100 messages
-      if (this.messages[jid].length > 100) {
-        this.messages[jid] = this.messages[jid].slice(-100);
+      // Keep only the most recent window
+      if (this.messages[jid].length > MESSAGES_PER_CHAT) {
+        this.messages[jid] = this.messages[jid].slice(-MESSAGES_PER_CHAT);
       }
     } else if (message.agentName && !existingMsg.agentName) {
       // The send path stamps the sending agent, but WhatsApp also echoes our own

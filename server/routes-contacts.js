@@ -16,7 +16,7 @@ import {
   upsertContact, updateContact, deleteContact, deleteContactsBulk,
   importContacts, listContactTags,
 } from './data.js';
-import { authenticated } from './middleware.js';
+import { authenticated, requireFeature } from './middleware.js';
 import { getStore } from './store.js';
 import { sessionKey } from './scope.js';
 import { normalizePhone } from '../src/utils/phone.js';
@@ -24,6 +24,18 @@ import { normalizePhone } from '../src/utils/phone.js';
 // Postgres reports a unique-index collision as 23505. For contacts that only ever
 // means contacts_user_phone_key, i.e. this number is already saved.
 const UNIQUE_VIOLATION = '23505';
+
+// Every contacts route, read and write, is gated on the 'contacts' feature — an address
+// book that is hidden from the navigation but still readable over HTTP is not hidden.
+//
+// Composed from `authenticated` rather than `approved` because that is the chain these
+// routes already used: a contact list is the customer's own data and does not depend on
+// WhatsApp being connected.
+//
+// Knock-on effect worth knowing: the dashboard reads this to label chats with saved names.
+// With the feature off those labels fall back to whatever WhatsApp reported, which is the
+// pre-contacts behaviour and is already handled — the client logs a warning and carries on.
+const contactsEnabled = [...authenticated, requireFeature('contacts')];
 
 // Attach the conversation each contact maps to in this session, if any.
 //
@@ -95,7 +107,7 @@ export function mountContactRoutes(app, io) {
   // =========================================================================
   // read
   // =========================================================================
-  app.get('/api/contacts', authenticated, async (req, res) => {
+  app.get('/api/contacts', contactsEnabled, async (req, res) => {
     try {
       const sessionId = String(req.query.sessionId || 'default');
       const contacts = await listContacts(req.workspaceId);
@@ -107,7 +119,7 @@ export function mountContactRoutes(app, io) {
   });
 
   // Declared before '/:id' so 'tags' is not swallowed as an id.
-  app.get('/api/contacts/tags', authenticated, async (req, res) => {
+  app.get('/api/contacts/tags', contactsEnabled, async (req, res) => {
     try {
       res.json({ tags: await listContactTags(req.workspaceId) });
     } catch (err) {
@@ -118,7 +130,7 @@ export function mountContactRoutes(app, io) {
 
   // Look a number up without knowing its contact id — used by the chat window to
   // decide between "Save contact" and "Edit contact".
-  app.get('/api/contacts/by-phone/:phone', authenticated, async (req, res) => {
+  app.get('/api/contacts/by-phone/:phone', contactsEnabled, async (req, res) => {
     try {
       const phone = normalizePhone(req.params.phone);
       if (!phone) return res.status(400).json({ error: 'Not a valid phone number.', code: 'invalid_phone' });
@@ -137,7 +149,7 @@ export function mountContactRoutes(app, io) {
   // =========================================================================
   // Saving an already-saved number updates it rather than failing, because from
   // the operator's point of view "save this customer" should be idempotent.
-  app.post('/api/contacts', authenticated, async (req, res) => {
+  app.post('/api/contacts', contactsEnabled, async (req, res) => {
     try {
       const parsed = readContactBody(req.body || {}, { requirePhone: true });
       if (!parsed.ok) return res.status(400).json({ error: parsed.error, code: parsed.code });
@@ -155,7 +167,7 @@ export function mountContactRoutes(app, io) {
     }
   });
 
-  app.patch('/api/contacts/:id', authenticated, async (req, res) => {
+  app.patch('/api/contacts/:id', contactsEnabled, async (req, res) => {
     try {
       const id = String(req.params.id || '');
       if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'Invalid contact id.' });
@@ -181,7 +193,7 @@ export function mountContactRoutes(app, io) {
     }
   });
 
-  app.delete('/api/contacts/:id', authenticated, async (req, res) => {
+  app.delete('/api/contacts/:id', contactsEnabled, async (req, res) => {
     try {
       const id = String(req.params.id || '');
       if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'Invalid contact id.' });
@@ -200,7 +212,7 @@ export function mountContactRoutes(app, io) {
   // Bulk delete of an explicit id list. There is deliberately no "delete all"
   // filter: every id is checked against the caller's own rows, so the blast
   // radius is exactly what was ticked in the UI.
-  app.post('/api/contacts/delete-bulk', authenticated, async (req, res) => {
+  app.post('/api/contacts/delete-bulk', contactsEnabled, async (req, res) => {
     try {
       const ids = req.body?.ids;
       if (!Array.isArray(ids) || ids.length === 0) {
@@ -226,7 +238,7 @@ export function mountContactRoutes(app, io) {
   // show a preview and let the operator fix the column mapping before anything is
   // written. The server still re-normalises every number and re-checks the shape:
   // the parsed rows are just as untrusted as any other request body.
-  app.post('/api/contacts/import', authenticated, async (req, res) => {
+  app.post('/api/contacts/import', contactsEnabled, async (req, res) => {
     try {
       const incoming = req.body?.contacts;
       if (!Array.isArray(incoming) || incoming.length === 0) {

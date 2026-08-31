@@ -17,7 +17,13 @@ import {
   listAudit, recordAudit, revokeAllRefreshTokens,
   getChatSettings, listHeldChats, setChatHold, clearChatHold,
   setChatStatus, listChatStatuses, CHAT_STATUSES,
+  listFeatureFlags, setFeatureFlag, listFeatureAccess, setFeatureAccess,
+  clearFeatureAccess, resolveFeaturesForWorkspace,
 } from './data.js';
+import {
+  FEATURES, FEATURE_STATUSES, FEATURE_ACCESS, DEFAULT_STATUS,
+  findFeature, isLocked,
+} from './features.js';
 import { authenticated, admin, supervisor, clientIp } from './middleware.js';
 import { getStore } from './store.js';
 import { sessionKey, userRoom } from './scope.js';
@@ -38,6 +44,14 @@ function emitProfile(io, profile) {
 function emitPlans(io, plans) {
   if (!io) return;
   io.emit('plans-updated', plans);
+}
+
+// A feature rollout changed. Broadcast to everyone, but as a bare signal rather than a
+// payload: the effective map differs per account once overrides exist, so there is no one
+// object that is correct for every recipient. Each client re-reads its own /api/features.
+function emitFeatures(io) {
+  if (!io) return;
+  io.emit('features-updated');
 }
 
 function parseLimitOverride(value) {
@@ -569,6 +583,185 @@ export function mountDataRoutes(app, io) {
     } catch (err) {
       console.error('[Audit] List failed:', err);
       res.status(500).json({ error: 'Could not load the audit log.' });
+    }
+  });
+
+  // =========================================================================
+  // feature control
+  // =========================================================================
+  // What this account may see. Readable by any signed-in user, because it is the
+  // customer's own view of the product rather than administration.
+  //
+  // Resolved against the workspace, so an invited agent gets exactly what their
+  // supervisor's account gets — the same scoping as the plan and the quota.
+  //
+  // Fails open. If the flag tables cannot be read, every feature reports released rather
+  // than blanking the customer's navigation: an unreachable database should degrade the
+  // rollout control, not the product.
+  app.get('/api/features', authenticated, async (req, res) => {
+    try {
+      res.json({ features: await resolveFeaturesForWorkspace(req.workspaceId) });
+    } catch (err) {
+      console.error('[Features] Resolve failed:', err);
+      const fallback = {};
+      FEATURES.forEach((feature) => { fallback[feature.key] = DEFAULT_STATUS; });
+      res.json({ features: fallback, degraded: true });
+    }
+  });
+
+  // The whole catalogue with its configured state and every account exception, which is
+  // what the console needs to render in one request.
+  //
+  // The catalogue comes from code, so a feature appears here the moment it is added to
+  // server/features.js — an admin never has to create the row first.
+  async function featureAdminPayload() {
+    const [flags, access] = await Promise.all([listFeatureFlags(), listFeatureAccess()]);
+    const flagByKey = new Map(flags.map(f => [f.key, f]));
+
+    return FEATURES.map((feature) => {
+      const flag = flagByKey.get(feature.key);
+      return {
+        ...feature,
+        // A locked feature reports released whatever is stored, matching what the
+        // customer actually gets, so the console cannot show a status that is not real.
+        status: feature.locked ? 'released' : (flag?.status || DEFAULT_STATUS),
+        configured: Boolean(flag),
+        note: flag?.note || null,
+        updatedAt: flag?.updatedAt || null,
+        updatedBy: flag?.updatedBy || null,
+        overrides: access.filter(a => a.featureKey === feature.key),
+      };
+    });
+  }
+
+  app.get('/api/admin/features', admin, async (req, res) => {
+    try {
+      res.json({ features: await featureAdminPayload() });
+    } catch (err) {
+      console.error('[Features] Admin list failed:', err);
+      res.status(500).json({ error: 'Could not load the feature list.' });
+    }
+  });
+
+  // Set the rollout state for everyone.
+  app.put('/api/admin/features/:key', admin, async (req, res) => {
+    try {
+      const key = String(req.params.key || '');
+      const feature = findFeature(key);
+      if (!feature) {
+        return res.status(404).json({ error: `Unknown feature "${key}".`, code: 'unknown_feature' });
+      }
+
+      // Refused rather than silently coerced. These three are the only route an expired
+      // or locked-out customer has back to a working account, so hiding one would strand
+      // them — and an admin who tried deserves to be told, not ignored.
+      if (isLocked(key)) {
+        return res.status(400).json({
+          error: `"${feature.label}" cannot be hidden or deferred: customers need it to reach their account and billing.`,
+          code: 'feature_locked',
+        });
+      }
+
+      const status = String(req.body?.status || '');
+      if (!FEATURE_STATUSES.includes(status)) {
+        return res.status(400).json({
+          error: `status must be one of: ${FEATURE_STATUSES.join(', ')}.`,
+          code: 'invalid_status',
+        });
+      }
+
+      const note = req.body?.note ? String(req.body.note).slice(0, 300) : null;
+
+      await setFeatureFlag(key, { status, note, updatedBy: req.profile.uid });
+      emitFeatures(io);
+
+      await recordAudit({
+        actorUserId: req.profile.uid, actorEmail: req.profile.email,
+        action: 'feature.update', detail: { key, status, note }, ip: clientIp(req),
+      });
+
+      res.json({ features: await featureAdminPayload() });
+    } catch (err) {
+      console.error('[Features] Update failed:', err);
+      res.status(500).json({ error: 'Could not update the feature.' });
+    }
+  });
+
+  // Grant or refuse one account, whatever the global state.
+  app.put('/api/admin/features/:key/access/:uid', admin, async (req, res) => {
+    try {
+      const key = String(req.params.key || '');
+      const feature = findFeature(key);
+      if (!feature) {
+        return res.status(404).json({ error: `Unknown feature "${key}".`, code: 'unknown_feature' });
+      }
+      if (isLocked(key)) {
+        return res.status(400).json({
+          error: `"${feature.label}" is always available, so per-account access does not apply.`,
+          code: 'feature_locked',
+        });
+      }
+
+      const access = String(req.body?.access || '');
+      if (!FEATURE_ACCESS.includes(access)) {
+        return res.status(400).json({
+          error: `access must be one of: ${FEATURE_ACCESS.join(', ')}.`,
+          code: 'invalid_access',
+        });
+      }
+
+      const target = await findUserById(req.params.uid);
+      if (!target) return res.status(404).json({ error: 'Account not found.' });
+
+      // Overrides are keyed on the account that owns the workspace, because that is what
+      // resolution reads. Writing one against an invited member would store a row that
+      // never takes effect, which is worse than refusing it.
+      if (target.ownerUserId) {
+        return res.status(400).json({
+          error: `${target.email} is a team member. Set the exception on the account owner instead — it applies to their whole team.`,
+          code: 'not_workspace_owner',
+        });
+      }
+
+      await setFeatureAccess(key, target.uid, { access, grantedBy: req.profile.uid });
+      emitFeatures(io);
+
+      await recordAudit({
+        actorUserId: req.profile.uid, actorEmail: req.profile.email,
+        action: 'feature.access_set', targetUserId: target.uid,
+        detail: { key, access, email: target.email }, ip: clientIp(req),
+      });
+
+      res.json({ features: await featureAdminPayload() });
+    } catch (err) {
+      console.error('[Features] Access grant failed:', err);
+      res.status(500).json({ error: 'Could not update account access.' });
+    }
+  });
+
+  // Remove an exception, returning the account to the global rollout state.
+  app.delete('/api/admin/features/:key/access/:uid', admin, async (req, res) => {
+    try {
+      const key = String(req.params.key || '');
+      if (!findFeature(key)) {
+        return res.status(404).json({ error: `Unknown feature "${key}".`, code: 'unknown_feature' });
+      }
+
+      const removed = await clearFeatureAccess(key, req.params.uid);
+      if (!removed) return res.status(404).json({ error: 'No exception to remove.' });
+
+      emitFeatures(io);
+
+      await recordAudit({
+        actorUserId: req.profile.uid, actorEmail: req.profile.email,
+        action: 'feature.access_clear', targetUserId: req.params.uid,
+        detail: { key }, ip: clientIp(req),
+      });
+
+      res.json({ features: await featureAdminPayload() });
+    } catch (err) {
+      console.error('[Features] Access clear failed:', err);
+      res.status(500).json({ error: 'Could not remove account access.' });
     }
   });
 }

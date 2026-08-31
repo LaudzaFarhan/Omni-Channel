@@ -121,8 +121,12 @@ export default function DateRangePicker({
         aria-haspopup="dialog"
       >
         <CalendarRange size={14} />
-        <span>{label || 'Pilih tanggal'}</span>
-        {spanDays > 0 && <span className="heatmap-calendar-count">{spanDays} hari</span>}
+        <span>{label || 'Pick dates'}</span>
+        {spanDays > 0 && (
+          <span className="heatmap-calendar-count">
+            {spanDays} {spanDays === 1 ? 'day' : 'days'}
+          </span>
+        )}
       </button>
 
       {label && onClear && (
@@ -130,8 +134,8 @@ export default function DateRangePicker({
           type="button"
           className="heatmap-calendar-clear"
           onClick={onClear}
-          aria-label="Hapus rentang tanggal"
-          title="Hapus rentang"
+          aria-label="Clear date range"
+          title="Clear range"
         >
           <X size={13} />
         </button>
@@ -142,25 +146,25 @@ export default function DateRangePicker({
           className={`heatmap-calendar-pop ${align === 'right' ? 'align-right' : ''}`}
           role="dialog"
           aria-modal="false"
-          aria-label="Pilih rentang tanggal"
+          aria-label="Select a date range"
         >
           <div className="heatmap-calendar-nav">
             <button
               type="button"
               onClick={() => setCursor(addMonths(cursor, -1))}
               disabled={!canGoBack}
-              aria-label="Bulan sebelumnya"
+              aria-label="Previous month"
             >
               <ChevronLeft size={16} />
             </button>
             <span aria-live="polite">
-              {anchor ? 'Pilih tanggal akhir' : 'Pilih tanggal awal'}
+              {anchor ? 'Pick the end date' : 'Pick the start date'}
             </span>
             <button
               type="button"
               onClick={() => setCursor(addMonths(cursor, 1))}
               disabled={!canGoForward}
-              aria-label="Bulan berikutnya"
+              aria-label="Next month"
             >
               <ChevronRight size={16} />
             </button>
@@ -214,10 +218,10 @@ export default function DateRangePicker({
           <div className="heatmap-calendar-foot">
             <span>
               {anchor
-                ? `Mulai ${formatDayRange(anchor, anchor)} — pilih tanggal akhir`
+                ? `From ${formatDayRange(anchor, anchor)} — pick the end date`
                 : label
-                  ? `Terpilih: ${label}`
-                  : 'Klik tanggal awal, lalu tanggal akhir'}
+                  ? `Selected: ${label}`
+                  : 'Click the start date, then the end date'}
             </span>
             {minDay && maxDay && (
               <span className="heatmap-calendar-avail">

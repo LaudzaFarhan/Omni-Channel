@@ -1,43 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Users, Search, ChevronRight, MessageSquare, Clock, X } from 'lucide-react';
-import { getChatDisplayName, getInitials, isSelfChat } from '../../utils/displayName.js';
-
-const AVATAR_COLORS = [
-  '#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444',
-  '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#6366f1',
-];
-
-// Stable per conversation, so a customer keeps the same colour between renders and
-// between sessions.
-function avatarColor(jid) {
-  let hash = 0;
-  for (let i = 0; i < (jid || '').length; i++) {
-    hash = jid.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-}
-
-// Short enough to sit in a narrow column: a time today, a weekday this week, then a
-// date. The full timestamp goes in the title attribute.
-function shortWhen(ms) {
-  if (!ms) return '';
-  const d = new Date(ms);
-  if (!Number.isFinite(d.getTime())) return '';
-
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-  }
-
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  if (d.toDateString() === yesterday.toDateString()) return 'Kemarin';
-
-  if (now - d < 7 * 86400000) {
-    return d.toLocaleDateString('id-ID', { weekday: 'short' });
-  }
-  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
-}
+import { getChatDisplayName, getInitials, avatarColor, isSelfChat } from '../../utils/displayName.js';
+import { shortWhen } from '../../utils/timeFormat.js';
 
 // Customers, most recently active first, beside the heatmap.
 //
@@ -127,15 +91,17 @@ export default function CustomerList({
           <Clock size={13} style={{ flexShrink: 0, color: 'var(--primary)' }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <strong>{cellSelection.label}</strong>
+            {/* English, because it completes the sentence the heat map hands over in
+                `label` ("Monday at 14:00"), and the two halves cannot disagree. */}
             <div className="customer-cellfilter-sub">
               {cellSelection.count === 0
-                ? 'Tidak ada interaksi pada jam ini'
+                ? 'No interactions in this hour'
                 : <>
-                    {cellSelection.count} interaksi
+                    {cellSelection.count} {cellSelection.count === 1 ? 'interaction' : 'interactions'}
                     {/* The count includes group traffic, which this list cannot show. Said
                         out loud, because otherwise the rows visibly fail to add up. */}
                     {cellSelection.groupTotal > 0 && (
-                      <> · {cellSelection.groupTotal} dari grup (tidak ditampilkan)</>
+                      <> · {cellSelection.groupTotal} from groups (not shown)</>
                     )}
                   </>}
             </div>
@@ -143,8 +109,8 @@ export default function CustomerList({
           <button
             onClick={onClearCellSelection}
             className="customer-cellfilter-clear"
-            aria-label="Hapus filter jam"
-            title="Tampilkan semua pelanggan"
+            aria-label="Clear the hour filter"
+            title="Show all customers"
           >
             <X size={14} />
           </button>
@@ -178,7 +144,7 @@ export default function CustomerList({
                   : cellSelection
                     // Reached when every interaction in the cell came from groups, which
                     // this list excludes. Without this the panel would look broken.
-                    ? 'Interaksi pada jam ini hanya dari grup, bukan pelanggan'
+                    ? 'Every interaction in this hour came from groups, not customers'
                     : 'Belum ada percakapan dengan pelanggan'}
             </p>
           </div>

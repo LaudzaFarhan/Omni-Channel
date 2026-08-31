@@ -72,6 +72,27 @@ export function getChatDisplayName(chat, userInfo, savedName) {
   return isRealName(chat.name) ? chat.name : (rawId || 'Unknown');
 }
 
+// Avatar palette. Deliberately varied rather than brand-coloured: the colour exists to
+// tell one row from the next, and a column of identical circles does not.
+const AVATAR_COLORS = [
+  '#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444',
+  '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#6366f1',
+];
+
+/**
+ * Stable avatar colour for a seed (a chat JID, or an agent uid).
+ *
+ * Hashed rather than assigned by index so a person keeps the same colour between
+ * renders, between panels and between sessions — an avatar that changes colour when the
+ * list reorders reads as a different person.
+ */
+export function avatarColor(seed) {
+  const s = String(seed || '');
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) hash = s.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
 /** Two-letter avatar initials derived from the display label. */
 export function getInitials(label) {
   if (!label) return 'WA';

@@ -42,6 +42,13 @@
   --wa-read-receipt-outline: #075985;
   --link-color: #294da8;
 
+  /* Warning, for states that ask for attention without being errors: a customer waiting
+   * for a first reply, a pending invite. Opaque soft fill for the same reason as the
+   * others — a translucent one composites differently on every surface it sits on. */
+  --warning: #b45309;
+  --warning-soft: #fef3e2;
+  --warning-border: rgba(245, 158, 11, 0.28);
+
   --text-main: #111b21;
   --text-muted: #3b4a54;
   --text-dimmed: #667781;
@@ -115,6 +122,10 @@
   --wa-read-receipt: #34b7f1;
   --wa-read-receipt-outline: #075985;
   --link-color: #b5c4ff;
+
+  --warning: #fbbf24;
+  --warning-soft: #2a2011;
+  --warning-border: rgba(251, 191, 36, 0.32);
 
   --text-main: #e9edef;
   --text-muted: #aebac1;
@@ -2821,10 +2832,13 @@ input:checked + .slider:before {
   gap: 24px;
 }
 
-/* Stats Cards Row */
+/* Stats Cards Row.
+   auto-fit rather than a fixed four, because the number of cards is now conditional:
+   the "menunggu balasan" card only exists for a supervisor, and a hardcoded count left
+   either a gap or an orphan row. */
 .dashboard-stats-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 16px;
 }
 
@@ -2876,6 +2890,21 @@ input:checked + .slider:before {
   line-height: 1;
   position: relative;
   z-index: 1;
+}
+
+/* The unit or denominator behind the headline figure — "dari kuota 50.000", "tanpa grup".
+   Without it a bare number invites the reader to guess what it counts, which is how the
+   old labels ended up describing the wrong thing.
+
+   The negative margin pulls it back out of the card's 16px flex gap: it belongs to the
+   value above it, not to a third row of its own. */
+.stat-card-sub {
+  font-size: 0.74rem;
+  font-weight: 600;
+  opacity: 0.85;
+  position: relative;
+  z-index: 1;
+  margin-top: -8px;
 }
 
 .stat-card-bg-icon {
@@ -2996,18 +3025,32 @@ input:checked + .slider:before {
   gap: 4px;
 }
 
+/* A button, not a div: these rows already looked clickable but did nothing, while the
+   identical row in the customer list opened the conversation. The reset keeps the
+   appearance and gains keyboard focus. */
 .recent-message-item {
   display: flex;
   align-items: center;
   gap: 12px;
+  width: 100%;
   padding: 10px 8px;
+  border: none;
   border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
   transition: background 0.15s ease;
   cursor: pointer;
 }
 
 .recent-message-item:hover {
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--overlay-subtle);
+}
+
+.recent-message-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
 }
 
 .recent-msg-avatar {
@@ -3025,6 +3068,7 @@ input:checked + .slider:before {
 }
 
 .recent-msg-content {
+  display: block;
   flex: 1;
   min-width: 0;
 }
@@ -3053,6 +3097,7 @@ input:checked + .slider:before {
 }
 
 .recent-msg-text {
+  display: block;
   font-size: 0.82rem;
   color: var(--text-dimmed);
   overflow: hidden;
@@ -3848,6 +3893,688 @@ input:checked + .slider:before {
   border-color: transparent;
 }
 
+/* ---------------------------------------------------------------------------
+   Conversation log + pipeline row
+   ---------------------------------------------------------------------------
+   The log is the wider column: its rows carry a name, three counters and a list of
+   agents, while the pipeline is three short bars. Below ~1100px they stack, matching the
+   insight row above so the page has one breakpoint rather than several. */
+.dashboard-log-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  gap: 24px;
+}
+
+/* An invited member does not get the log (its endpoint is supervisor-only), so the
+   pipeline would otherwise sit in a half-width column with dead space beside it. */
+.dashboard-log-row.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (max-width: 1100px) {
+  .dashboard-log-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Conversation log
+   --------------------------------------------------------------------------- */
+.convlog-panel {
+  /* Bounded so a busy account cannot push the rest of the page off screen; the list
+     inside scrolls instead. */
+  max-height: 460px;
+}
+
+.convlog-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 10px 10px;
+}
+
+.convlog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.convlog-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.convlog-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.13s ease;
+}
+
+.convlog-row:hover {
+  background: var(--overlay-subtle);
+}
+
+.convlog-row:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.convlog-avatar {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.convlog-body {
+  display: block;
+  flex: 1;
+  min-width: 0;
+}
+
+.convlog-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.convlog-name {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* Who started it, and whether anyone has answered. Text as well as colour, because the
+   distinction is the point of the row and colour alone does not carry it. */
+.convlog-tag {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background: var(--overlay-subtle);
+  color: var(--text-dimmed);
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.convlog-tag.is-customer {
+  border-color: var(--primary-border);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.convlog-tag.is-awaiting {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.convlog-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+  font-size: 0.75rem;
+  color: var(--text-dimmed);
+}
+
+.convlog-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.convlog-counts svg {
+  opacity: 0.75;
+}
+
+/* Second and later icons need separating from the number before them. */
+.convlog-counts svg + svg,
+.convlog-counts svg:not(:first-child) {
+  margin-left: 5px;
+}
+
+/* The whole per-agent view, reduced to one line per conversation. */
+.convlog-agents {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.convlog-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 5px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--overlay-subtle);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.convlog-agent i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.convlog-agent b {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-dimmed);
+}
+
+.convlog-agent.is-muted {
+  border-style: dashed;
+  color: var(--text-dimmed);
+}
+
+.convlog-tail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.convlog-when {
+  font-size: 0.74rem;
+  color: var(--text-dimmed);
+  white-space: nowrap;
+}
+
+.convlog-unread {
+  min-width: 19px;
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--primary);
+  color: var(--primary-contrast);
+  font-size: 0.68rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Full-page variant */
+.convlog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.convlog-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.convlog-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 9px 15px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.convlog-refresh:hover:not(:disabled) {
+  background: var(--overlay-subtle);
+  color: var(--text-main);
+}
+
+.convlog-refresh:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.convlog-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.convlog-stat {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+}
+
+.convlog-stat.is-awaiting {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+}
+
+.convlog-stat.is-awaiting .convlog-stat-value,
+.convlog-stat.is-awaiting .convlog-stat-label {
+  color: var(--warning);
+}
+
+.convlog-stat-value {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--text-main);
+}
+
+.convlog-stat-label {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dimmed);
+}
+
+.convlog-filters {
+  padding: 0 0 12px;
+}
+
+/* Notes and states shared by both variants */
+.convlog-alert,
+.convlog-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.convlog-alert {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--warning-border);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.convlog-note {
+  border-radius: 8px;
+  background: var(--overlay-subtle);
+  color: var(--text-muted);
+}
+
+.convlog-error {
+  padding: 14px;
+  border-radius: 8px;
+  border-left: 4px solid #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.convlog-error strong {
+  color: #ef4444;
+}
+
+.convlog-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px;
+  color: var(--text-dimmed);
+  font-size: 0.88rem;
+}
+
+/* Footer action, shared with the pipeline panel. */
+.convlog-seeall {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex-shrink: 0;
+  width: 100%;
+  padding: 11px;
+  border: none;
+  border-top: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--primary);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.convlog-seeall:hover {
+  background: var(--primary-subtle);
+}
+
+/* ---------------------------------------------------------------------------
+   Pipeline panel
+   --------------------------------------------------------------------------- */
+.pipeline-body {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 16px;
+}
+
+.pipeline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pipeline-row {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.pipeline-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+}
+
+.pipeline-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pipeline-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--overlay-medium);
+  overflow: hidden;
+}
+
+.pipeline-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+.pipeline-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.pipeline-value small {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-dimmed);
+}
+
+.pipeline-note {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-dimmed);
+  line-height: 1.45;
+}
+
+/* ---------------------------------------------------------------------------
+   Feature grid
+   ---------------------------------------------------------------------------
+   The index of every feature area. Cards rather than a list because each carries a
+   metric as well as a label, and because they have to stay legible at a third of the
+   width on a phone. */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+  padding: 18px 22px 22px;
+}
+
+.feature-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--overlay-subtle);
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.feature-card:hover {
+  border-color: var(--primary-border);
+  background: var(--primary-subtle);
+  transform: translateY(-1px);
+}
+
+.feature-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.feature-card-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.feature-icon {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.feature-label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.feature-badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.feature-badge.tone-primary {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.feature-badge.tone-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+/* Pushed to the far end of the row, so every card's affordance lines up. */
+.feature-chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-dimmed);
+}
+
+.feature-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.feature-metric strong {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.feature-metric small {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-dimmed);
+}
+
+.feature-desc {
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--text-dimmed);
+}
+
+/* ---------------------------------------------------------------------------
+   Feature control: coming-soon states
+   --------------------------------------------------------------------------- */
+/* "Soon" beside a nav label. Sits inside .nav-label so it disappears with the text when
+   the sidebar collapses to icons, where there is no room for it. */
+.nav-soon {
+  margin-left: 7px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  border: 1px solid var(--warning-border);
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
+/* Where a coming-soon nav item lands. Centred in the pane rather than laid out like a
+   real view, because there is nothing to lay out. */
+.coming-soon-card {
+  margin: auto;
+  max-width: 420px;
+  padding: 40px 32px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.coming-soon-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--warning-soft);
+  color: var(--warning);
+  border: 1px solid var(--warning-border);
+}
+
+.coming-soon-card h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.coming-soon-card p {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.coming-soon-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.coming-soon-back:hover {
+  background: var(--overlay-subtle);
+  color: var(--text-main);
+}
+
+/* The insight row normally pairs the heat map with the customer list. With the heat map
+   hidden the list takes the full width instead of leaving a gap. */
+.dashboard-insight-row.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.dashboard-insight-row.is-single .customer-panel-cell {
+  position: static;
+  height: 420px;
+}
+
+.dashboard-insight-row.is-single .customer-panel {
+  position: static;
+  height: 100%;
+}
+
 /* Responsive Dashboard */
 @media (max-width: 1100px) {
   .dashboard-stats-row {
@@ -3864,6 +4591,22 @@ input:checked + .slider:before {
   }
   .dashboard-view {
     padding: 16px;
+  }
+  .feature-grid {
+    grid-template-columns: 1fr;
+    padding: 14px 16px 18px;
+  }
+  /* The tail wraps under the body on a narrow row rather than squeezing the name to a
+     few characters. */
+  .convlog-row {
+    flex-wrap: wrap;
+  }
+  .convlog-tail {
+    width: 100%;
+    padding-left: 50px;
+  }
+  .convlog-panel {
+    max-height: none;
   }
 }
 

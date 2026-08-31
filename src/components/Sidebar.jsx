@@ -1,9 +1,44 @@
 import React from 'react';
-import { LayoutDashboard, MessageSquare, BookUser, Users, CreditCard, User, Settings, LogOut, Bell, Activity } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, BookUser, Users, CreditCard, User, Settings, LogOut, Bell, History } from 'lucide-react';
 import { BrandLockup } from './BrandMark.jsx';
+import { isVisible, isComingSoon } from '../utils/features.js';
 
-export default function Sidebar({ activeTab, setActiveTab, onLogout, collapsed, notifications = [], isSupervisor = true }) {
+export default function Sidebar({
+  activeTab, setActiveTab, onLogout, collapsed, notifications = [], isSupervisor = true,
+  // Effective feature map for this account, from the server. Absent or incomplete reads as
+  // everything released — see src/utils/features.js for why it fails open.
+  features = {},
+}) {
   const unreadCount = notifications.filter(n => !n.read).length;
+
+  // One nav item.
+  //
+  // Two feature states matter here and they are handled differently. A hidden feature
+  // renders nothing at all: the point is that the customer cannot tell it exists, so a
+  // greyed-out row would defeat it. A coming-soon feature stays clickable and keeps its
+  // badge, because announcing it is the point — the view it opens says it is not ready.
+  const NavItem = ({ tab, icon: Icon, label, feature, children }) => {
+    const key = feature || tab;
+    if (!isVisible(features, key)) return null;
+
+    const soon = isComingSoon(features, key);
+
+    return (
+      <button
+        className={`nav-item ${activeTab === tab ? 'active' : ''}`}
+        onClick={() => setActiveTab(tab)}
+        title={soon ? `${label} — coming soon` : label}
+      >
+        {children || <Icon size={22} />}
+        {!collapsed && (
+          <span className="nav-label">
+            {label}
+            {soon && <span className="nav-soon">Soon</span>}
+          </span>
+        )}
+      </button>
+    );
+  };
 
   return (
     <div className={`nav-sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -12,38 +47,13 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout, collapsed, 
           <BrandLockup markSize={32} showName={!collapsed} />
         </div>
 
-        <button 
-          className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-          onClick={() => setActiveTab('dashboard')}
-          title="Dashboard"
-        >
-          <LayoutDashboard size={22} />
-          {!collapsed && <span className="nav-label">Dashboard</span>}
-        </button>
-        
-        <button 
-          className={`nav-item ${activeTab === 'messages' ? 'active' : ''}`}
-          onClick={() => setActiveTab('messages')}
-          title="Messages"
-        >
-          <MessageSquare size={22} />
-          {!collapsed && <span className="nav-label">Messages</span>}
-        </button>
+        <NavItem tab="dashboard" icon={LayoutDashboard} label="Dashboard" />
 
-        <button 
-          className={`nav-item ${activeTab === 'contacts' ? 'active' : ''}`}
-          onClick={() => setActiveTab('contacts')}
-          title="Contacts"
-        >
-          <BookUser size={22} />
-          {!collapsed && <span className="nav-label">Contacts</span>}
-        </button>
+        <NavItem tab="messages" icon={MessageSquare} label="Messages" />
 
-        <button 
-          className={`nav-item ${activeTab === 'notifications' ? 'active' : ''}`}
-          onClick={() => setActiveTab('notifications')}
-          title="Notifications"
-        >
+        <NavItem tab="contacts" icon={BookUser} label="Contacts" />
+
+        <NavItem tab="notifications" label="Notifications">
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Bell size={22} />
             {unreadCount > 0 && (
@@ -68,67 +78,28 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout, collapsed, 
               </span>
             )}
           </div>
-          {!collapsed && <span className="nav-label">Notifications</span>}
-        </button>
+        </NavItem>
 
         {/* Team and Subscription belong to whoever owns the account. An invited
             agent has no business seeing the billing or managing colleagues, and the
             server refuses those endpoints for them anyway (the `supervisor`
             middleware chain) — hiding them keeps the UI honest about it rather than
             offering buttons that 403. */}
-        {isSupervisor && (
-          <button 
-            className={`nav-item ${activeTab === 'team' ? 'active' : ''}`}
-            onClick={() => setActiveTab('team')}
-            title="Team"
-          >
-            <Users size={22} />
-            {!collapsed && <span className="nav-label">Team</span>}
-          </button>
-        )}
+        {isSupervisor && <NavItem tab="team" icon={Users} label="Team" />}
 
         {/* Oversight of the whole team, so it belongs to the owner alongside Team.
             An invited agent has no business auditing colleagues, and the endpoint
-            behind it is supervisor-gated anyway. */}
-        {isSupervisor && (
-          <button 
-            className={`nav-item ${activeTab === 'activity' ? 'active' : ''}`}
-            onClick={() => setActiveTab('activity')}
-            title="Activity"
-          >
-            <Activity size={22} />
-            {!collapsed && <span className="nav-label">Activity</span>}
-          </button>
-        )}
+            behind it is supervisor-gated anyway.
 
-        {isSupervisor && (
-          <button 
-            className={`nav-item ${activeTab === 'subscription' ? 'active' : ''}`}
-            onClick={() => setActiveTab('subscription')}
-            title="Subscription"
-          >
-            <CreditCard size={22} />
-            {!collapsed && <span className="nav-label">Subscription</span>}
-          </button>
-        )}
+            Labelled for what it lists — the history of customer conversations — rather
+            than the old "Activity", which read as a system log. */}
+        {isSupervisor && <NavItem tab="activity" icon={History} label="Chat History" />}
 
-        <button 
-          className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`}
-          onClick={() => setActiveTab('profile')}
-          title="Profile"
-        >
-          <User size={22} />
-          {!collapsed && <span className="nav-label">Profile</span>}
-        </button>
+        {isSupervisor && <NavItem tab="subscription" icon={CreditCard} label="Subscription" />}
 
-        <button 
-          className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
-          onClick={() => setActiveTab('settings')}
-          title="Settings"
-        >
-          <Settings size={22} />
-          {!collapsed && <span className="nav-label">Settings</span>}
-        </button>
+        <NavItem tab="profile" icon={User} label="Profile" />
+
+        <NavItem tab="settings" icon={Settings} label="Settings" />
       </div>
 
       <div className="nav-bottom">

@@ -1,177 +1,313 @@
-import React, { useMemo, useState } from 'react';
-import { Send, MessageCircle, Users, Phone, TrendingUp, Clock, MessageSquare } from 'lucide-react';
-import { getChatDisplayName, getInitials } from '../utils/displayName.js';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Send, MailOpen, Users, Phone, BookUser, Clock3, TrendingUp, Clock, MessageSquare,
+} from 'lucide-react';
+import {
+  getChatDisplayName, getInitials, avatarColor, isSelfChat,
+} from '../utils/displayName.js';
+import { relativeWhen, fullWhen } from '../utils/timeFormat.js';
+import { fetchChatStatuses, fetchTeam } from '../utils/api.js';
+import { subscribeSocket } from '../utils/socket.js';
+import { isReleased, isVisible } from '../utils/features.js';
 import InteractionHeatmap from './dashboard/InteractionHeatmap.jsx';
 import CustomerList from './dashboard/CustomerList.jsx';
+import ConversationLog from './dashboard/ConversationLog.jsx';
+import PipelinePanel from './dashboard/PipelinePanel.jsx';
+import FeatureGrid from './dashboard/FeatureGrid.jsx';
 
+const DAY_MS = 86400000;
+
+/**
+ * The home page.
+ *
+ * It used to show four counters, a heatmap and two charts, which left most of the product
+ * undiscoverable from here — team oversight, the pipeline, contacts, quota and the
+ * conversation history were all sidebar-only. Every feature area is now represented, and
+ * the counters say what they actually count: two of them used to be labelled as things
+ * they were not ("Pesan Masuk" was the unread total, "Total Kontak" was the chat count,
+ * which includes groups and is unrelated to the saved address book).
+ *
+ * Supervisor-only panels are gated here as well as in the sidebar, because the endpoints
+ * behind them are supervisor-gated on the server: rendering them for an invited member
+ * would just show a 403.
+ */
 export default function Dashboard({
-  chats, userProfile, userInfo, waSessions, messages, savedNames = {},
+  chats, userProfile, userInfo, waSessions, savedNames = {},
   activeSessionId = 'default', connectionStatus, onOpenChat,
+  // Saved address book size, notification state and navigation, so the page can report
+  // on features it does not itself own.
+  contactCount = 0, notifications = [], isSupervisor = true, onNavigate,
+  // Effective feature map for this account. Panels an admin has hidden are not rendered,
+  // and their data is not fetched.
+  features = {},
 }) {
   // Which heatmap cell is drilled into, and the conversations behind it. Held here rather
   // than in either panel because it is produced by one and consumed by the other.
   const [cellSelection, setCellSelection] = useState(null);
-  // Calculate stats from real data
-  const totalContacts = Array.isArray(chats) ? chats.length : 0;
-  const activeNumbers = Array.isArray(waSessions) 
-    ? waSessions.filter(s => s.status === 'connected').length 
-    : 0;
+
+  // Commercial state per chat JID, for the pipeline panel. Absent means 'prospect'.
+  const [chatStatuses, setChatStatuses] = useState({});
+
+  // Seat usage, for the Team card. Null until the request lands, so the card can say
+  // "—" instead of showing a zero that reads as "no agents".
+  const [seats, setSeats] = useState(null);
+
+  // Totals reported by the conversation log, reused by the feature grid so the two do not
+  // make the same request twice.
+  const [logTotals, setLogTotals] = useState(null);
+
+  const chatList = Array.isArray(chats) ? chats : [];
+
+  // Which panels this account gets. The conversation log is supervisor-only on top of its
+  // flag, because its endpoint is.
+  const showHeatmap = isVisible(features, 'heatmap');
+  const showPipeline = isVisible(features, 'pipeline');
+  const showLog = isSupervisor && isReleased(features, 'activity');
+
+  // ---------------------------------------------------------------------------
+  // pipeline statuses: same source and same live updates as the chat list
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    // Nothing consumes the statuses when the pipeline is hidden, so do not ask for them.
+    if (!showPipeline) return;
+
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const list = await fetchChatStatuses(activeSessionId);
+        if (cancelled) return;
+        const map = {};
+        list.forEach(({ chatJid, status }) => { map[chatJid] = status; });
+        setChatStatuses(map);
+      } catch (err) {
+        // Degrades to "everything is a prospect", which is the default anyway, so a
+        // missing status map must not take the dashboard down.
+        console.info('[Dashboard] Could not load chat statuses:', err.message);
+      }
+    };
+    load();
+
+    const handleStatus = (settings) => {
+      if (!settings?.chatJid) return;
+      setChatStatuses(prev => ({ ...prev, [settings.chatJid]: settings.status }));
+    };
+
+    let attached = null;
+    const unsubscribe = subscribeSocket((socket) => {
+      if (attached) attached.off('chat-status-updated', handleStatus);
+      attached = null;
+      if (socket) {
+        socket.on('chat-status-updated', handleStatus);
+        attached = socket;
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      if (attached) attached.off('chat-status-updated', handleStatus);
+    };
+  }, [activeSessionId, showPipeline]);
+
+  // ---------------------------------------------------------------------------
+  // seats: supervisor-only, because /api/team is
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!isSupervisor) {
+      setSeats(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchTeam();
+        if (!cancelled) setSeats(data?.seats || null);
+      } catch (err) {
+        console.info('[Dashboard] Could not load team seats:', err.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isSupervisor]);
+
+  // ---------------------------------------------------------------------------
+  // derived counters
+  // ---------------------------------------------------------------------------
   const messagesSent = userProfile?.messagesSent || 0;
-  
-  // Count incoming messages from chats' unread counts
-  const incomingMessages = Array.isArray(chats) 
-    ? chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0) 
+  const messageLimit = userProfile?.messageLimit || 0;
+  const sessionLimit = userProfile?.sessionLimit || 0;
+
+  const activeNumbers = Array.isArray(waSessions)
+    ? waSessions.filter(s => s.status === 'connected').length
     : 0;
 
-  // Get recent chats sorted by lastMessageTimestamp (already in ms)
-  const recentChats = useMemo(() => {
-    if (!Array.isArray(chats)) return [];
-    return [...chats]
+  const unreadChats = chatList.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+
+  // Conversations with actual customers: the same exclusions the customer list applies, so
+  // the card and the panel beside it cannot report different numbers. A group is not a
+  // customer and the self-chat is not a conversation.
+  const customerConversations = useMemo(
+    () => chatList.filter(c => c?.id && !c.id.endsWith('@g.us') && !isSelfChat(c, userInfo)).length,
+    [chatList, userInfo]
+  );
+
+  const unreadNotifications = notifications.filter(n => !n.read).length;
+
+  // Six most recently active conversations.
+  const recentChats = useMemo(() => (
+    [...chatList]
       .filter(c => c.lastMessageTimestamp)
       .sort((a, b) => (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0))
-      .slice(0, 6);
-  }, [chats]);
+      .slice(0, 6)
+  ), [chatList]);
 
-  // Build activity chart from real chat timestamps (last 7 days)
+  // Conversations active on each of the last 7 days, from each chat's most recent message.
+  //
+  // Named for what it measures. It was titled "Aktivitas Pengiriman" (messages sent),
+  // which this cannot show: a chat contributes to exactly one day however many messages
+  // it carried, and inbound traffic counts too.
   const activityData = useMemo(() => {
-    if (!Array.isArray(chats)) return [];
-    
     const now = new Date();
-    const dayLabels = [];
-    const dayCounts = [];
-    
-    // Build last 7 days
-    for (let i = 6; i >= 0; i--) {
+    return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      dayLabels.push(d.toLocaleDateString('en-US', { weekday: 'short' }));
-      
+      d.setDate(d.getDate() - (6 - i));
+
       const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-      const dayEnd = dayStart + 86400000;
-      
-      // Count chats that had their last message on this day
-      const count = chats.filter(c => {
-        const ts = c.lastMessageTimestamp;
-        return ts && ts >= dayStart && ts < dayEnd;
-      }).length;
-      
-      dayCounts.push(count);
-    }
-    
-    return dayLabels.map((label, i) => ({ label, count: dayCounts[i] }));
-  }, [chats]);
+      const dayEnd = dayStart + DAY_MS;
+
+      return {
+        label: d.toLocaleDateString('id-ID', { weekday: 'short' }),
+        count: chatList.filter((c) => {
+          const ts = c.lastMessageTimestamp;
+          return ts && ts >= dayStart && ts < dayEnd;
+        }).length,
+      };
+    });
+  }, [chatList]);
 
   const maxCount = Math.max(1, ...activityData.map(d => d.count));
   const maxBarHeight = 120;
   const hasActivity = activityData.some(d => d.count > 0);
 
-  // Format timestamp (already in ms) to relative time
-  const formatTime = (timestamp) => {
-    if (!timestamp) return '';
-    const date = new Date(timestamp);
-    if (isNaN(date.getTime())) return '';
-    
-    const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-
-    if (date.toDateString() === new Date(now - 86400000).toDateString()) return 'Yesterday';
-    
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
-
-  // Naming/initials come from the shared helper so every view agrees. A saved
-  // contact name beats the pushName WhatsApp reports.
   const getDisplayName = (chat) => getChatDisplayName(chat, userInfo, savedNames[chat.id]);
 
-  // Stable avatar color per chat ID
-  const getAvatarColor = (jid) => {
-    const colors = [
-      '#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444',
-      '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#6366f1'
-    ];
-    let hash = 0;
-    for (let i = 0; i < (jid || '').length; i++) {
-      hash = jid.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return colors[Math.abs(hash) % colors.length];
+  const handleTotals = useCallback((totals) => setLogTotals(totals), []);
+
+  // ---------------------------------------------------------------------------
+  // stat cards
+  // ---------------------------------------------------------------------------
+  // `tone` selects a gradient and its foreground together, so a card can never end up
+  // with dark text on a dark fill.
+  const TONES = {
+    neutral: {
+      gradient: 'linear-gradient(135deg, #f8fafc, #e2e8f0)',
+      iconBg: 'rgba(100, 116, 139, 0.08)', iconColor: '#64748b',
+      textColor: '#334155', valueColor: '#1e293b', bgIconColor: 'rgba(100, 116, 139, 0.06)',
+    },
+    // Follows the theme rather than a literal, so the brand card tracks light/dark.
+    brand: {
+      gradient: 'var(--brand-gradient)',
+      iconBg: 'rgba(255,255,255,0.25)', iconColor: '#ffffff',
+      textColor: 'rgba(255,255,255,0.9)', valueColor: '#ffffff', bgIconColor: 'rgba(255,255,255,0.1)',
+    },
+    violet: {
+      gradient: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+      iconBg: 'rgba(255,255,255,0.25)', iconColor: '#ffffff',
+      textColor: 'rgba(255,255,255,0.9)', valueColor: '#ffffff', bgIconColor: 'rgba(255,255,255,0.1)',
+    },
+    cyan: {
+      gradient: 'linear-gradient(135deg, #0891b2, #0e7490)',
+      iconBg: 'rgba(255,255,255,0.25)', iconColor: '#ffffff',
+      textColor: 'rgba(255,255,255,0.9)', valueColor: '#ffffff', bgIconColor: 'rgba(255,255,255,0.1)',
+    },
+    amber: {
+      gradient: 'linear-gradient(135deg, #f59e0b, #d97706)',
+      iconBg: 'rgba(255,255,255,0.25)', iconColor: '#ffffff',
+      textColor: 'rgba(255,255,255,0.9)', valueColor: '#ffffff', bgIconColor: 'rgba(255,255,255,0.1)',
+    },
+    alert: {
+      gradient: 'linear-gradient(135deg, #ef4444, #b91c1c)',
+      iconBg: 'rgba(255,255,255,0.25)', iconColor: '#ffffff',
+      textColor: 'rgba(255,255,255,0.9)', valueColor: '#ffffff', bgIconColor: 'rgba(255,255,255,0.1)',
+    },
   };
 
   const stats = [
     {
       label: 'Pesan Terkirim',
       value: messagesSent,
+      sub: messageLimit > 0 ? `dari kuota ${messageLimit.toLocaleString('id-ID')}` : null,
       icon: Send,
-      gradient: 'linear-gradient(135deg, #f8fafc, #e2e8f0)',
-      iconBg: 'rgba(100, 116, 139, 0.08)',
-      iconColor: '#64748b',
-      textColor: '#334155',
-      valueColor: '#1e293b',
-      bgIconColor: 'rgba(100, 116, 139, 0.06)',
+      tone: 'neutral',
     },
     {
-      label: 'Pesan Masuk',
-      value: incomingMessages,
-      icon: MessageCircle,
-      gradient: 'linear-gradient(135deg, #10b981, #059669)',
-      iconBg: 'rgba(255,255,255,0.25)',
-      iconColor: '#ffffff',
-      textColor: 'rgba(255,255,255,0.9)',
-      valueColor: '#ffffff',
-      bgIconColor: 'rgba(255,255,255,0.1)',
+      // Was labelled "Pesan Masuk", which this is not: it is the unread total, and it
+      // drops to zero as soon as the team reads its inbox.
+      label: 'Belum Dibaca',
+      value: unreadChats,
+      sub: unreadChats > 0 ? 'menunggu dibuka' : 'kotak masuk bersih',
+      icon: MailOpen,
+      tone: 'brand',
     },
     {
-      label: 'Total Kontak',
-      value: totalContacts,
+      // Was labelled "Total Kontak" while counting chats, groups and the self-chat
+      // included — a number that never matched the contacts page.
+      label: 'Percakapan Pelanggan',
+      value: customerConversations,
+      sub: 'tanpa grup',
       icon: Users,
-      gradient: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
-      iconBg: 'rgba(255,255,255,0.25)',
-      iconColor: '#ffffff',
-      textColor: 'rgba(255,255,255,0.9)',
-      valueColor: '#ffffff',
-      bgIconColor: 'rgba(255,255,255,0.1)',
+      tone: 'violet',
+    },
+    {
+      label: 'Kontak Tersimpan',
+      value: contactCount,
+      sub: 'di buku alamat',
+      icon: BookUser,
+      tone: 'cyan',
     },
     {
       label: 'Nomor Aktif',
       value: activeNumbers,
+      sub: sessionLimit > 0 ? `dari ${sessionLimit} perangkat` : null,
       icon: Phone,
-      gradient: 'linear-gradient(135deg, #f59e0b, #d97706)',
-      iconBg: 'rgba(255,255,255,0.25)',
-      iconColor: '#ffffff',
-      textColor: 'rgba(255,255,255,0.9)',
-      valueColor: '#ffffff',
-      bgIconColor: 'rgba(255,255,255,0.1)',
+      tone: 'amber',
     },
   ];
+
+  // Supervisor-only, and only from the log's own data — so it appears once that request
+  // has landed rather than flashing a zero first.
+  if (isSupervisor && logTotals) {
+    stats.push({
+      label: 'Menunggu Balasan',
+      value: logTotals.awaitingReply,
+      sub: logTotals.awaitingReply > 0 ? 'belum dijawab tim' : 'semua sudah dibalas',
+      icon: Clock3,
+      tone: logTotals.awaitingReply > 0 ? 'alert' : 'neutral',
+    });
+  }
 
   return (
     <div className="dashboard-view">
       {/* Stats Cards Row */}
       <div className="dashboard-stats-row">
-        {stats.map((stat, i) => {
+        {stats.map((stat) => {
           const Icon = stat.icon;
+          const tone = TONES[stat.tone] || TONES.neutral;
           return (
-            <div 
-              key={i} 
-              className="dashboard-stat-card"
-              style={{ background: stat.gradient }}
-            >
+            <div key={stat.label} className="dashboard-stat-card" style={{ background: tone.gradient }}>
               <div className="stat-card-header">
-                <div className="stat-card-icon" style={{ background: stat.iconBg }}>
-                  <Icon size={18} style={{ color: stat.iconColor }} />
+                <div className="stat-card-icon" style={{ background: tone.iconBg }}>
+                  <Icon size={18} style={{ color: tone.iconColor }} />
                 </div>
-                <span className="stat-card-label" style={{ color: stat.textColor }}>{stat.label}</span>
+                <span className="stat-card-label" style={{ color: tone.textColor }}>{stat.label}</span>
               </div>
-              <div className="stat-card-value" style={{ color: stat.valueColor }}>
-                {stat.value.toLocaleString()}
+              <div className="stat-card-value" style={{ color: tone.valueColor }}>
+                {typeof stat.value === 'number' ? stat.value.toLocaleString('id-ID') : stat.value}
               </div>
-              <div className="stat-card-bg-icon" style={{ color: stat.bgIconColor }}>
+              {stat.sub && (
+                <div className="stat-card-sub" style={{ color: tone.textColor }}>{stat.sub}</div>
+              )}
+              <div className="stat-card-bg-icon" style={{ color: tone.bgIconColor }}>
                 <Icon size={80} />
               </div>
             </div>
@@ -184,16 +320,20 @@ export default function Dashboard({
           heatmap takes the rest; below ~1100px they stack. The list's height is
           driven entirely by the heatmap (see .customer-panel-cell) so the two panels
           always line up however many customers there are. */}
-      <div className="dashboard-insight-row">
-        <InteractionHeatmap
-          activeSessionId={activeSessionId}
-          connected={connectionStatus === 'connected'}
-          onCellSelect={setCellSelection}
-        />
+      {/* With the heat map hidden the customer list takes the whole row rather than leaving
+          a gap where the grid was. It is the panel that still works without the other. */}
+      <div className={`dashboard-insight-row ${showHeatmap ? '' : 'is-single'}`}>
+        {showHeatmap && (
+          <InteractionHeatmap
+            activeSessionId={activeSessionId}
+            connected={connectionStatus === 'connected'}
+            onCellSelect={setCellSelection}
+          />
+        )}
 
         <div className="customer-panel-cell">
           <CustomerList
-            chats={chats}
+            chats={chatList}
             userInfo={userInfo}
             savedNames={savedNames}
             onOpenChat={onOpenChat}
@@ -203,13 +343,41 @@ export default function Dashboard({
         </div>
       </div>
 
+      {/* The team's conversation history beside where those conversations stand
+          commercially. Members get the pipeline alone: the log's endpoint is
+          supervisor-only. */}
+      {(showLog || showPipeline) && (
+        <div className={`dashboard-log-row ${showLog && showPipeline ? '' : 'is-single'}`}>
+          {showLog && (
+            <ConversationLog
+              variant="panel"
+              activeSessionId={activeSessionId}
+              chats={chatList}
+              userInfo={userInfo}
+              savedNames={savedNames}
+              onOpenChat={onOpenChat}
+              onTotals={handleTotals}
+              onSeeAll={() => onNavigate?.('activity')}
+            />
+          )}
+
+          {showPipeline && (
+            <PipelinePanel
+              chats={chatList}
+              chatStatuses={chatStatuses}
+              onOpenInbox={() => onNavigate?.('messages')}
+            />
+          )}
+        </div>
+      )}
+
       {/* Bottom Section */}
       <div className="dashboard-bottom-row">
         {/* Activity Chart */}
         <div className="dashboard-panel">
           <div className="dashboard-panel-header">
             <TrendingUp size={18} />
-            <span>Aktivitas Pengiriman</span>
+            <span>Percakapan Aktif per Hari</span>
           </div>
           <div className="dashboard-panel-body">
             {hasActivity ? (
@@ -219,10 +387,10 @@ export default function Dashboard({
                   return (
                     <div key={i} className="chart-bar-wrapper">
                       <span className="chart-bar-count">{day.count}</span>
-                      <div 
-                        className="chart-bar" 
+                      <div
+                        className="chart-bar"
                         style={{ height: `${height}px` }}
-                        title={`${day.label}: ${day.count} messages`}
+                        title={`${day.label}: ${day.count} percakapan`}
                       />
                       <span className="chart-bar-label">{day.label}</span>
                     </div>
@@ -234,7 +402,7 @@ export default function Dashboard({
                 <div className="dashboard-empty-icon">
                   <MessageSquare size={40} />
                 </div>
-                <p>Grafik aktivitas akan muncul setelah Anda mengirim pesan</p>
+                <p>Grafik akan muncul setelah ada percakapan dalam 7 hari terakhir</p>
               </div>
             )}
           </div>
@@ -249,27 +417,41 @@ export default function Dashboard({
           <div className="dashboard-panel-body">
             {recentChats.length > 0 ? (
               <div className="recent-messages-list">
-                {recentChats.map((chat, i) => {
+                {recentChats.map((chat) => {
                   const displayName = getDisplayName(chat);
                   return (
-                    <div key={chat.id || i} className="recent-message-item">
-                      <div 
-                        className="recent-msg-avatar"
-                        style={{ background: getAvatarColor(chat.id) }}
-                      >
+                    // A button, not a styled div: the rows already looked clickable
+                    // (cursor and hover) but did nothing, and the same row in the
+                    // customer list opens the conversation.
+                    <button
+                      type="button"
+                      key={chat.id}
+                      className="recent-message-item"
+                      onClick={() => onOpenChat?.(chat.id)}
+                      title={`Buka riwayat chat ${displayName}`}
+                    >
+                      <span className="recent-msg-avatar" style={{ background: avatarColor(chat.id) }}>
                         {getInitials(displayName)}
-                      </div>
-                      <div className="recent-msg-content">
-                        <div className="recent-msg-top">
+                      </span>
+                      <span className="recent-msg-content">
+                        <span className="recent-msg-top">
                           <span className="recent-msg-name">{displayName}</span>
-                          <span className="recent-msg-time">{formatTime(chat.lastMessageTimestamp)}</span>
-                        </div>
-                        <p className="recent-msg-text">{chat.lastMessage || 'No messages yet'}</p>
-                      </div>
+                          <span
+                            className="recent-msg-time"
+                            title={fullWhen(chat.lastMessageTimestamp)}
+                          >
+                            {relativeWhen(chat.lastMessageTimestamp)}
+                          </span>
+                        </span>
+                        <span className="recent-msg-text">
+                          {chat.lastMessageFromMe && <span className="customer-you">Anda: </span>}
+                          {chat.lastMessage || 'Belum ada pesan'}
+                        </span>
+                      </span>
                       {chat.unreadCount > 0 && (
-                        <div className="recent-msg-badge">{chat.unreadCount}</div>
+                        <span className="recent-msg-badge">{chat.unreadCount}</span>
                       )}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -284,6 +466,25 @@ export default function Dashboard({
           </div>
         </div>
       </div>
+
+      {/* The index of everything else the product does, so no feature is sidebar-only. */}
+      <FeatureGrid
+        isSupervisor={isSupervisor}
+        onNavigate={onNavigate}
+        features={features}
+        metrics={{
+          unreadChats,
+          conversations: customerConversations,
+          contacts: contactCount,
+          awaitingReply: logTotals?.awaitingReply || 0,
+          seatsUsed: seats?.used ?? null,
+          seatsLimit: seats?.limit ?? null,
+          unreadNotifications,
+          planName: userProfile?.planName || null,
+          messagesSent,
+          messageLimit,
+        }}
+      />
     </div>
   );
 }

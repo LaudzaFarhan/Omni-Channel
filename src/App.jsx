@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { getSocket, connectSocket, disconnectSocket } from './utils/socket.js';
+import { getSocket, connectSocket, disconnectSocket, subscribeSocket } from './utils/socket.js';
 import ChatList from './components/ChatList.jsx';
 import ChatWindow from './components/ChatWindow.jsx';
 import ConnectionPanel from './components/ConnectionPanel.jsx';
@@ -9,8 +9,9 @@ import AuthScreens from './components/AuthScreens.jsx';
 import AdminDashboard from './components/AdminDashboard.jsx';
 import {
   fetchWithAuth, subscribeAuth, restoreSession, logout as apiLogout,
-  getAccessToken, applyProfileUpdate, fetchContacts, fetchProfile,
+  getAccessToken, applyProfileUpdate, fetchContacts, fetchProfile, fetchFeatures,
 } from './utils/api.js';
+import { featureStatus, featureLabel, isVisible } from './utils/features.js';
 import { normalizePlan, sortPlans, loadPlansOnce, resolveEffectiveLimits } from './utils/plans.js';
 import { MessageSquare, Clock, AlertTriangle, Bell, X } from 'lucide-react';
 
@@ -24,7 +25,8 @@ import TopBar from './components/TopBar.jsx';
 import NotificationsView from './components/NotificationsView.jsx';
 import Contacts from './components/Contacts.jsx';
 import Team from './components/Team.jsx';
-import AgentActivity from './components/AgentActivity.jsx';
+import ConversationLog from './components/dashboard/ConversationLog.jsx';
+import ComingSoon from './components/ComingSoon.jsx';
 import AcceptInvite from './components/AcceptInvite.jsx';
 import { showToast } from './utils/toastBus.js';
 
@@ -35,6 +37,11 @@ export default function App() {
   // Plan catalogue, used to resolve the quota and device limit that actually
   // apply to this customer. Readable only once signed in.
   const [plans, setPlans] = useState([]);
+
+  // What this account is allowed to see, as { featureKey: status }, resolved server-side
+  // from the admin's rollout plus any exception on this workspace. Starts empty, which
+  // every reader treats as "everything released" — see src/utils/features.js.
+  const [features, setFeatures] = useState({});
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('messages');
   const [isSessionBlocked, setIsSessionBlocked] = useState(false);
@@ -273,6 +280,52 @@ export default function App() {
     };
   }, [userProfile?.uid, userProfile?.isApproved, userProfile?.role]);
 
+  // Which features this account may see.
+  //
+  // Re-read on the 'features-updated' broadcast rather than receiving a payload: the map is
+  // per-account once exceptions exist, so there is no single object the server could send
+  // that is correct for everyone. An admin releasing something therefore lands live here
+  // without a reload.
+  //
+  // A failure leaves the map empty, which reads as everything released. That is the
+  // deliberate direction: the server still refuses gated endpoints, so the worst case is a
+  // customer seeing a nav item that reports the feature is unavailable — far better than a
+  // failed request emptying their sidebar.
+  const loadFeatures = useCallback(async () => {
+    try {
+      setFeatures(await fetchFeatures());
+    } catch (err) {
+      console.warn('[App] Could not read feature availability, showing everything:', err.message);
+      setFeatures({});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setFeatures({});
+      return;
+    }
+    loadFeatures();
+
+    // subscribeSocket rather than getSocket(): the socket is opened by a different effect
+    // and may not exist yet on this pass. getSocket() would return null, silently leave no
+    // listener, and an admin's change would then only land on the next reload.
+    let attached = null;
+    const unsubscribe = subscribeSocket((socket) => {
+      if (attached) attached.off('features-updated', loadFeatures);
+      attached = null;
+      if (socket) {
+        socket.on('features-updated', loadFeatures);
+        attached = socket;
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      if (attached) attached.off('features-updated', loadFeatures);
+    };
+  }, [user?.uid, loadFeatures]);
+
   // Load the plan catalogue once signed in, so limits resolve from the plan
   // rather than the built-in fallbacks. Updates arrive via 'plans-updated'.
   useEffect(() => {
@@ -409,6 +462,16 @@ export default function App() {
     });
     return map;
   }, [contacts]);
+
+  // Leave a tab that has just been hidden.
+  //
+  // An admin can hide a feature while a customer is sitting on it. Without this the pane
+  // would render nothing and the sidebar would have no matching item, which looks like the
+  // app broke. Messages is the fallback because it is locked and cannot be hidden.
+  useEffect(() => {
+    if (!activeTab || isVisible(features, activeTab)) return;
+    setActiveTab('messages');
+  }, [features, activeTab]);
 
   // Open a conversation from somewhere other than the chat list (the contacts
   // table). A number with no synced history still works: the messages view creates
@@ -1026,6 +1089,24 @@ export default function App() {
   // behaviour for any profile payload that predates the field.
   const isSupervisor = !userProfile?.ownerUserId;
 
+  // Render a gated view.
+  //
+  // Three outcomes, matching the three rollout states: released renders the feature,
+  // coming soon renders the placeholder so the nav item leads somewhere that explains
+  // itself, and hidden renders nothing — the effect above has already moved the customer
+  // off it, and returning null covers the render in between.
+  //
+  // Kept as one helper rather than repeated per tab so a new gated view cannot accidentally
+  // implement only two of the three cases.
+  const gated = (key, node) => {
+    const status = featureStatus(features, key);
+    if (status === 'hidden') return null;
+    if (status === 'coming_soon') {
+      return <ComingSoon label={featureLabel(key)} onBack={() => setActiveTab('messages')} />;
+    }
+    return node;
+  };
+
   // 5. Approved Customer Dashboard
   return (
     <div className="dashboard-container" style={{ position: 'relative' }}>
@@ -1038,6 +1119,7 @@ export default function App() {
             collapsed={sidebarCollapsed}
             notifications={notifications}
             isSupervisor={isSupervisor}
+            features={features}
           />
         </div>
         
@@ -1087,17 +1169,21 @@ export default function App() {
                 <ConnectionPanel status={connectionStatus} qrCode={qrCode} />
               ) : (
                 <>
-                  {activeTab === 'dashboard' && (
+                  {activeTab === 'dashboard' && gated('dashboard',
                     <Dashboard 
                       chats={chats}
                       userProfile={activeProfile}
                       userInfo={userInfo}
                       waSessions={waSessions}
-                      messages={messages}
                       savedNames={savedNames}
                       activeSessionId={activeSessionId}
                       connectionStatus={connectionStatus}
                       onOpenChat={handleOpenChatFor}
+                      contactCount={contacts.length}
+                      notifications={notifications}
+                      isSupervisor={isSupervisor}
+                      onNavigate={setActiveTab}
+                      features={features}
                     />
                   )}
 
@@ -1124,7 +1210,7 @@ export default function App() {
                 </>
               )}
 
-              {activeTab === 'contacts' && (
+              {activeTab === 'contacts' && gated('contacts',
                 <Contacts
                   activeSessionId={activeSessionId}
                   onOpenChat={handleOpenChatFor}
@@ -1133,14 +1219,15 @@ export default function App() {
 
               {/* Supervisor-only, matching the sidebar and the server. Guarded here
                   too so a stale activeTab cannot render it for a member. */}
-              {activeTab === 'team' && isSupervisor && (
+              {activeTab === 'team' && isSupervisor && gated('team',
                 <Team userProfile={activeProfile} />
               )}
 
               {/* Supervisor-only, guarded here as well as in the sidebar so a stale
                   activeTab cannot render it for an invited member. */}
-              {activeTab === 'activity' && isSupervisor && (
-                <AgentActivity
+              {activeTab === 'activity' && isSupervisor && gated('activity',
+                <ConversationLog
+                  variant="page"
                   chats={chats}
                   userInfo={userInfo}
                   savedNames={savedNames}
@@ -1149,7 +1236,7 @@ export default function App() {
                 />
               )}
 
-              {activeTab === 'notifications' && (
+              {activeTab === 'notifications' && gated('notifications',
                 <NotificationsView 
                   notifications={notifications}
                   setNotifications={setNotifications}
@@ -1168,7 +1255,7 @@ export default function App() {
                 <Profile user={user} userProfile={activeProfile} />
               )}
 
-              {activeTab === 'settings' && (
+              {activeTab === 'settings' && gated('settings',
                 <Settings />
               )}
             </div>

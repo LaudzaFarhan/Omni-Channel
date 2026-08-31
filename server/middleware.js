@@ -6,7 +6,8 @@
 // admin console's authority came from client-side role checks.
 
 import { verifyAccessToken } from './auth.js';
-import { findUserById } from './data.js';
+import { findUserById, resolveFeaturesForWorkspace } from './data.js';
+import { isEnabled } from './features.js';
 
 // Attaches req.user from the Bearer token. The payload keeps the same shape the
 // Firebase verifier produced (notably req.user.uid), so existing routes are
@@ -128,6 +129,44 @@ export function requireSupervisor(req, res, next) {
   next();
 }
 
+// Gates a route on a feature being released for this account.
+//
+// Hiding a feature in the sidebar is presentation; without this the endpoint behind it is
+// still open to anyone who knows the URL, so "hidden" would be a suggestion rather than a
+// rule. A parameterised factory for the same reason rateLimit() is one — the flag key is
+// per-route configuration, not per-request state.
+//
+// Resolved against req.workspaceId, so a member is gated exactly like the account owner.
+// Must be mounted after loadProfile, which is what sets that.
+//
+// Fails OPEN on a database error: an unreachable flag table should not take working
+// features offline. The failure is logged loudly instead.
+export function requireFeature(key) {
+  return async (req, res, next) => {
+    // An admin is not a customer of the rollout. They need every endpoint reachable to
+    // support the accounts they are gating, and requireApproved already treats them this
+    // way.
+    if (req.profile?.role === 'admin') return next();
+
+    try {
+      const resolved = await resolveFeaturesForWorkspace(req.workspaceId);
+      if (isEnabled(resolved, key)) return next();
+
+      // 'coming_soon' and 'hidden' are both unusable, and the client already knows which
+      // it is from /api/features — so the code is the same and the copy stays generic
+      // rather than leaking a roadmap to someone who cannot see the feature.
+      return res.status(403).json({
+        error: 'That feature is not available on this account.',
+        code: 'feature_unavailable',
+        feature: key,
+      });
+    } catch (err) {
+      console.error(`[Features] Gate "${key}" could not be resolved, allowing:`, err.message);
+      next();
+    }
+  };
+}
+
 // Admin gate. Requires the stored role, read live from the database rather than
 // taken from the token claim, so a demotion takes effect immediately.
 export function requireAdmin(req, res, next) {
@@ -146,6 +185,12 @@ export const admin = [authMiddleware, loadProfile, requireAdmin];
 // Approved AND owns the workspace. For billing, team management, and unpairing
 // the WhatsApp device everyone shares.
 export const supervisor = [authMiddleware, loadProfile, requireApproved, requireSupervisor];
+
+// Chains that additionally require a feature to be released for the account. Composed from
+// the existing chains rather than hand-rolled, so a change to approval or ownership rules
+// cannot apply to some routes and not others.
+export const approvedFeature = (key) => [...approved, requireFeature(key)];
+export const supervisorFeature = (key) => [...supervisor, requireFeature(key)];
 
 // ---------------------------------------------------------------------------
 // rate limiting
