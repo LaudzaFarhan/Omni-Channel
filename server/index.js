@@ -1041,7 +1041,10 @@ app.post('/api/messages/send', approved, async (req, res) => {
   const ownerId = req.workspaceId;
   const sid = req.body.sessionId || req.query.sessionId || 'default';
   const key = sessionKey(ownerId, sid);
-  const { to, text, file } = req.body;
+  // `quotedId` is the id of a message in THIS chat to reply to; `forwardFrom` is
+  // { jid, id } locating a message in any chat to forward here. Both are optional and
+  // both need the original raw message, which only the store has.
+  const { to, text, file, quotedId, forwardFrom } = req.body;
   const session = activeSessions[key];
 
   if (!to) {
@@ -1111,6 +1114,30 @@ app.post('/api/messages/send', approved, async (req, res) => {
     });
   }
 
+  // Reply and forward sources are resolved BEFORE the quota is consumed, so a request
+  // that cannot be fulfilled never spends a message the operator did not send.
+  const store = getStore(key);
+
+  let forwardSource = null;
+  if (forwardFrom && forwardFrom.id) {
+    forwardSource = store.findMessage(forwardFrom.jid || to, forwardFrom.id);
+    if (!forwardSource) {
+      // Hard failure: forwarding is the entire request, so there is nothing to fall
+      // back to. Only the last 100 messages per chat are retained.
+      return res.status(404).json({
+        error: 'The message you are forwarding is no longer available to forward.',
+        code: 'forward_source_missing',
+      });
+    }
+  }
+
+  // A missing quote is NOT fatal: the reply still carries the operator's text, and
+  // dropping the thread marker is far better than refusing to send it.
+  const quotedSource = quotedId ? store.findMessage(to, quotedId) : null;
+  if (quotedId && !quotedSource) {
+    console.log(`[Send - ${key}] Quoted message ${quotedId} not in store; sending without the quote.`);
+  }
+
   // Quota is enforced here, atomically, before the message goes out.
   //
   // Previously the limit was checked in the browser and the browser incremented
@@ -1137,34 +1164,41 @@ app.post('/api/messages/send', approved, async (req, res) => {
       jid = `${cleanNum}@s.whatsapp.net`;
     }
 
+    // Applied to every branch below, so replying with an attachment still threads.
+    // Baileys ignores an empty options object, so this is safe when not replying.
+    const sendOptions = quotedSource ? { quoted: quotedSource } : {};
+
     let response;
-    if (file && file.base64) {
+    if (forwardSource) {
+      // Baileys rebuilds the original message and tags it as forwarded. Passing the raw
+      // message is what makes media forward without re-uploading it.
+      response = await session.sock.sendMessage(jid, { forward: forwardSource });
+    } else if (file && file.base64) {
       const mimeType = file.type;
       const base64Data = file.base64.split(';base64,').pop();
       const buffer = Buffer.from(base64Data, 'base64');
 
       if (mimeType.startsWith('image/')) {
-        response = await session.sock.sendMessage(jid, { image: buffer, caption: text });
+        response = await session.sock.sendMessage(jid, { image: buffer, caption: text }, sendOptions);
       } else if (mimeType.startsWith('video/')) {
-        response = await session.sock.sendMessage(jid, { video: buffer, caption: text });
+        response = await session.sock.sendMessage(jid, { video: buffer, caption: text }, sendOptions);
       } else if (mimeType.startsWith('audio/')) {
-        response = await session.sock.sendMessage(jid, { audio: buffer, mimetype: mimeType });
+        response = await session.sock.sendMessage(jid, { audio: buffer, mimetype: mimeType }, sendOptions);
       } else {
         response = await session.sock.sendMessage(jid, { 
           document: buffer, 
           mimetype: mimeType, 
           fileName: file.name 
-        });
+        }, sendOptions);
       }
     } else {
       if (!text) {
         return res.status(400).json({ error: 'Missing text or file content' });
       }
-      response = await session.sock.sendMessage(jid, { text });
+      response = await session.sock.sendMessage(jid, { text }, sendOptions);
     }
     
     // Cache the message
-    const store = getStore(key);
     store.addMessage(jid, response);
     io.to(ownerId).emit('new-message', { sessionId: sid, jid, message: response });
 

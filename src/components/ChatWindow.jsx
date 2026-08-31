@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown, ChevronRight, Pause, Play, UserPlus, UserCheck, MoreVertical, Search, Trophy, UserMinus, RotateCcw, Maximize2, Minimize2 } from 'lucide-react';
+import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown, ChevronRight, Pause, Play, UserPlus, UserCheck, MoreVertical, Search, Trophy, UserMinus, RotateCcw, Maximize2, Minimize2, Reply, Forward, Copy } from 'lucide-react';
 import { fetchWithAuth, saveContact, updateContact, setChatStatus as apiSetChatStatus } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
 import { showToast } from '../utils/toastBus.js';
@@ -7,6 +7,7 @@ import { PRESET_TAGS, getTags, toggleTag, clearTags, createCustomTag, loadGlobal
 import { getChatDisplayName, getInitials } from '../utils/displayName.js';
 import { jidToPhone, formatPhone } from '../utils/phone.js';
 import ContactEditor from './contacts/ContactEditor.jsx';
+import ForwardDialog from './chat/ForwardDialog.jsx';
 
 const DEFAULT_QUICK_REPLIES = [
   { id: 'welcome', title: '👋 Welcome Message', text: 'Hello! Thank you for contacting us. How can we assist you today?' },
@@ -317,7 +318,9 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   // Fullscreen is owned by MessageDashboard: the element that expands has to contain the
   // chat list as well, and that is a sibling of this component. The button lives here
   // because the conversation header is where it belongs.
-  isFullscreen = false, onToggleFullscreen = null }) {
+  isFullscreen = false, onToggleFullscreen = null,
+  // Every conversation, so a message can be forwarded somewhere other than this one.
+  chats = [] }) {
   // Saving the person you are talking to is the main way contacts get created —
   // expecting the operator to copy a number over to the contacts page instead
   // would mean the address book stays empty.
@@ -356,6 +359,17 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   // Explicit open state for the template picker, separate from the implicit '/' trigger.
   const [showTemplates, setShowTemplates] = useState(false);
   const templatesRef = useRef(null);
+
+  // Per-message actions.
+  //
+  // `msgMenu` carries viewport coordinates rather than just an id because the menu is
+  // positioned fixed. The messages list is a scroll container, so a menu positioned
+  // inside a bubble would be clipped by it near the top and bottom edges.
+  const [msgMenu, setMsgMenu] = useState(null);
+  const [replyTo, setReplyTo] = useState(null);
+  const [forwardMsg, setForwardMsg] = useState(null);
+  const msgMenuRef = useRef(null);
+  const composerRef = useRef(null);
 
 
 
@@ -449,6 +463,11 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
     setMessageQuery('');
     setShowTemplates(false);
     setShowEmoji(false);
+    // A quote or a menu anchored to the previous conversation's messages is meaningless
+    // here, and the reply would be sent to the wrong person.
+    setReplyTo(null);
+    setMsgMenu(null);
+    setForwardMsg(null);
   }, [activeChat?.id]);
 
   const handleSetStatus = async (next) => {
@@ -670,6 +689,134 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
     setShowTemplates(false);
   };
 
+  // Menu height/width are fixed here rather than measured. Measuring needs the element
+  // to exist first, which would mean rendering it in the wrong place for one frame.
+  const MSG_MENU_W = 186;
+  const MSG_MENU_H = 132;
+
+  const openMsgMenu = (event, msg) => {
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+
+    // Flip above the button when there is not enough room below, and pull back from the
+    // right edge, so the menu is never partly off-screen for the newest message.
+    const openUpward = rect.bottom + MSG_MENU_H > window.innerHeight - 8;
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - MSG_MENU_W - 8));
+
+    setMsgMenu({
+      id: msg.key.id,
+      msg,
+      left,
+      top: openUpward ? Math.max(8, rect.top - MSG_MENU_H - 4) : rect.bottom + 4,
+    });
+  };
+
+  const startReply = (msg) => {
+    setReplyTo(msg);
+    setMsgMenu(null);
+    // Replying is always followed by typing, so put the caret where it is needed.
+    composerRef.current?.focus();
+  };
+
+  const startForward = (msg) => {
+    setForwardMsg(msg);
+    setMsgMenu(null);
+  };
+
+  const copyMessageText = async (msg) => {
+    setMsgMenu(null);
+    const text = getMessageText(msg);
+    if (!text) return;
+
+    try {
+      // navigator.clipboard needs a secure context. Over plain http it is undefined, so
+      // without the fallback below "Salin" would silently do nothing.
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const scratch = document.createElement('textarea');
+        scratch.value = text;
+        scratch.setAttribute('readonly', '');
+        scratch.style.position = 'fixed';
+        scratch.style.opacity = '0';
+        document.body.appendChild(scratch);
+        scratch.select();
+        document.execCommand('copy');
+        document.body.removeChild(scratch);
+      }
+      showToast({ type: 'success', title: 'Disalin', message: 'Pesan disalin ke clipboard' });
+    } catch (err) {
+      showToast({ type: 'error', title: 'Gagal menyalin', message: err.message });
+    }
+  };
+
+  // The menu is positioned against the viewport, so any scroll or resize invalidates its
+  // coordinates. Closing is the honest response — repositioning mid-scroll would have it
+  // chase the bubble around.
+  useEffect(() => {
+    if (!msgMenu) return;
+
+    const close = () => setMsgMenu(null);
+    const onPointerDown = (e) => {
+      if (!msgMenuRef.current?.contains(e.target)) close();
+    };
+    const onKeyDown = (e) => { if (e.key === 'Escape') close(); };
+
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    window.addEventListener('resize', close);
+    // Capture phase, because the scroll happens on the messages container rather than
+    // on window and scroll events do not bubble.
+    document.addEventListener('scroll', close, true);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('resize', close);
+      document.removeEventListener('scroll', close, true);
+    };
+  }, [msgMenu]);
+
+  // Forward one message to each chosen conversation.
+  //
+  // Sent one at a time on purpose: WhatsApp rate-limits bursts, and each send also
+  // consumes quota server-side, so a parallel fan-out could half-succeed in a way that
+  // is harder to report. Partial failures are surfaced without discarding the successes.
+  const handleForward = async (targetJids) => {
+    if (!forwardMsg) return;
+
+    const failures = [];
+    for (const jid of targetJids) {
+      try {
+        const res = await fetchWithAuth('/api/messages/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: jid,
+            sessionId: activeSessionId,
+            forwardFrom: { jid: activeChat.id, id: forwardMsg.key.id },
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) failures.push(data.error || `HTTP ${res.status}`);
+      } catch (err) {
+        failures.push(err.message);
+      }
+    }
+
+    const delivered = targetJids.length - failures.length;
+    if (delivered > 0) {
+      showToast({
+        type: 'success',
+        title: 'Pesan diteruskan',
+        message: `Terkirim ke ${delivered} chat`,
+      });
+    }
+    // Throwing keeps the dialog open with the selection intact so it can be retried.
+    if (failures.length) {
+      throw new Error(`Gagal ke ${failures.length} chat: ${failures[0]}`);
+    }
+  };
+
 
 
   // Close the emoji tray on an outside click, like the other popovers.
@@ -731,6 +878,47 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   // Naming comes from the shared helper so every view agrees. A saved contact name
   // beats the pushName WhatsApp reports.
   const getDisplayName = (chat) => (chat ? getChatDisplayName(chat, userInfo, savedNames[chat.id]) : '');
+
+  // Baileys attaches contextInfo to whichever message variant was sent, so a reply to a
+  // photo carries it on imageMessage and a plain text reply on extendedTextMessage.
+  // Checking only one of them would make replies to media look like ordinary messages.
+  const getContextInfo = (msg) => {
+    const c = msg?.message;
+    if (!c) return null;
+    return c.extendedTextMessage?.contextInfo
+      || c.imageMessage?.contextInfo
+      || c.videoMessage?.contextInfo
+      || c.documentMessage?.contextInfo
+      || c.audioMessage?.contextInfo
+      || c.stickerMessage?.contextInfo
+      || null;
+  };
+
+  // The quoted message shown inside a bubble, or null when this is not a reply.
+  //
+  // Authorship is best-effort: contextInfo.participant is the original sender, but on
+  // an @lid account it may not equal our own JID even for our own message. When it
+  // cannot be matched we label it with the conversation name instead of guessing
+  // "Anda", because claiming the operator wrote someone else's line is worse than
+  // being vague.
+  const getQuotedPreview = (msg) => {
+    const ctx = getContextInfo(msg);
+    if (!ctx?.quotedMessage) return null;
+
+    const bareId = (jid) => (typeof jid === 'string' ? jid.split('@')[0].split(':')[0] : null);
+    const mine = bareId(userInfo?.id);
+    const author = bareId(ctx.participant);
+
+    return {
+      text: getMessageText({ message: ctx.quotedMessage }) || 'Pesan',
+      author: mine && author && mine === author ? 'Anda' : getDisplayName(activeChat),
+    };
+  };
+
+  const isForwardedMessage = (msg) => {
+    const ctx = getContextInfo(msg);
+    return !!ctx && (ctx.isForwarded === true || (ctx.forwardingScore || 0) > 0);
+  };
 
   // Whether this conversation is already in the address book, and the number to
   // pre-fill if it is not.
@@ -806,6 +994,13 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
         payload.file = selectedFile;
       }
 
+      // The server resolves this id back to the original message so WhatsApp threads the
+      // reply. If it has aged out of the 100-message window the text still sends, just
+      // without the quote.
+      if (replyTo?.key?.id) {
+        payload.quotedId = replyTo.key.id;
+      }
+
       const res = await fetchWithAuth('/api/messages/send', {
         method: 'POST',
         headers: {
@@ -818,6 +1013,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
       if (data.success) {
         if (!textToSend) setInputText(''); // clear input if not quick reply
         setSelectedFile(null); // clear file attachment
+        setReplyTo(null); // the quote belonged to the message just sent
         if (fileInputRef.current) fileInputRef.current.value = '';
 
         // The usage counter is no longer incremented here. The server consumes
@@ -1580,12 +1776,45 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                   </div>
                 )}
                 <div className="message-bubble">
+                  {/* Reveals on hover over the bubble, like WhatsApp. Kept visible while
+                      its own menu is open, otherwise moving the pointer to the menu makes
+                      the button it came from vanish. */}
+                  <button
+                    className={`bubble-menu-btn ${msgMenu?.id === msg.key.id ? 'open' : ''}`}
+                    onClick={(e) => openMsgMenu(e, msg)}
+                    title="Aksi pesan"
+                    aria-haspopup="menu"
+                    aria-expanded={msgMenu?.id === msg.key.id}
+                  >
+                    <ChevronDown size={15} />
+                  </button>
+
                   {/* Sender name label for group chats */}
                   {isGroup && !isMe && senderName && (
                     <div className="msg-sender-name" style={{ color: senderColor }}>
                       {senderName}
                     </div>
                   )}
+
+                  {isForwardedMessage(msg) && (
+                    <div className="msg-forwarded-label">
+                      <Forward size={12} /> Diteruskan
+                    </div>
+                  )}
+
+                  {/* The quoted message. Without this a reply is indistinguishable from a
+                      normal message in our own UI, even though WhatsApp shows the thread. */}
+                  {(() => {
+                    const quoted = getQuotedPreview(msg);
+                    if (!quoted) return null;
+                    return (
+                      <div className="msg-quote">
+                        <div className="msg-quote-author">{quoted.author}</div>
+                        <div className="msg-quote-text">{quoted.text}</div>
+                      </div>
+                    );
+                  })()}
+
                   {hasMedia(msg) ? (
                     <MediaMessage msg={msg} activeSessionId={activeSessionId} />
                   ) : (
@@ -1602,6 +1831,53 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
           })}
           <div ref={messagesEndRef} />
         </div>
+
+        {/* Per-message actions. Fixed to viewport coordinates captured when the bubble's
+            button was clicked, so the scroll container cannot clip it. Rendered inside
+            ChatWindow rather than portalled to document.body, which would be invisible
+            while the chat is fullscreen. */}
+        {msgMenu && (
+          <div
+            ref={msgMenuRef}
+            role="menu"
+            style={{
+              position: 'fixed', top: `${msgMenu.top}px`, left: `${msgMenu.left}px`,
+              width: `${MSG_MENU_W}px`, zIndex: 3000, padding: '6px',
+              background: 'var(--bg-panel, var(--bg-sidebar))',
+              border: '1px solid var(--border-color)', borderRadius: '12px',
+              boxShadow: '0 12px 30px rgba(0,0,0,0.22)',
+            }}
+          >
+            <button className="msg-menu-item" role="menuitem" onClick={() => startReply(msgMenu.msg)}>
+              <Reply size={15} /> Balas
+            </button>
+            <button className="msg-menu-item" role="menuitem" onClick={() => startForward(msgMenu.msg)}>
+              <Forward size={15} /> Teruskan
+            </button>
+            <button className="msg-menu-item" role="menuitem" onClick={() => copyMessageText(msgMenu.msg)}>
+              <Copy size={15} /> Salin
+            </button>
+          </div>
+        )}
+
+        {/* Quote strip. Sits directly above the composer so it is obvious the next message
+            will be a reply, and offers a way out of that. */}
+        {replyTo && (() => {
+          const quotedText = getMessageText(replyTo);
+          return (
+            <div className="reply-compose-bar">
+              <div className="reply-compose-body">
+                <div className="reply-compose-author">
+                  {replyTo.key.fromMe ? 'Anda' : getDisplayName(activeChat)}
+                </div>
+                <div className="reply-compose-text">{quotedText || 'Pesan'}</div>
+              </div>
+              <button className="icon-button" onClick={() => setReplyTo(null)} title="Batalkan balasan">
+                <X size={16} />
+              </button>
+            </div>
+          );
+        })()}
 
         {selectedFile && (
           <div className="file-preview-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'rgba(0,168,132,0.05)', borderTop: '1px solid var(--border-color)', gap: '12px' }}>
@@ -1747,6 +2023,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
 
             <input 
               type="text" 
+              ref={composerRef}
               placeholder="Ketik pesan... atau gunakan '/' untuk memilih template" 
               className="chat-input"
               value={inputText}
@@ -1904,6 +2181,18 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
           } : null)}
           onSave={handleSaveContact}
           onClose={() => setEditingContact(false)}
+        />
+      )}
+
+      {forwardMsg && (
+        <ForwardDialog
+          chats={chats}
+          userInfo={userInfo}
+          savedNames={savedNames}
+          currentChatId={activeChat?.id}
+          previewText={getMessageText(forwardMsg)}
+          onForward={handleForward}
+          onClose={() => setForwardMsg(null)}
         />
       )}
     </div>

@@ -645,6 +645,23 @@ class UserStore {
     this.save();
   }
 
+  // The full raw message, which is what Baileys needs to quote or forward — a reply
+  // cannot be built from text alone, it needs the original key and body.
+  //
+  // Only the last 100 messages per chat are kept, so a miss is expected for anything
+  // older and callers must treat null as "quote it plainly" rather than an error.
+  //
+  // `jid` may arrive in a different form than the one the chat is stored under (@lid vs
+  // phone JID), so every equivalent form is tried before giving up.
+  findMessage(jid, msgId) {
+    if (!jid || !msgId) return null;
+    for (const candidate of this.expandHoldJids(jid)) {
+      const found = (this.messages[candidate] || []).find(m => m?.key?.id === msgId);
+      if (found) return found;
+    }
+    return null;
+  }
+
   updateMessage(jid, msgId, updateFields) {
     if (!this.messages[jid]) return;
     const msgIndex = this.messages[jid].findIndex(m => m.key.id === msgId);

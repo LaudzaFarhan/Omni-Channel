@@ -227,6 +227,8 @@ export default function MessageDashboard({
           savedContacts={savedContacts}
           isFullscreen={isFullscreen}
           onToggleFullscreen={toggleFullscreen}
+          // Forwarding needs somewhere to forward TO, and the chat list lives here.
+          chats={chats}
         />
       ) : (
         <div className="empty-chat-window" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-main)' }}>
