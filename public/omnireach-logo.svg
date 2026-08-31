@@ -1,16 +1,24 @@
 <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Omni Reach">
   <defs>
-    <linearGradient id="orMark" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#5b7cf6"/>
-      <stop offset="1" stop-color="#3a56d4"/>
+    <linearGradient id="omniBlue" x1="0.08" y1="0.1" x2="0.92" y2="0.92">
+      <stop offset="0" stop-color="#4f7df0"/>
+      <stop offset="1" stop-color="#3155bd"/>
+    </linearGradient>
+    <linearGradient id="omniFold" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#28499f"/>
+      <stop offset="1" stop-color="#17377f"/>
     </linearGradient>
   </defs>
-  <!-- Folded corner / tail, bottom-right, in a darker blue so it reads as a page curl. -->
-  <path d="M58 58 L86 74 L62 84 Z" fill="#2f43a8"/>
-  <!-- Body: rounded blue blob. -->
-  <rect x="15" y="13" width="68" height="59" rx="25" fill="url(#orMark)"/>
-  <!-- White interior window. -->
-  <rect x="30" y="27" width="47" height="33" rx="12" fill="#ffffff"/>
-  <!-- Navy aperture ring. -->
-  <circle cx="47" cy="43" r="7.5" fill="#ffffff" stroke="#1f2b5e" stroke-width="6"/>
+  <!-- The supplied mark is a folded ribbon, not a chat bubble. The even-odd cutout
+       keeps the white centre transparent so it works on both light and dark navbars. -->
+  <path
+    fill="url(#omniBlue)"
+    fill-rule="evenodd"
+    d="M39 8h43c10 0 16 8 14 19L85 76c-2-8-8-13-18-13H39C20 63 8 52 11 36 14 19 25 8 39 8Zm3 17c-8 0-14 5-16 13-2 8 3 13 13 13h34l6-26H42Z"
+  />
+  <!-- Folded tail at the lower-right of the ribbon. -->
+  <path d="M67 63h2c10 0 16 5 16 13-1 9-7 15-18 17l-15 2 4-32h11Z" fill="url(#omniFold)"/>
+  <path d="M56 63h11c9 0 15 4 17 11-4-4-10-6-17-6H55l1-5Z" fill="#244aa4" opacity="0.78"/>
+  <!-- Navy aperture from the supplied logo. -->
+  <circle cx="50" cy="38" r="8" fill="#ffffff" stroke="#11285f" stroke-width="6"/>
 </svg>

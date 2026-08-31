@@ -1,6 +1,6 @@
 import React from 'react';
 import { MessageSquare, Users, Zap, Shield, Check, HelpCircle, Pause, Play, Code } from 'lucide-react';
-import BrandMark from './BrandMark.jsx';
+import { BrandLockup } from './BrandMark.jsx';
 
 export default function LandingPage({ onGoToDashboard }) {
   const [agentCount, setAgentCount] = React.useState(3);
@@ -135,9 +135,8 @@ export default function LandingPage({ onGoToDashboard }) {
     <div className="landing-container">
       {/* Navigation */}
       <nav className="landing-nav">
-        <a href="#" className="nav-logo" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
-          <BrandMark size={28} />
-          <span>Omni Reach</span>
+        <a href="#" className="landing-brand" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+          <BrandLockup markSize={31} />
         </a>
         <ul className="nav-links">
           <li><a href="#features" onClick={(e) => { e.preventDefault(); handleScrollTo('features'); }}>Features</a></li>

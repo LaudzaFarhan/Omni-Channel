@@ -2579,13 +2579,162 @@ input:checked + .slider:before {
   font-size: 0.9rem;
 }
 
+/* Omni Reach brand lockup --------------------------------------------------
+   Sidebar, landing, and admin headers used to share `.nav-logo`, even though one is a
+   vertical-rail heading and the others are horizontal navbar links. The horizontal
+   headers therefore inherited sidebar-only margin, padding, clipping, and a green text
+   gradient. These dedicated classes keep each layout independent while BrandLockup
+   keeps the artwork and typography identical. */
+:root {
+  --omni-blue: #3f67d8;
+  --omni-blue-dark: #294da8;
+  --omni-blue-soft: rgba(63, 103, 216, 0.12);
+}
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.brand-mark {
+  object-fit: contain;
+}
+
+.brand-wordmark {
+  color: var(--omni-blue);
+  font-family: 'Outfit', sans-serif;
+  font-size: 1rem;
+  font-weight: 800;
+  font-style: italic;
+  line-height: 0.95;
+  letter-spacing: 0.035em;
+  white-space: nowrap;
+  transform: skewX(-2deg);
+  transform-origin: left center;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  margin-bottom: 20px;
+  padding: 0 4px;
+  overflow: hidden;
+}
+
+.sidebar-brand .brand-wordmark {
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+}
+
+.nav-sidebar.collapsed .sidebar-brand {
+  width: 40px;
+  justify-content: center;
+  padding: 0;
+}
+
+.landing-brand {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  text-decoration: none;
+}
+
+.landing-brand:focus-visible {
+  outline: 2px solid var(--omni-blue);
+  outline-offset: 5px;
+  border-radius: 6px;
+}
+
+.admin-navbar {
+  height: auto;
+  min-height: 64px;
+  padding: 10px 8%;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.admin-brand,
+.admin-navbar-actions {
+  display: flex;
+  align-items: center;
+}
+
+.admin-brand {
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+.admin-navbar-actions {
+  min-width: 0;
+  gap: 16px;
+  justify-content: flex-end;
+}
+
+.admin-navbar-user {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-console-badge {
+  padding: 2px 8px;
+  border: 1px solid rgba(63, 103, 216, 0.2);
+  border-radius: 999px;
+  background: var(--omni-blue-soft);
+  color: var(--omni-blue);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+/* Keep the landing navbar's interaction colour in the same family as its blue logo.
+   The rest of the application remains green because this is a navbar consistency fix,
+   not a theme rewrite. */
+.landing-container > .landing-nav .nav-btn {
+  background: var(--omni-blue);
+  box-shadow: 0 4px 12px rgba(63, 103, 216, 0.25);
+}
+
+.landing-container > .landing-nav .nav-btn:hover {
+  background: var(--omni-blue-dark);
+}
+
+.landing-container > .landing-nav .nav-links a:hover {
+  color: var(--omni-blue);
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .hero-title { font-size: 2.5rem; }
-  .landing-nav { padding: 0 5%; }
+  .landing-nav { padding: 0 5%; gap: 12px; }
   .nav-links { display: none; }
+  .admin-navbar { min-height: 64px; padding: 10px 5%; }
+  .admin-navbar-actions { gap: 10px; }
+  .admin-navbar-user { display: none; }
   .pricing-grid { grid-template-columns: 1fr; }
   .landing-footer { flex-direction: column; gap: 20px; text-align: center; }
+}
+
+@media (max-width: 420px) {
+  .landing-brand .brand-lockup { gap: 6px; }
+  .landing-brand .brand-mark { width: 26px; height: 26px; }
+  .landing-brand .brand-wordmark { font-size: 0.78rem; letter-spacing: 0.015em; }
+  .landing-container > .landing-nav .nav-btn { padding: 8px 11px; font-size: 0.78rem; }
+  .admin-console-badge { display: none; }
 }
 
 /* Blurry Subscription Overlay */

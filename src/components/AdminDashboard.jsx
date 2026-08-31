@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { adminListUsers, fetchPlans } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
 import { LogOut, Users, Layers, Activity, CreditCard } from 'lucide-react';
-import BrandMark from './BrandMark.jsx';
+import { BrandLockup } from './BrandMark.jsx';
 import { normalizePlan, sortPlans } from '../utils/plans.js';
 import VersionBadge from './VersionBadge.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
@@ -114,20 +114,15 @@ export default function AdminDashboard({ user, onLogout }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', background: 'var(--bg-main)' }}>
       {/* Admin Header */}
-      <nav className="landing-nav" style={{ padding: '16px 8%' }}>
-        <div className="nav-logo">
-          <BrandMark size={26} />
-          <span>
-            Omni Reach
-            <span style={{ fontSize: '0.8rem', verticalAlign: 'middle', padding: '2px 8px', borderRadius: '12px', background: 'rgba(0,168,132,0.1)', color: 'var(--primary)', marginLeft: '10px' }}>
-              Admin Console
-            </span>
-          </span>
+      <nav className="landing-nav admin-navbar">
+        <div className="admin-brand">
+          <BrandLockup markSize={29} />
+          <span className="admin-console-badge">Admin Console</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div className="admin-navbar-actions">
           <VersionBadge />
           <ThemeToggle />
-          <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+          <span className="admin-navbar-user">
             Logged in as: <strong>{user.email}</strong>
           </span>
           <button className="logout-button" onClick={onLogout} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
