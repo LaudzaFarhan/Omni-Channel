@@ -1192,6 +1192,40 @@ input:checked + .slider:before {
   padding: 0 4px;
 }
 
+/* Fullscreen conversation.
+   The wrapper that goes fullscreen holds both the chat and the quick-replies panel, so
+   the panel is still usable while expanded.
+
+   :fullscreen and :-webkit-full-screen are kept in separate rules on purpose. A browser
+   that cannot parse one of those selectors discards the whole rule it appears in, so
+   comma-joining them would silently lose the styles in both. */
+.chat-fullscreen-root:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  background-color: var(--bg-chat);
+}
+
+.chat-fullscreen-root:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  background-color: var(--bg-chat);
+}
+
+/* Used when the Fullscreen API is unavailable or refused: cover the app rather than the
+   screen. Below the toast layer (4000) so notifications still surface. */
+.chat-fullscreen-root.chat-fullscreen-fallback {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  height: 100%;
+  background-color: var(--bg-chat);
+}
+
+/* The UA paints the area outside the fullscreen element black by default. */
+.chat-fullscreen-root::backdrop {
+  background-color: var(--bg-chat);
+}
+
 /* Chat Main Window */
 .chat-window {
   flex: 1;
