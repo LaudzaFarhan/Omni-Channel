@@ -1,5 +1,6 @@
 import React from 'react';
 import { LayoutDashboard, MessageSquare, BookUser, Users, CreditCard, User, Settings, LogOut, Bell, Activity } from 'lucide-react';
+import BrandMark from './BrandMark.jsx';
 
 export default function Sidebar({ activeTab, setActiveTab, onLogout, collapsed, notifications = [], isSupervisor = true }) {
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -8,8 +9,8 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout, collapsed, 
     <div className={`nav-sidebar ${collapsed ? 'collapsed' : ''}`}>
       <div className="nav-top">
         <div className="nav-logo">
-          <div className="logo-circle">W</div>
-          {!collapsed && <span className="logo-text">WhatsApp</span>}
+          <BrandMark size={32} />
+          {!collapsed && <span className="logo-text">Omni Reach</span>}
         </div>
 
         <button 

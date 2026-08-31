@@ -1,0 +1,16 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Omni Reach">
+  <defs>
+    <linearGradient id="orMark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5b7cf6"/>
+      <stop offset="1" stop-color="#3a56d4"/>
+    </linearGradient>
+  </defs>
+  <!-- Folded corner / tail, bottom-right, in a darker blue so it reads as a page curl. -->
+  <path d="M58 58 L86 74 L62 84 Z" fill="#2f43a8"/>
+  <!-- Body: rounded blue blob. -->
+  <rect x="15" y="13" width="68" height="59" rx="25" fill="url(#orMark)"/>
+  <!-- White interior window. -->
+  <rect x="30" y="27" width="47" height="33" rx="12" fill="#ffffff"/>
+  <!-- Navy aperture ring. -->
+  <circle cx="47" cy="43" r="7.5" fill="#ffffff" stroke="#1f2b5e" stroke-width="6"/>
+</svg>

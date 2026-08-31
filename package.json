@@ -1,7 +1,7 @@
 {
-  "name": "whatsapp-business-dashboard",
+  "name": "omni-reach",
   "version": "2.0.0",
-  "description": "WhatsApp Business Dashboard using Baileys",
+  "description": "Omni Reach — multi-agent WhatsApp inbox for teams, built on Baileys",
   "main": "server/index.js",
   "type": "module",
   "scripts": {

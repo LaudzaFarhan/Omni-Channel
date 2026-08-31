@@ -1,5 +1,6 @@
 import React from 'react';
 import { MessageSquare, Users, Zap, Shield, Check, HelpCircle, Pause, Play, Code } from 'lucide-react';
+import BrandMark from './BrandMark.jsx';
 
 export default function LandingPage({ onGoToDashboard }) {
   const [agentCount, setAgentCount] = React.useState(3);
@@ -135,8 +136,8 @@ export default function LandingPage({ onGoToDashboard }) {
       {/* Navigation */}
       <nav className="landing-nav">
         <a href="#" className="nav-logo" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
-          <MessageSquare size={24} style={{ color: 'var(--primary)' }} />
-          <span>WAgateway</span>
+          <BrandMark size={28} />
+          <span>Omni Reach</span>
         </a>
         <ul className="nav-links">
           <li><a href="#features" onClick={(e) => { e.preventDefault(); handleScrollTo('features'); }}>Features</a></li>
@@ -525,7 +526,7 @@ export default function LandingPage({ onGoToDashboard }) {
 
       {/* Footer */}
       <footer className="landing-footer">
-        <div>© {new Date().getFullYear()} WAgateway. All rights reserved.</div>
+        <div>© {new Date().getFullYear()} Omni Reach. All rights reserved.</div>
         <div>Built for WhatsApp Business teams.</div>
       </footer>
     </div>

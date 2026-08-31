@@ -233,7 +233,7 @@ export default function MessageDashboard({
       ) : (
         <div className="empty-chat-window" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-main)' }}>
           <div className="empty-chat-content" style={{ textAlign: 'center' }}>
-            <h2 style={{ fontSize: '1.5rem', marginBottom: '10px' }}>WhatsApp CRM</h2>
+            <h2 style={{ fontSize: '1.5rem', marginBottom: '10px' }}>Omni Reach</h2>
             <p style={{ color: 'var(--text-dimmed)' }}>Select a chat to start messaging</p>
           </div>
         </div>

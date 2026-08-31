@@ -297,7 +297,7 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `WAgateway_Users_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `OmniReach_Users_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

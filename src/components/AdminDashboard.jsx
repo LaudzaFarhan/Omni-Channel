@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { adminListUsers, fetchPlans } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
-import { Shield, LogOut, Users, Layers, Activity, CreditCard } from 'lucide-react';
+import { LogOut, Users, Layers, Activity, CreditCard } from 'lucide-react';
+import BrandMark from './BrandMark.jsx';
 import { normalizePlan, sortPlans } from '../utils/plans.js';
 import VersionBadge from './VersionBadge.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
@@ -115,9 +116,9 @@ export default function AdminDashboard({ user, onLogout }) {
       {/* Admin Header */}
       <nav className="landing-nav" style={{ padding: '16px 8%' }}>
         <div className="nav-logo">
-          <Shield size={24} style={{ color: 'var(--primary)' }} />
+          <BrandMark size={26} />
           <span>
-            WAgateway
+            Omni Reach
             <span style={{ fontSize: '0.8rem', verticalAlign: 'middle', padding: '2px 8px', borderRadius: '12px', background: 'rgba(0,168,132,0.1)', color: 'var(--primary)', marginLeft: '10px' }}>
               Admin Console
             </span>

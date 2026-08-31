@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { login as apiLogin, register as apiRegister } from '../utils/api.js';
-import { MessageSquare, Mail, Lock, User, ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, User, ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import BrandMark from './BrandMark.jsx';
 
 export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSuccess }) {
   const [email, setEmail] = useState('');
@@ -72,7 +73,7 @@ export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSu
         </button>
 
         <div className="welcome-logo-wrapper" style={{ margin: '0 auto 24px auto' }}>
-          <MessageSquare size={36} />
+          <BrandMark size={44} />
         </div>
 
         <h2 className="connection-title" style={{ marginBottom: '8px' }}>
