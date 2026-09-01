@@ -4,7 +4,7 @@ import { fetchWithAuth, saveContact, updateContact, setChatStatus as apiSetChatS
 import { subscribeSocket } from '../utils/socket.js';
 import { showToast } from '../utils/toastBus.js';
 import { PRESET_TAGS, getTags, toggleTag, clearTags, createCustomTag, loadGlobalCustomTags, addGlobalCustomTag, deleteGlobalCustomTag } from '../utils/contactTags.js';
-import { getChatDisplayName, getInitials } from '../utils/displayName.js';
+import { getChatDisplayName, getInitials, avatarColor } from '../utils/displayName.js';
 import { get24HourWindowStatus } from '../utils/timeFormat.js';
 import { jidToPhone, formatPhone } from '../utils/phone.js';
 import ContactEditor from './contacts/ContactEditor.jsx';
