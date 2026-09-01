@@ -376,10 +376,14 @@ export default function Dashboard({
         {/* Activity Chart */}
         <div className="dashboard-panel">
           <div className="dashboard-panel-header">
-            <TrendingUp size={18} />
-            <span>Percakapan Aktif per Hari</span>
+            <div className="dashboard-panel-header-left">
+              <div className="panel-header-icon" style={{ background: 'var(--primary-soft)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
+                <TrendingUp size={16} />
+              </div>
+              <span>Percakapan Aktif per Hari</span>
+            </div>
           </div>
-          <div className="dashboard-panel-body">
+          <div className="dashboard-panel-body" style={{ alignItems: 'flex-end', padding: '16px 20px 12px' }}>
             {hasActivity ? (
               <div className="activity-chart">
                 {activityData.map((day, i) => {
@@ -411,10 +415,14 @@ export default function Dashboard({
         {/* Recent Messages */}
         <div className="dashboard-panel">
           <div className="dashboard-panel-header">
-            <Clock size={18} />
-            <span>Pesan Terbaru</span>
+            <div className="dashboard-panel-header-left">
+              <div className="panel-header-icon" style={{ background: 'var(--primary-soft)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
+                <Clock size={16} />
+              </div>
+              <span>Pesan Terbaru</span>
+            </div>
           </div>
-          <div className="dashboard-panel-body">
+          <div className="dashboard-panel-body" style={{ padding: '8px 12px', overflowY: 'auto', display: 'block' }}>
             {recentChats.length > 0 ? (
               <div className="recent-messages-list">
                 {recentChats.map((chat) => {

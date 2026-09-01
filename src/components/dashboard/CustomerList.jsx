@@ -75,8 +75,12 @@ export default function CustomerList({
   return (
     <div className="dashboard-panel customer-panel">
       <div className="dashboard-panel-header">
-        <Users size={18} />
-        <span>Pelanggan</span>
+        <div className="dashboard-panel-header-left">
+          <div className="panel-header-icon" style={{ background: 'var(--primary-soft)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
+            <Users size={16} />
+          </div>
+          <span>Pelanggan</span>
+        </div>
         {/* Under a cell filter the badge counts the people in that hour, not the whole
             book — a badge saying 340 above eleven rows contradicts itself. */}
         <span className="customer-count">

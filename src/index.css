@@ -2447,16 +2447,138 @@ input:checked + .slider:before {
   line-height: 1.5;
 }
 
-/* Quick Replies Sidebar */
-.quick-replies-panel {
-  width: 240px;
+/* Right Drawer & Panels */
+.chat-right-drawer {
+  width: 320px;
   border-left: 1px solid var(--border-color);
   background-color: var(--bg-sidebar);
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  transition: width 0.25s ease, opacity 0.2s ease;
+  z-index: 15;
+  flex-shrink: 0;
+}
+
+.chat-right-drawer.hidden {
+  width: 0;
+  border-left-color: transparent;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.02);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.drawer-header h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.drawer-close-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.drawer-close-btn:hover {
+  background: var(--overlay-medium);
+  color: var(--text-main);
+}
+
+.contact-profile-drawer {
+  padding-bottom: 24px;
+}
+
+.contact-profile-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 22px 18px 18px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--overlay-subtle);
+  position: relative;
+}
+
+.contact-profile-avatar {
+  width: 76px;
+  height: 76px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #fff;
+  margin-bottom: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.contact-profile-name {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+
+.contact-profile-phone {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.contact-profile-section {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.contact-profile-section-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dimmed);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Quick Replies Sidebar */
+.quick-replies-panel {
+  width: 280px;
+  border-left: 1px solid var(--border-color);
+  background-color: var(--bg-sidebar);
+  padding: 16px;
   display: flex;
   flex-direction: column;
   transition: width 0.3s ease, padding 0.3s ease, opacity 0.2s ease, border-color 0.3s ease;
-  overflow: hidden;
+  overflow-y: auto;
   opacity: 1;
 }
 
@@ -2476,15 +2598,15 @@ input:checked + .slider:before {
 }
 
 .qr-panel-header h3 {
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 0.95rem;
+  font-weight: 700;
   color: var(--text-main);
   margin: 0;
 }
 
 .qr-add-btn {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   border-radius: 8px;
   border: 1px dashed var(--primary);
   background: var(--primary-subtle);
@@ -3414,7 +3536,6 @@ input:checked + .slider:before {
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-  height: 520px;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -3422,13 +3543,19 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
   padding: 16px 20px;
   font-weight: 700;
   font-size: 0.95rem;
   color: var(--text-main);
   border-bottom: 1px solid var(--border-color);
   background: rgba(255, 255, 255, 0.02);
+}
+
+.dashboard-panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .panel-header-icon {

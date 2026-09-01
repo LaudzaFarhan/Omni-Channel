@@ -328,7 +328,8 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   const [editingContact, setEditingContact] = useState(false);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
-  const [showQuickReplies, setShowQuickReplies] = useState(true);
+  const [activeRightPanel, setActiveRightPanel] = useState(null); // 'contact_info' | 'quick_reply' | null
+  const [copiedPhone, setCopiedPhone] = useState(false);
   const [quickReplies, setQuickReplies] = useState(loadQuickReplies);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingReply, setEditingReply] = useState(null); // null or reply id
@@ -337,6 +338,14 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+
+  const handleCopyPhone = (text) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedPhone(true);
+    setTimeout(() => setCopiedPhone(false), 2000);
+    showToast({ type: 'success', title: 'Nomor disalin', message: text });
+  };
 
   // Agent hold: when a conversation is held, automated replies are suppressed so
   // a human can take over. Server-enforced; see /api/messages/send.
@@ -1112,7 +1121,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   // Last day heading printed, so the divider logic can look past messages the loop
   // discards (empty bodies, and free-tier messages older than 7 days). Local to this
   // render pass: comparing against visibleMessages[index - 1] instead would print a
-  // heading for a day whose only message was skipped, and a module-level variable would
+// heading for a day whose only message was skipped, and a module-level variable would
   // leak between conversations.
   let lastRenderedDay = null;
 
@@ -1122,7 +1131,12 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
       <div className="chat-window">
         {/* Header */}
         <div className="chat-window-header">
-          <div className="header-user-info">
+          <div
+            className="header-user-info"
+            onClick={() => setActiveRightPanel(prev => prev === 'contact_info' ? null : 'contact_info')}
+            style={{ cursor: 'pointer', transition: 'opacity 0.15s ease' }}
+            title="Klik untuk melihat Detail Profil Kontak"
+          >
             {/* Same helper the chat list uses. A raw substring(0,2) of the name gave
                 "+6" for every unsaved number — identical for every such contact, and
                 inconsistent with the list beside it, which shows the last two digits. */}
@@ -1287,233 +1301,16 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
               {isHeld ? <><Play size={13} /> Resume Agent</> : <><Pause size={13} /> Hold Agent</>}
             </button>
 
-            {/* Tag Selector */}
-            <div style={{ position: 'relative' }} ref={tagDropdownRef}>
-              <button 
-                className="icon-button has-chevron" 
-                onClick={() => setShowTagDropdown(!showTagDropdown)}
-                title="Set Contact Tag"
-                style={{ 
-                  color: currentTags.length > 0 ? currentTags[0].color : 'var(--text-muted)',
-                }}
-              >
-                <Tag size={17} />
-                <ChevronDown size={12} />
-              </button>
-
-              {showTagDropdown && (
-                <div style={{
-                  position: 'absolute',
-                  top: '100%',
-                  right: 0,
-                  marginTop: '6px',
-                  background: 'var(--bg-sidebar)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '10px',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-                  zIndex: 100,
-                  width: '220px',
-                  overflow: 'hidden'
-                }}>
-                  <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-color)', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-dimmed)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Set Tags
-                  </div>
-                  {PRESET_TAGS.map(tag => {
-                    const isSelected = currentTags.some(t => t.label.toLowerCase() === tag.label.toLowerCase());
-                    return (
-                      <button
-                        key={tag.value}
-                        onClick={() => handleToggleTag(tag)}
-                        style={{
-                          width: '100%',
-                          padding: '9px 12px',
-                          border: 'none',
-                          background: isSelected ? tag.bg : 'transparent',
-                          color: 'var(--text-main)',
-                          fontSize: '0.82rem',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          transition: 'background 0.15s'
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.background = tag.bg}
-                        onMouseLeave={e => e.currentTarget.style.background = isSelected ? tag.bg : 'transparent'}
-                      >
-                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tag.color, flexShrink: 0 }} />
-                        {tag.label}
-                        {isSelected && (
-                          <Check size={14} style={{ marginLeft: 'auto', color: tag.color }} />
-                        )}
-                      </button>
-                    );
-                  })}
-
-                  {/* Global Custom Tags */}
-                  {globalCustomTags.map(tag => {
-                    const isSelected = currentTags.some(t => t.label.toLowerCase() === tag.label.toLowerCase());
-                    return (
-                      <div
-                        key={tag.value}
-                        style={{
-                          width: '100%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          paddingRight: '8px',
-                          background: isSelected ? tag.bg : 'transparent',
-                          transition: 'background 0.15s'
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.background = tag.bg}
-                        onMouseLeave={e => e.currentTarget.style.background = isSelected ? tag.bg : 'transparent'}
-                      >
-                        <button
-                          onClick={() => handleToggleTag(tag)}
-                          style={{
-                            flex: 1,
-                            padding: '9px 12px',
-                            border: 'none',
-                            background: 'transparent',
-                            color: 'var(--text-main)',
-                            fontSize: '0.82rem',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px'
-                          }}
-                        >
-                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tag.color, flexShrink: 0 }} />
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px' }}>
-                            {tag.label}
-                          </span>
-                          {isSelected && (
-                            <Check size={14} style={{ marginLeft: 'auto', color: tag.color, flexShrink: 0 }} />
-                          )}
-                        </button>
-                        <button
-                          onClick={(e) => handleDeleteGlobalCustomTag(e, tag)}
-                          title="Delete Tag Globally"
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: 'var(--text-muted)',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            padding: '4px',
-                            borderRadius: '4px',
-                            transition: 'color 0.15s, background 0.15s'
-                          }}
-                          onMouseEnter={e => {
-                            e.stopPropagation();
-                            e.currentTarget.style.color = '#ef4444';
-                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
-                          }}
-                          onMouseLeave={e => {
-                            e.currentTarget.style.color = 'var(--text-muted)';
-                            e.currentTarget.style.background = 'transparent';
-                          }}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    );
-                  })}
-
-                  {/* Custom Tag Option */}
-                  {!showCustomInput ? (
-                    <button
-                      onClick={() => setShowCustomInput(true)}
-                      style={{
-                        width: '100%',
-                        padding: '9px 12px',
-                        border: 'none',
-                        background: 'transparent',
-                        color: 'var(--text-main)',
-                        fontSize: '0.82rem',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        transition: 'background 0.15s'
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(139, 92, 246, 0.08)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <Pencil size={12} style={{ color: '#8b5cf6', flexShrink: 0 }} />
-                      Custom Tag...
-                    </button>
-                  ) : (
-                    <div style={{ padding: '8px 10px', display: 'flex', gap: '6px', boxSizing: 'border-box', width: '100%', alignItems: 'center' }}>
-                      <input
-                        type="text"
-                        value={customTagInput}
-                        onChange={(e) => setCustomTagInput(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSaveCustomTag()}
-                        placeholder="Type tag name..."
-                        autoFocus
-                        style={{
-                          flex: 1,
-                          minWidth: 0,
-                          padding: '6px 8px',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '6px',
-                          background: 'var(--bg-main)',
-                          color: 'var(--text-main)',
-                          fontSize: '0.78rem',
-                          outline: 'none'
-                        }}
-                      />
-                      <button
-                        onClick={handleSaveCustomTag}
-                        style={{
-                          padding: '6px 10px',
-                          background: '#8b5cf6',
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: '6px',
-                          fontSize: '0.78rem',
-                          fontWeight: '600',
-                          cursor: 'pointer',
-                          flexShrink: 0
-                        }}
-                      >
-                        Save
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Clear All Tags */}
-                  {currentTags.length > 0 && (
-                    <button
-                      onClick={handleClearAllTags}
-                      style={{
-                        width: '100%',
-                        padding: '9px 12px',
-                        border: 'none',
-                        borderTop: '1px solid var(--border-color)',
-                        background: 'transparent',
-                        color: '#ef4444',
-                        fontSize: '0.78rem',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <X size={14} />
-                      Clear All Tags
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+            {/* Quick Reply Drawer Toggle */}
+            <button
+              className={`icon-button ${activeRightPanel === 'quick_reply' ? 'active' : ''}`}
+              onClick={() => setActiveRightPanel(prev => prev === 'quick_reply' ? null : 'quick_reply')}
+              title="Quick Reply"
+              aria-pressed={activeRightPanel === 'quick_reply'}
+              style={{ color: activeRightPanel === 'quick_reply' ? 'var(--primary)' : 'var(--text-muted)' }}
+            >
+              <Zap size={18} />
+            </button>
 
             {/* Fullscreen. Expands the chat list and this conversation together over the
                 nav sidebar and top bar. Rendered only when a handler is supplied, so the
@@ -1978,70 +1775,69 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
           </div>
         )}
 
-        {/* Quote strip. Sits directly above the composer so it is obvious the next message
-            will be a reply, and offers a way out of that. */}
-        {replyTo && (() => {
-          const quotedText = getMessageText(replyTo);
-          return (
-            <div className="reply-compose-bar">
-              <div className="reply-compose-body">
-                <div className="reply-compose-author">
-                  {replyTo.key.fromMe ? 'Anda' : getDisplayName(activeChat)}
-                </div>
-                <div className="reply-compose-text">{quotedText || 'Pesan'}</div>
+        {/* Replying banner */}
+        {replyTo && (
+          <div className="replying-banner">
+            <div className="replying-content">
+              <div className="replying-title">
+                Membalas {replyTo.key.fromMe ? 'Anda' : getDisplayName(activeChat)}
               </div>
-              <button className="icon-button" onClick={() => setReplyTo(null)} title="Batalkan balasan">
-                <X size={16} />
-              </button>
+              <div className="replying-snippet">
+                {getMessageText(replyTo) || (hasMedia(replyTo) ? 'Media' : 'Pesan')}
+              </div>
             </div>
-          );
-        })()}
-
-        {selectedFile && (
-          <div className="file-preview-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'var(--primary-subtle)', borderTop: '1px solid var(--border-color)', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-              <FileText size={18} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-              <span style={{ fontSize: '0.85rem', fontWeight: '500', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {selectedFile.name}
-              </span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-dimmed)' }}>
-                ({selectedFile.type || 'Unknown type'})
-              </span>
-            </div>
-            <button 
-              onClick={() => {
-                setSelectedFile(null);
-                if (fileInputRef.current) fileInputRef.current.value = '';
-              }}
-              style={{ background: 'none', border: 'none', color: 'var(--text-dimmed)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+            <button
+              type="button"
+              className="replying-cancel"
+              onClick={() => setReplyTo(null)}
+              title="Batal membalas"
+              aria-label="Batal membalas"
             >
-              <X size={16} />
+              <X size={15} />
             </button>
           </div>
         )}
 
-        {/* On-hold banner. Sits above the composer because the point of holding
-            is that YOU reply — the human composer stays fully enabled. */}
+        {/* File preview before sending */}
+        {selectedFile && (
+          <div style={{
+            padding: '8px 16px', background: 'var(--overlay-subtle)',
+            borderTop: '1px solid var(--border-color)', display: 'flex',
+            alignItems: 'center', justifyContent: 'space-between', fontSize: '0.82rem',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+              <Paperclip size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+              <span style={{ fontWeight: '600', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {selectedFile.name}
+              </span>
+              <span style={{ color: 'var(--text-dimmed)', fontSize: '0.75rem' }}>
+                ({(selectedFile.size / 1024).toFixed(1)} KB)
+              </span>
+            </div>
+            <button
+              onClick={() => setSelectedFile(null)}
+              style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex' }}
+              title="Batalkan berkas"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        )}
+
+        {/* Hold alert banner */}
         {isHeld && (
-          <div
-            role="status"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              padding: '10px 16px',
-              background: 'rgba(245,158,11,0.08)',
-              borderTop: '1px solid rgba(245,158,11,0.25)',
-              color: '#f59e0b',
-              fontSize: '0.82rem',
-            }}
-          >
-            <Pause size={14} style={{ flexShrink: 0 }} />
-            <span style={{ flex: 1 }}>
-              <strong>Agent on hold.</strong> Automated replies are paused for this conversation
-              {holdState?.pausedBy ? <> by <strong>{holdState.pausedBy}</strong></> : null}
-              . You can reply normally.
-            </span>
+          <div style={{
+            padding: '6px 16px', background: 'rgba(245,158,11,0.12)',
+            borderTop: '1px solid rgba(245,158,11,0.25)', display: 'flex',
+            alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8rem',
+            color: '#f59e0b',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Pause size={14} />
+              <span>
+                <strong>Agent on Hold:</strong> Respon otomatis bot dinonaktifkan untuk percakapan ini.
+              </span>
+            </div>
             <button
               onClick={handleToggleHold}
               disabled={holdBusy}
@@ -2064,8 +1860,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
 
         {/* Message Input Box */}
         <div className="chat-window-input-bar" style={{ position: 'relative' }}>
-          {/* Quota-reached overlay. Themed rather than a hardcoded white wash,
-              which read as a bright panel over the dark composer. */}
+          {/* Quota-reached overlay */}
           {userProfile && userProfile.role !== 'admin' && (userProfile.messagesSent || 0) >= (userProfile.messageLimit ?? 500) && (
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'var(--bg-input)', opacity: 0.94, zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', fontWeight: '600', gap: '8px' }}>
               <AlertCircle size={18} /> Usage limit reached. Upgrade your plan to send more messages.
@@ -2079,8 +1874,6 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
             disabled={sending}
           />
 
-          {/* Everything the operator types or attaches lives in one rounded field, with
-              the send button outside it. */}
           <div className="composer-field">
             <button
               className="composer-icon"
@@ -2091,14 +1884,15 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
               <Plus size={19} />
             </button>
 
+            {/* Quick Reply Lightning Button */}
             <button
-              className={`composer-icon ${templatesOpen ? 'active' : ''}`}
-              onClick={() => setShowTemplates(v => !v)}
-              title="Pilih template pesan"
-              aria-expanded={templatesOpen}
+              className={`composer-icon ${activeRightPanel === 'quick_reply' ? 'active' : ''}`}
+              onClick={() => setActiveRightPanel(prev => prev === 'quick_reply' ? null : 'quick_reply')}
+              title="Quick Reply"
+              aria-expanded={activeRightPanel === 'quick_reply'}
               disabled={sending}
             >
-              <FileText size={17} />
+              <Zap size={18} />
             </button>
 
             <div style={{ position: 'relative', display: 'flex' }} ref={emojiRef}>
@@ -2151,9 +1945,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
             />
           </div>
 
-          {/* Template picker. Opened either by the composer's template button or by typing
-              '/', which the placeholder advertises — an advertised shortcut that does
-              nothing is worse than no shortcut. */}
+          {/* Template picker for '/' shortcut */}
           {templatesOpen && (
             <div ref={templatesRef} style={{
               position: 'absolute', bottom: 'calc(100% - 4px)', left: '20px', right: '76px',
@@ -2203,89 +1995,387 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
         </div>
       </div>
 
-      {/* Right Sidebar - Quick Replies Template Drawer */}
-      <div className={`quick-replies-panel ${!showQuickReplies ? 'hidden' : ''}`}>
-        <div className="qr-panel-header">
-          <h3>⚡ Quick Replies</h3>
-          <button 
-            className="qr-add-btn" 
-            onClick={openAddForm}
-            title="Add custom quick reply"
-          >
-            <Plus size={18} />
-          </button>
-        </div>
+      {/* Right Drawer: Contact Info OR Quick Replies */}
+      {activeRightPanel === 'contact_info' && (
+        <div className="chat-right-drawer contact-profile-drawer">
+          <div className="drawer-header">
+            <button className="drawer-close-btn" onClick={() => setActiveRightPanel(null)} title="Tutup Detail Profil">
+              <X size={18} />
+            </button>
+            <h3>Info Kontak</h3>
+          </div>
 
-        {/* Add/Edit Form */}
-        {showAddForm && (
-          <div className="qr-form">
-            <div className="qr-form-header">
-              <span>{editingReply ? 'Edit Reply' : 'New Quick Reply'}</span>
-              <button className="qr-form-close" onClick={handleCancelForm}>
-                <X size={16} />
-              </button>
+          <div className="contact-profile-card">
+            <div className="contact-profile-avatar" style={{ background: avatarColor(activeChat.id) }}>
+              {getInitials(getDisplayName(activeChat))}
             </div>
-            <input 
-              type="text"
-              className="qr-form-input"
-              placeholder="Title (e.g. 🎉 Promo)"
-              value={formTitle}
-              onChange={(e) => setFormTitle(e.target.value)}
-              maxLength={50}
-            />
-            <textarea
-              className="qr-form-textarea"
-              placeholder="Message text..."
-              value={formText}
-              onChange={(e) => setFormText(e.target.value)}
-              rows={3}
-              maxLength={500}
-            />
-            <div className="qr-form-actions">
-              <button className="qr-form-cancel" onClick={handleCancelForm}>Cancel</button>
-              <button 
-                className="qr-form-save" 
-                onClick={handleSaveReply}
-                disabled={!formTitle.trim() || !formText.trim()}
+            <div className="contact-profile-name">{getDisplayName(activeChat)}</div>
+            {contactPhone && (
+              <div className="contact-profile-phone">
+                <span>{formatPhone(contactPhone)}</span>
+                <button
+                  type="button"
+                  onClick={() => handleCopyPhone(formatPhone(contactPhone))}
+                  title="Salin nomor telepon"
+                  style={{
+                    border: 'none', background: 'transparent', color: copiedPhone ? 'var(--success)' : 'var(--text-dimmed)',
+                    cursor: 'pointer', padding: '2px', display: 'inline-flex', alignItems: 'center',
+                  }}
+                >
+                  {copiedPhone ? <Check size={14} /> : <Copy size={14} />}
+                </button>
+              </div>
+            )}
+
+            {/* 24h Window Badge */}
+            {windowStatus && (
+              <div style={{ marginTop: '4px', marginBottom: '12px' }}>
+                <span className={`window-24h-pill is-${windowStatus.level}`}>
+                  {windowStatus.level === 'healthy' && <Clock size={11} />}
+                  {windowStatus.level === 'warning' && <span className="pulsing-dot" />}
+                  {windowStatus.level === 'urgent' && <AlertTriangle size={11} />}
+                  {windowStatus.level === 'expired' && <Clock size={11} />}
+                  <span>
+                    {windowStatus.isExpired
+                      ? '24h Expired'
+                      : windowStatus.level === 'urgent'
+                      ? `${windowStatus.minutesLeft}m tersisa!`
+                      : `24h: ${windowStatus.hoursLeft}j ${windowStatus.minutesLeft}m`}
+                  </span>
+                </span>
+              </div>
+            )}
+
+            {/* Contact Action */}
+            {canSaveContact && (
+              <button
+                type="button"
+                onClick={() => setEditingContact(true)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  padding: '6px 14px', borderRadius: '8px', fontSize: '0.8rem',
+                  fontWeight: '600', cursor: 'pointer', background: 'var(--primary-soft)',
+                  border: '1px solid var(--primary-border)', color: 'var(--primary)',
+                  transition: 'all 0.15s ease',
+                }}
               >
-                {editingReply ? 'Update' : 'Add Reply'}
+                {savedContact ? <><Pencil size={13} /> Edit Kontak</> : <><UserPlus size={13} /> Simpan ke Kontak</>}
+              </button>
+            )}
+          </div>
+
+          {/* Section: Contact Tags */}
+          <div className="contact-profile-section">
+            <div className="contact-profile-section-title">
+              <span>Label Kontak (Tags)</span>
+              {currentTags.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearAllTags}
+                  style={{
+                    background: 'none', border: 'none', color: '#ef4444',
+                    fontSize: '0.72rem', cursor: 'pointer', fontWeight: '600',
+                  }}
+                >
+                  Hapus Semua
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+              {PRESET_TAGS.map(tag => {
+                const isSelected = currentTags.some(t => t.label.toLowerCase() === tag.label.toLowerCase());
+                return (
+                  <button
+                    key={tag.value}
+                    type="button"
+                    onClick={() => handleToggleTag(tag)}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      padding: '5px 10px', borderRadius: '8px', fontSize: '0.78rem',
+                      fontWeight: '600', cursor: 'pointer', border: `1px solid ${isSelected ? tag.color : 'var(--border-color)'}`,
+                      background: isSelected ? tag.bg : 'var(--bg-main)', color: isSelected ? tag.color : 'var(--text-muted)',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: tag.color, flexShrink: 0 }} />
+                    {tag.label}
+                    {isSelected && <Check size={12} style={{ color: tag.color }} />}
+                  </button>
+                );
+              })}
+
+              {globalCustomTags.map(tag => {
+                const isSelected = currentTags.some(t => t.label.toLowerCase() === tag.label.toLowerCase());
+                return (
+                  <div
+                    key={tag.value}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                      padding: '4px 6px 4px 10px', borderRadius: '8px', fontSize: '0.78rem',
+                      fontWeight: '600', border: `1px solid ${isSelected ? tag.color : 'var(--border-color)'}`,
+                      background: isSelected ? tag.bg : 'var(--bg-main)', color: isSelected ? tag.color : 'var(--text-muted)',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleToggleTag(tag)}
+                      style={{
+                        background: 'none', border: 'none', color: 'inherit',
+                        cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', padding: 0,
+                      }}
+                    >
+                      <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: tag.color, flexShrink: 0 }} />
+                      {tag.label}
+                      {isSelected && <Check size={12} style={{ color: tag.color }} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteGlobalCustomTag(e, tag)}
+                      title="Hapus tag kustom"
+                      style={{
+                        background: 'transparent', border: 'none', color: 'var(--text-dimmed)',
+                        cursor: 'pointer', padding: '2px', display: 'inline-flex', alignItems: 'center',
+                      }}
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Add Custom Tag Form */}
+            {!showCustomInput ? (
+              <button
+                type="button"
+                onClick={() => setShowCustomInput(true)}
+                style={{
+                  width: '100%', padding: '6px 10px', borderRadius: '8px', border: '1px dashed var(--border-color)',
+                  background: 'transparent', color: 'var(--primary)', fontSize: '0.78rem', fontWeight: '600',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                }}
+              >
+                <Plus size={13} /> Tambah Tag Kustom
+              </button>
+            ) : (
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  placeholder="Nama tag..."
+                  value={customTagInput}
+                  onChange={(e) => setCustomTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveCustomTag();
+                    if (e.key === 'Escape') setShowCustomInput(false);
+                  }}
+                  autoFocus
+                  style={{
+                    flex: 1, padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border-color)',
+                    background: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.78rem', outline: 'none',
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveCustomTag}
+                  style={{
+                    padding: '6px 10px', background: 'var(--primary)', color: '#fff',
+                    border: 'none', borderRadius: '6px', fontSize: '0.78rem', fontWeight: '600', cursor: 'pointer',
+                  }}
+                >
+                  Simpan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCustomInput(false)}
+                  style={{
+                    padding: '6px', background: 'transparent', color: 'var(--text-muted)',
+                    border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex',
+                  }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Section: Status Prospek */}
+          <div className="contact-profile-section">
+            <div className="contact-profile-section-title">
+              <span>Status Prospek</span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <button
+                type="button"
+                onClick={() => handleSetStatus('prospect')}
+                disabled={statusBusy}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '8px 12px', borderRadius: '8px', border: `1px solid ${chatStatus === 'prospect' ? 'var(--primary-border)' : 'var(--border-color)'}`,
+                  background: chatStatus === 'prospect' ? 'var(--primary-soft)' : 'transparent',
+                  color: chatStatus === 'prospect' ? 'var(--primary)' : 'var(--text-main)',
+                  fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left',
+                }}
+              >
+                <span>New Leads / Prospek Aktif</span>
+                {chatStatus === 'prospect' && <Check size={14} />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSetStatus('closed_won')}
+                disabled={statusBusy}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '8px 12px', borderRadius: '8px', border: `1px solid ${chatStatus === 'closed_won' ? 'var(--success-border)' : 'var(--border-color)'}`,
+                  background: chatStatus === 'closed_won' ? 'var(--success-soft)' : 'transparent',
+                  color: chatStatus === 'closed_won' ? 'var(--success)' : 'var(--text-main)',
+                  fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left',
+                }}
+              >
+                <span>🏆 Closed Won</span>
+                {chatStatus === 'closed_won' && <Check size={14} />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSetStatus('dropped')}
+                disabled={statusBusy}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '8px 12px', borderRadius: '8px', border: `1px solid ${chatStatus === 'dropped' ? 'rgba(239,68,68,0.3)' : 'var(--border-color)'}`,
+                  background: chatStatus === 'dropped' ? 'rgba(239,68,68,0.1)' : 'transparent',
+                  color: chatStatus === 'dropped' ? '#ef4444' : 'var(--text-main)',
+                  fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left',
+                }}
+              >
+                <span>Bukan Prospek</span>
+                {chatStatus === 'dropped' && <Check size={14} />}
               </button>
             </div>
           </div>
-        )}
 
-        <div className="quick-replies-list">
-          {quickReplies.map(reply => (
-            <div key={reply.id} className="quick-reply-card">
-              <button 
-                className="quick-reply-btn"
-                onClick={() => handleSend(reply.text)}
-                disabled={sending}
-                title={reply.text}
+          {/* Section: AI Agent Hold */}
+          <div className="contact-profile-section">
+            <div className="contact-profile-section-title">
+              <span>Automasi AI Bot</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+              <span style={{ fontSize: '0.8rem', color: isHeld ? '#f59e0b' : 'var(--success)' }}>
+                {isHeld ? '⏸ Bot Ditahan (Manual)' : '🟢 Bot Aktif Otomatis'}
+              </span>
+              <button
+                type="button"
+                onClick={handleToggleHold}
+                disabled={holdBusy}
+                style={{
+                  padding: '5px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: '600',
+                  cursor: 'pointer', border: `1px solid ${isHeld ? 'rgba(245,158,11,0.35)' : 'var(--border-color)'}`,
+                  background: isHeld ? 'rgba(245,158,11,0.12)' : 'transparent', color: isHeld ? '#f59e0b' : 'var(--text-main)',
+                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                }}
               >
-                <div className="quick-reply-title">{reply.title}</div>
-                <div className="quick-reply-text">{reply.text}</div>
+                {isHeld ? <><Play size={12} /> Resume</> : <><Pause size={12} /> Hold</>}
               </button>
-              <div className="quick-reply-actions">
-                <button 
-                  className="qr-action-btn edit" 
-                  onClick={() => openEditForm(reply)}
-                  title="Edit"
-                >
-                  <Pencil size={13} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Right Drawer: Quick Replies */}
+      {activeRightPanel === 'quick_reply' && (
+        <div className="chat-right-drawer quick-replies-panel">
+          <div className="qr-panel-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Zap size={18} style={{ color: 'var(--primary)' }} />
+              <h3>Quick Reply</h3>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button 
+                className="qr-add-btn" 
+                onClick={openAddForm}
+                title="Tambah template baru"
+              >
+                <Plus size={16} />
+              </button>
+              <button className="drawer-close-btn" onClick={() => setActiveRightPanel(null)} title="Tutup Quick Reply">
+                <X size={17} />
+              </button>
+            </div>
+          </div>
+
+          {/* Add/Edit Form */}
+          {showAddForm && (
+            <div className="qr-form">
+              <div className="qr-form-header">
+                <span>{editingReply ? 'Edit Quick Reply' : 'Template Baru'}</span>
+                <button className="qr-form-close" onClick={handleCancelForm}>
+                  <X size={15} />
                 </button>
+              </div>
+              <input 
+                type="text" 
+                className="qr-form-input" 
+                placeholder="Judul (contoh: 🎉 Promo)" 
+                value={formTitle}
+                onChange={(e) => setFormTitle(e.target.value)}
+                maxLength={50}
+              />
+              <textarea 
+                className="qr-form-textarea" 
+                placeholder="Isi pesan template..." 
+                value={formText}
+                onChange={(e) => setFormText(e.target.value)}
+                rows={3}
+                maxLength={500}
+              />
+              <div className="qr-form-actions">
+                <button className="qr-form-cancel" onClick={handleCancelForm}>Batal</button>
                 <button 
-                  className="qr-action-btn delete" 
-                  onClick={() => handleDeleteReply(reply.id)}
-                  title="Delete"
+                  className="qr-form-save" 
+                  onClick={handleSaveReply}
+                  disabled={!formTitle.trim() || !formText.trim()}
                 >
-                  <Trash2 size={13} />
+                  {editingReply ? 'Perbarui' : 'Simpan'}
                 </button>
               </div>
             </div>
-          ))}
+          )}
+
+          <div className="quick-replies-list">
+            {quickReplies.map(reply => (
+              <div key={reply.id} className="quick-reply-card">
+                <button 
+                  className="quick-reply-btn"
+                  onClick={() => handleSend(reply.text)}
+                  disabled={sending}
+                  title={reply.text}
+                >
+                  <div className="quick-reply-title">{reply.title}</div>
+                  <div className="quick-reply-text">{reply.text}</div>
+                </button>
+                <div className="quick-reply-actions">
+                  <button 
+                    className="qr-action-btn edit" 
+                    onClick={() => openEditForm(reply)}
+                    title="Edit"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                  <button 
+                    className="qr-action-btn delete" 
+                    onClick={() => handleDeleteReply(reply.id)}
+                    title="Hapus"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Save / edit this customer in the operator's own contact list. Prefilled
           with the number so the common case is one field and one click. */}
