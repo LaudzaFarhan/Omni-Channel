@@ -2,7 +2,7 @@ import React from 'react';
 import { MessageSquare, Users, Zap, Shield, Check, HelpCircle, Pause, Play, Code, Calendar, Clock, UserCheck, BarChart3, Tag } from 'lucide-react';
 import { BrandLockup } from './BrandMark.jsx';
 
-export default function LandingPage({ onGoToDashboard }) {
+export default function LandingPage({ onGoToDashboard, onOpenBlog }) {
   const [agentCount, setAgentCount] = React.useState(3);
 
   const calculatePrice = (count) => {
@@ -150,15 +150,15 @@ export default function LandingPage({ onGoToDashboard }) {
       </nav>
 
       {/* Hero Section */}
-      <header className="hero-section" style={{ maxWidth: '1200px' }}>
+      <header className="hero-section">
         <div className="hero-layout">
           <div className="hero-left">
             <div className="hero-badge">🚀 WHATSAPP UNOFFICIAL API INDO & MULTI-AGENT CRM</div>
-            <h1 className="hero-title" style={{ fontSize: '3rem' }}>
+            <h1 className="hero-title">
               Bypass WhatsApp's 4-Device Limit. <br />
               <span>WhatsApp Unofficial API Indonesia.</span>
             </h1>
-            <p className="hero-subtitle" style={{ fontSize: '1.15rem' }}>
+            <p className="hero-subtitle">
               Solusi WhatsApp Unofficial API Indo tercepat dan terandal untuk bisnis. Hubungkan nomor WhatsApp Anda dalam 1 klik, aktifkan unlimited multi-agent CS & sales inbox, automasi Bot AI dengan Webhook realtime, dan pantau SLA follow-up 24 jam tanpa batasan kuota pesan.
             </p>
             <div className="hero-ctas">

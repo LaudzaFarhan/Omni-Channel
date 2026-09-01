@@ -2970,9 +2970,9 @@ input:checked + .slider:before {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  text-align: center;
-  padding: 100px 8% 80px 8%;
-  max-width: 900px;
+  padding: 70px 32px 60px;
+  max-width: 1260px;
+  width: 100%;
   margin: 0 auto;
 }
 
@@ -2982,18 +2982,20 @@ input:checked + .slider:before {
   color: var(--primary);
   padding: 6px 16px;
   border-radius: 20px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  margin-bottom: 24px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin-bottom: 20px;
   letter-spacing: 0.5px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .hero-title {
-  font-size: 3.5rem;
+  font-size: 2.75rem;
   font-weight: 800;
   line-height: 1.2;
-  margin-bottom: 24px;
-  letter-spacing: -1px;
+  margin-bottom: 20px;
+  letter-spacing: -0.8px;
 }
 
 .hero-title span {
@@ -3003,11 +3005,11 @@ input:checked + .slider:before {
 }
 
 .hero-subtitle {
-  font-size: 1.25rem;
+  font-size: 1.08rem;
   color: var(--text-muted);
-  line-height: 1.6;
-  margin-bottom: 40px;
-  max-width: 700px;
+  line-height: 1.65;
+  margin-bottom: 32px;
+  max-width: 600px;
 }
 
 .hero-ctas {
@@ -5543,8 +5545,8 @@ input:checked + .slider:before {
 /* WhatsApp landing page mockup styling */
 .hero-layout {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
-  gap: 50px;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.85fr);
+  gap: 72px;
   align-items: center;
   text-align: left;
   width: 100%;
@@ -5554,6 +5556,7 @@ input:checked + .slider:before {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  padding-right: 12px;
 }
 
 .hero-right {
@@ -5565,12 +5568,12 @@ input:checked + .slider:before {
 
 .wa-mockup {
   width: 100%;
-  max-width: 380px;
+  max-width: 360px;
   height: 480px;
   border-radius: 24px;
   border: 1px solid var(--border-color);
   background: var(--bg-sidebar);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35);
   display: flex;
   flex-direction: column;
   overflow: hidden;
