@@ -217,7 +217,9 @@ export default function ConversationLog({
         <ul className="convlog-list">
           {visible.map((row) => {
             const startedTs = row.firstCustomerTs || row.firstTs;
-            const phoneStr = row.chat?.phoneNumber || (row.jid?.includes('@') ? row.jid.split('@')[0] : '');
+            let rawPhone = row.chat?.phoneNumber || (row.jid?.includes('@') ? row.jid.split('@')[0] : '');
+            if (rawPhone.startsWith('+')) rawPhone = rawPhone.slice(1);
+            const formattedPhone = rawPhone ? `+${rawPhone}` : '';
 
             return (
               <li key={row.jid}>
@@ -235,9 +237,9 @@ export default function ConversationLog({
                     <span className="convlog-top">
                       <span className="convlog-name">{row.label}</span>
 
-                      {phoneStr && phoneStr !== row.label && (
-                        <span className="convlog-phone" style={{ fontSize: '0.75rem', color: 'var(--text-dimmed)', marginRight: '4px' }}>
-                          +{phoneStr}
+                      {formattedPhone && formattedPhone !== row.label && (
+                        <span className="convlog-phone">
+                          {formattedPhone}
                         </span>
                       )}
 
@@ -356,27 +358,31 @@ export default function ConversationLog({
     return (
       <div className="dashboard-panel convlog-panel">
         <div className="dashboard-panel-header">
-          <MessageSquare size={18} />
-          <span>Riwayat Percakapan Pelanggan</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div className="panel-header-icon" style={{ background: 'var(--primary-soft)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
+              <MessageSquare size={16} />
+            </div>
+            <span>Riwayat Percakapan Pelanggan</span>
+          </div>
           {totals && (
             <span className="customer-count" title="Percakapan pelanggan yang tercatat">
-              {totals.customers}
+              {totals.customers.toLocaleString()}
             </span>
           )}
         </div>
 
         {totals && totals.awaitingReply > 0 && (
-          <div className="convlog-alert">
-            <Info size={14} />
+          <div className="convlog-alert-banner">
+            <div className="pulsing-dot" />
             <span><strong>{totals.awaitingReply}</strong> pelanggan menunggu balasan pertama</span>
           </div>
         )}
 
         <div className="convlog-scroll">{list}</div>
 
-        {onSeeAll && allRows.length > visible.length && (
+        {onSeeAll && (
           <button type="button" className="convlog-seeall" onClick={onSeeAll}>
-            Lihat semua {allRows.length} percakapan <ChevronRight size={13} />
+            Lihat semua {allRows.length.toLocaleString()} percakapan <ChevronRight size={14} />
           </button>
         )}
       </div>
