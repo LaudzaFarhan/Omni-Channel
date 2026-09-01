@@ -152,21 +152,20 @@ export default function LandingPage({ onGoToDashboard }) {
       <header className="hero-section" style={{ maxWidth: '1200px' }}>
         <div className="hero-layout">
           <div className="hero-left">
-            <div className="hero-badge">🚀 MULTI-AGENT INBOX SOLUTION</div>
+            <div className="hero-badge">🚀 WHATSAPP UNOFFICIAL API INDO & MULTI-AGENT CRM</div>
             <h1 className="hero-title" style={{ fontSize: '3rem' }}>
               Bypass WhatsApp's 4-Device Limit. <br />
-              <span>Enable Unlimited Agents.</span>
+              <span>WhatsApp Unofficial API Indonesia.</span>
             </h1>
             <p className="hero-subtitle" style={{ fontSize: '1.15rem' }}>
-              Connect your WhatsApp Business number once to our secure local gateway. 
-              Let your entire customer support & sales team chat, reply, and manage leads simultaneously from a single, unified inbox.
+              Solusi WhatsApp Unofficial API Indo tercepat dan terandal untuk bisnis. Hubungkan nomor WhatsApp Anda dalam 1 klik, aktifkan unlimited multi-agent CS & sales inbox, automasi Bot AI dengan Webhook realtime, dan pantau SLA follow-up 24 jam tanpa batasan kuota pesan.
             </p>
             <div className="hero-ctas">
               <button className="nav-btn hero-btn-large" onClick={onGoToDashboard}>
-                Start Free Trial
+                Mulai Uji Coba Gratis
               </button>
               <a href="#pricing" className="btn-secondary hero-btn-large" onClick={(e) => { e.preventDefault(); handleScrollTo('pricing'); }}>
-                View Pricing
+                Lihat Paket Harga
               </a>
             </div>
           </div>
@@ -549,41 +548,48 @@ export default function LandingPage({ onGoToDashboard }) {
       {/* FAQ Section */}
       <section id="faq" className="faq-section">
         <h2 className="section-title">Frequently Asked Questions</h2>
-        <p className="section-subtitle">Have questions about how it works? We have answers.</p>
+        <p className="section-subtitle">Pertanyaan umum seputar layanan WhatsApp Unofficial API Indonesia & Multi-Agent Inbox.</p>
 
         <div className="faq-list">
           <div className="faq-item">
-            <div className="faq-question">How does it bypass the 4-device WhatsApp Web limit?</div>
+            <div className="faq-question">Apa itu WhatsApp Unofficial API Indo dan keunggulannya dibanding Official Cloud API?</div>
             <div className="faq-answer">
-              WhatsApp Web restricts a phone to 4 concurrent linked companion devices. Our gateway connects to your phone as **one** companion device. The gateway then distributes the live connection to unlimited web browsers, allowing as many agents as you want to chat simultaneously.
+              WhatsApp Unofficial API Indo memungkinkan Anda menghubungkan nomor WhatsApp pribadi atau bisnis Anda sendiri secara langsung tanpa approval rumit dan tanpa biaya per pesan yang mahal. Anda mendapatkan kebebasan penuh untuk mengirim pesan otomatis, notifikasi transaksi, broadcast, serta integrasi multi-agent dan Webhook.
             </div>
           </div>
 
           <div className="faq-item">
-            <div className="faq-question">How does the 24-Hour Follow-up Window work?</div>
+            <div className="faq-question">Bagaimana cara bypass batas 4 perangkat WhatsApp Web?</div>
             <div className="faq-answer">
-              The system tracks the time elapsed since the customer's last incoming message. You get live badges and notifications showing the remaining window, plus a dedicated filter to immediately find customers waiting for follow-up over 24 hours.
+              WhatsApp Web membatasi 4 perangkat terhubung. Gateway Omni Reach menghubungkan nomor Anda sebagai 1 companion device, lalu mendistribusikan koneksi tersebut ke browser seluruh tim secara realtime via WebSockets. Sehingga puluhan agen CS & sales bisa membalas chat secara bersamaan.
             </div>
           </div>
 
           <div className="faq-item">
-            <div className="faq-question">Can I track individual sales team performance?</div>
+            <div className="faq-question">Bagaimana cara integrasi WhatsApp Unofficial API ke aplikasi CRM / POS / Website?</div>
             <div className="faq-answer">
-              Yes! Every conversation logs which sales agent sent the message or initiated contact. You can filter by calendar date ranges (Today, Yesterday, Last 7 Days, Month, Custom) and view an agent activity leaderboard.
+              Kami menyediakan REST API dan Webhook realtime. Anda dapat mengirim pesan teks, gambar, dokumen, mengontrol status bot agent (`/api/agent/hold`), serta menerima event pesan masuk ke sistem backend Anda dengan mudah menggunakan Node.js, Python, PHP (Laravel), dsb.
             </div>
           </div>
 
           <div className="faq-item">
-            <div className="faq-question">Do I need the official WhatsApp Business API (WABA)?</div>
+            <div className="faq-question">Bagaimana cara kerja SLA Follow-up 24 Jam?</div>
             <div className="faq-answer">
-              No. WABA requires complex setup, corporate approvals, and charges you per conversation. Our solution works by simply scanning a QR code (similar to logging into WhatsApp Web), meaning you can start using it in minutes with any existing WhatsApp number for free.
+              Sistem menghitung durasi sejak pesan terakhir pelanggan masuk. Anda mendapatkan visual badge, notifikasi peringatan, dan filter khusus untuk langsung menemukan prospek yang belum di-follow up lebih dari 24 jam agar tidak ada potensi penjualan yang terlewat.
             </div>
           </div>
 
           <div className="faq-item">
-            <div className="faq-question">Is my conversation data safe?</div>
+            <div className="faq-question">Apakah bisa memantau performa dan riwayat penjualan tim sales?</div>
             <div className="faq-answer">
-              Yes, entirely. The server runs locally on your own hardware or server. All chats are saved to your local database rather than being stored on third-party cloud servers, ensuring compliance with data privacy regulations.
+              Ya! Setiap percakapan dan pesan tercatat dengan identitas agen yang menangani. Anda dapat memfilter riwayat pesan berdasarkan rentang tanggal kalender (Hari Ini, Kemarin, 7 Hari Terakhir, Bulan Ini, atau Custom) dan melihat leaderboard aktivitas agen.
+            </div>
+          </div>
+
+          <div className="faq-item">
+            <div className="faq-question">Apakah data percakapan pelanggan aman?</div>
+            <div className="faq-answer">
+              Sangat aman. Server berjalan secara mandiri dan menyimpan riwayat percakapan secara terenkripsi di database Anda sendiri tanpa dipindahtangankan ke pihak ketiga.
             </div>
           </div>
         </div>

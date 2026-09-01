@@ -1,0 +1,6 @@
+# Robots.txt for Omni Reach WhatsApp Unofficial API Indo
+User-agent: *
+Allow: /
+
+# Sitemaps
+Sitemap: https://app.omnireach.my.id/sitemap.xml
