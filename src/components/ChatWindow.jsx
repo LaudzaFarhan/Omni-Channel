@@ -1464,16 +1464,6 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
               )}
             </div>
 
-            {/* Panel toggle button */}
-            <button 
-              className={`icon-button ${activeRightPanel === 'contact_info' ? 'active' : ''}`} 
-              onClick={() => setActiveRightPanel(prev => prev === 'contact_info' ? null : 'contact_info')}
-              title={activeRightPanel === 'contact_info' ? 'Tutup info kontak' : 'Buka info kontak'}
-              aria-expanded={activeRightPanel === 'contact_info'}
-              style={{ color: activeRightPanel === 'contact_info' ? 'var(--primary)' : 'var(--text-muted)' }}
-            >
-              <PanelRight size={20} />
-            </button>
           </div>
         </div>
 

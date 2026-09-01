@@ -2447,18 +2447,52 @@ input:checked + .slider:before {
   line-height: 1.5;
 }
 
-/* Right Drawer & Panels */
+/* Right Drawer Animations & Panels */
+@keyframes drawerSlideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0.3;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes profileFadeScale {
+  from {
+    opacity: 0;
+    transform: scale(0.93) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes sectionStaggerFade {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .chat-right-drawer {
-  width: 320px;
+  width: 330px;
   border-left: 1px solid var(--border-color);
   background-color: var(--bg-sidebar);
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow-y: auto;
-  transition: width 0.25s ease, opacity 0.2s ease;
   z-index: 15;
   flex-shrink: 0;
+  animation: drawerSlideIn 0.26s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
 }
 
 .chat-right-drawer.hidden {
@@ -2519,6 +2553,7 @@ input:checked + .slider:before {
   border-bottom: 1px solid var(--border-color);
   background: var(--overlay-subtle);
   position: relative;
+  animation: profileFadeScale 0.32s cubic-bezier(0.16, 1, 0.3, 1) 0.04s backwards;
 }
 
 .contact-profile-avatar {
@@ -2533,6 +2568,11 @@ input:checked + .slider:before {
   color: #fff;
   margin-bottom: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  transition: transform 0.2s ease;
+}
+
+.contact-profile-avatar:hover {
+  transform: scale(1.05);
 }
 
 .contact-profile-name {
@@ -2555,6 +2595,7 @@ input:checked + .slider:before {
 .contact-profile-section {
   padding: 16px 18px;
   border-bottom: 1px solid var(--border-color);
+  animation: sectionStaggerFade 0.32s cubic-bezier(0.16, 1, 0.3, 1) 0.08s backwards;
 }
 
 .contact-profile-section-title {
