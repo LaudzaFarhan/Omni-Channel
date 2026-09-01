@@ -366,6 +366,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   // `msgMenu` carries viewport coordinates rather than just an id because the menu is
   // positioned fixed. The messages list is a scroll container, so a menu positioned
   // inside a bubble would be clipped by it near the top and bottom edges.
+  const [msgMenu, setMsgMenu] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
   const [forwardMsg, setForwardMsg] = useState(null);
   const msgMenuRef = useRef(null);
