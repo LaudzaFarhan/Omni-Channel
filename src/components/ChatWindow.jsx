@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown, ChevronRight, Pause, Play, UserPlus, UserCheck, MoreVertical, Search, Trophy, UserMinus, RotateCcw, Maximize2, Minimize2, Reply, Forward, Copy } from 'lucide-react';
+import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, AlertTriangle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown, ChevronRight, Pause, Play, UserPlus, UserCheck, MoreVertical, Search, Trophy, UserMinus, RotateCcw, Maximize2, Minimize2, Reply, Forward, Copy, Zap } from 'lucide-react';
 import { fetchWithAuth, saveContact, updateContact, setChatStatus as apiSetChatStatus } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
 import { showToast } from '../utils/toastBus.js';
 import { PRESET_TAGS, getTags, toggleTag, clearTags, createCustomTag, loadGlobalCustomTags, addGlobalCustomTag, deleteGlobalCustomTag } from '../utils/contactTags.js';
 import { getChatDisplayName, getInitials } from '../utils/displayName.js';
+import { get24HourWindowStatus } from '../utils/timeFormat.js';
 import { jidToPhone, formatPhone } from '../utils/phone.js';
 import ContactEditor from './contacts/ContactEditor.jsx';
 import ForwardDialog from './chat/ForwardDialog.jsx';
@@ -365,11 +366,24 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   // `msgMenu` carries viewport coordinates rather than just an id because the menu is
   // positioned fixed. The messages list is a scroll container, so a menu positioned
   // inside a bubble would be clipped by it near the top and bottom edges.
-  const [msgMenu, setMsgMenu] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
   const [forwardMsg, setForwardMsg] = useState(null);
   const msgMenuRef = useRef(null);
   const composerRef = useRef(null);
+
+  // 24-Hour Follow-up Window: live real-time countdown & status
+  const [ticker, setTicker] = useState(Date.now());
+  const [dismissedBannerChatId, setDismissedBannerChatId] = useState(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => setTicker(Date.now()), 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const windowStatus = useMemo(() => {
+    return get24HourWindowStatus(activeChat, messages);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChat, messages, ticker]);
 
 
 
@@ -1177,6 +1191,30 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                     {STATUS_LABELS[chatStatus].badge}
                   </span>
                 )}
+
+                {/* 24-Hour Follow-up Window Indicator */}
+                {windowStatus && (
+                  <span
+                    className={`window-24h-pill is-${windowStatus.level}`}
+                    title={
+                      windowStatus.isExpired
+                        ? `Sesi 24 jam telah berakhir (${windowStatus.elapsedDays > 0 ? `${windowStatus.elapsedDays} hari` : `${windowStatus.elapsedHours} jam`} yang lalu). Perlu template untuk inisiasi baru.`
+                        : `Jendela percakapan 24 jam aktif. Sisa waktu follow-up: ${windowStatus.hoursLeft} jam ${windowStatus.minutesLeft} menit.`
+                    }
+                  >
+                    {windowStatus.level === 'healthy' && <Clock size={11} />}
+                    {windowStatus.level === 'warning' && <span className="pulsing-dot" />}
+                    {windowStatus.level === 'urgent' && <AlertTriangle size={11} />}
+                    {windowStatus.level === 'expired' && <Clock size={11} />}
+                    <span>
+                      {windowStatus.isExpired
+                        ? '24h Expired'
+                        : windowStatus.level === 'urgent'
+                        ? `${windowStatus.minutesLeft}m tersisa!`
+                        : `24h: ${windowStatus.hoursLeft}j ${windowStatus.minutesLeft}m`}
+                    </span>
+                  </span>
+                )}
               </div>
               {/* The secondary line, which must not simply repeat the primary one.
                   An unsaved contact has no name, so getDisplayName returns the number —
@@ -1675,6 +1713,69 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
             >
               <X size={16} />
             </button>
+          </div>
+        )}
+
+        {/* 24-Hour Follow-up Window Banner / Warning */}
+        {windowStatus && (windowStatus.level !== 'healthy' || dismissedBannerChatId !== activeChat.id) && (
+          <div className={`window-24h-banner is-${windowStatus.level}`}>
+            <div className="window-24h-banner-content">
+              {windowStatus.level === 'healthy' && (
+                <>
+                  <Clock size={15} className="window-24h-icon" />
+                  <span>
+                    <strong>Jendela Percakapan 24 Jam:</strong> Tersisa <strong>{windowStatus.hoursLeft} jam {windowStatus.minutesLeft} menit</strong> untuk membalas atau follow up pelanggan dalam sesi ini.
+                  </span>
+                </>
+              )}
+              {windowStatus.level === 'warning' && (
+                <>
+                  <span className="pulsing-dot" />
+                  <span>
+                    <strong>Sesi 24 Jam Segera Berakhir:</strong> Tersisa <strong>{windowStatus.hoursLeft} jam {windowStatus.minutesLeft} menit</strong>. Segera tindak lanjuti sebelum jendela percakapan ditutup.
+                  </span>
+                </>
+              )}
+              {windowStatus.level === 'urgent' && (
+                <>
+                  <AlertTriangle size={15} className="window-24h-icon" />
+                  <span>
+                    <strong>Perhatian: Sesi 24 Jam Segera Habis!</strong> Tersisa <strong>{windowStatus.minutesLeft} menit</strong> untuk merespons pelanggan.
+                  </span>
+                </>
+              )}
+              {windowStatus.level === 'expired' && (
+                <>
+                  <AlertCircle size={15} className="window-24h-icon" />
+                  <span>
+                    <strong>Sesi 24 Jam Telah Berakhir:</strong> Lebih dari 24 jam sejak pesan terakhir ({windowStatus.elapsedDays > 0 ? `${windowStatus.elapsedDays} hari` : `${windowStatus.elapsedHours} jam`} lalu). Gunakan template resmi untuk inisiasi chat kembali.
+                  </span>
+                </>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+              {windowStatus.isExpired && (
+                <button
+                  type="button"
+                  className="window-24h-action-btn"
+                  onClick={() => setShowQuickReplies(true)}
+                  title="Buka panel template pesan"
+                >
+                  <FileText size={12} /> Gunakan Template
+                </button>
+              )}
+              {windowStatus.level === 'healthy' && (
+                <button
+                  type="button"
+                  onClick={() => setDismissedBannerChatId(activeChat.id)}
+                  className="window-24h-close-btn"
+                  title="Tutup pemberitahuan"
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
           </div>
         )}
 

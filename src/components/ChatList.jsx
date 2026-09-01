@@ -1,7 +1,8 @@
 import React from 'react';
-import { Search, Plus, Check, CheckCheck } from 'lucide-react';
+import { Search, Plus, Check, CheckCheck, Clock } from 'lucide-react';
 import { loadAllTags } from '../utils/contactTags.js';
 import { getChatDisplayName, getInitials } from '../utils/displayName.js';
+import { get24HourWindowStatus } from '../utils/timeFormat.js';
 
 export default function ChatList({ chats, setChats, searchQuery, setSearchQuery, activeChatJid, setActiveChatJid, userInfo, selectedTagFilter, savedNames = {}, statusFilter = null, chatStatuses = {} }) {
   // Load contact tags (reactively updated via custom event)
@@ -217,7 +218,29 @@ export default function ChatList({ chats, setChats, searchQuery, setSearchQuery,
                         </span>
                       )}
                     </span>
-                    <span className="chat-time">{formatTime(chat.lastMessageTimestamp)}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', flexShrink: 0 }}>
+                      <span className="chat-time">{formatTime(chat.lastMessageTimestamp)}</span>
+                      {(() => {
+                        const winStatus = get24HourWindowStatus(chat);
+                        if (!winStatus) return null;
+                        return (
+                          <span
+                            className={`chat-item-24h is-${winStatus.level}`}
+                            title={
+                              winStatus.isExpired
+                                ? `24h window expired (${winStatus.elapsedDays > 0 ? `${winStatus.elapsedDays}h` : `${winStatus.elapsedHours}j`} lalu)`
+                                : `Sesi 24 jam: ${winStatus.hoursLeft}j ${winStatus.minutesLeft}m tersisa`
+                            }
+                          >
+                            {winStatus.isExpired
+                              ? '24h Exp'
+                              : winStatus.level === 'urgent'
+                              ? `${winStatus.minutesLeft}m!`
+                              : `${winStatus.hoursLeft}j`}
+                          </span>
+                        );
+                      })()}
+                    </div>
                   </div>
                   <div className="chat-last-msg-row" style={{ display: 'flex', alignItems: 'center' }}>
                     {chat.lastMessageFromMe && (

@@ -4756,6 +4756,186 @@ input:checked + .slider:before {
 }
 
 /* ---------------------------------------------------------------------------
+   24-Hour Follow-up Window UI
+   --------------------------------------------------------------------------- */
+.window-24h-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  transition: all 0.2s ease;
+}
+
+.window-24h-pill.is-healthy {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.window-24h-pill.is-warning {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.window-24h-pill.is-urgent {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  animation: pulse-border 1.5s infinite ease-in-out;
+}
+
+.window-24h-pill.is-expired {
+  color: var(--text-dimmed);
+  background: var(--overlay-subtle);
+  border: 1px solid var(--border-color);
+  opacity: 0.85;
+}
+
+/* Banner at the top of the chat area */
+.window-24h-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 16px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.window-24h-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.window-24h-icon {
+  flex-shrink: 0;
+}
+
+.window-24h-banner.is-healthy {
+  background: rgba(16, 185, 129, 0.08);
+  border-bottom-color: rgba(16, 185, 129, 0.25);
+  color: var(--text-main);
+}
+.window-24h-banner.is-healthy .window-24h-icon {
+  color: #10b981;
+}
+
+.window-24h-banner.is-warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-bottom-color: rgba(245, 158, 11, 0.3);
+  color: var(--text-main);
+}
+.window-24h-banner.is-warning .window-24h-icon {
+  color: #f59e0b;
+}
+
+.window-24h-banner.is-urgent {
+  background: rgba(239, 68, 68, 0.1);
+  border-bottom-color: rgba(239, 68, 68, 0.35);
+  color: var(--text-main);
+}
+.window-24h-banner.is-urgent .window-24h-icon {
+  color: #ef4444;
+}
+
+.window-24h-banner.is-expired {
+  background: rgba(239, 68, 68, 0.06);
+  border-bottom-color: rgba(239, 68, 68, 0.25);
+  color: var(--text-main);
+}
+.window-24h-banner.is-expired .window-24h-icon {
+  color: #ef4444;
+}
+
+.window-24h-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--primary-border);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.window-24h-action-btn:hover {
+  background: var(--primary);
+  color: #fff;
+}
+
+.window-24h-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dimmed);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.window-24h-close-btn:hover {
+  background: var(--overlay-subtle);
+  color: var(--text-main);
+}
+
+/* Mini badge in sidebar chat item */
+.chat-item-24h {
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.chat-item-24h.is-healthy {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.chat-item-24h.is-warning {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.chat-item-24h.is-urgent {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.15);
+  font-weight: 800;
+}
+
+.chat-item-24h.is-expired {
+  color: var(--text-dimmed);
+  background: var(--overlay-subtle);
+  font-size: 0.58rem;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: rgba(239, 68, 68, 0.4); }
+  50% { border-color: rgba(239, 68, 68, 0.8); }
+}
+
+/* ---------------------------------------------------------------------------
    Pipeline panel
    --------------------------------------------------------------------------- */
 .pipeline-body {

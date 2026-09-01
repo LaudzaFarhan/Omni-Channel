@@ -86,3 +86,88 @@ export function shortDuration(spanMs) {
 
   return `${Math.floor(hours / 24)} hari`;
 }
+
+/**
+ * Computes the 24-hour follow-up window status for a customer conversation.
+ * Returns null for group chats or unselected chats.
+ */
+export function get24HourWindowStatus(chat, messages = []) {
+  if (!chat || chat.id?.endsWith('@g.us')) {
+    return null;
+  }
+
+  // Find the last customer inbound message or last conversation message
+  let lastCustomerTimestamp = null;
+  let lastMessageTimestamp = null;
+
+  if (Array.isArray(messages) && messages.length > 0) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (!msg) continue;
+      
+      let ts = msg.messageTimestamp;
+      if (ts) {
+        if (typeof ts === 'object' && ts.low) ts = ts.low;
+        const tsMs = Number(ts) > 1e11 ? Number(ts) : Number(ts) * 1000;
+        if (!lastMessageTimestamp) lastMessageTimestamp = tsMs;
+        if (!msg.key?.fromMe) {
+          if (!lastCustomerTimestamp) lastCustomerTimestamp = tsMs;
+          break;
+        }
+      }
+    }
+  }
+
+  // Fallback to chat.lastMessageTimestamp
+  if (!lastCustomerTimestamp && chat.lastMessageTimestamp) {
+    let ts = chat.lastMessageTimestamp;
+    const tsMs = Number(ts) > 1e11 ? Number(ts) : Number(ts) * 1000;
+    if (!chat.lastMessageFromMe) {
+      lastCustomerTimestamp = tsMs;
+    }
+    if (!lastMessageTimestamp) {
+      lastMessageTimestamp = tsMs;
+    }
+  }
+
+  const refTimestamp = lastCustomerTimestamp || lastMessageTimestamp;
+  if (!refTimestamp || !Number.isFinite(refTimestamp)) {
+    return null;
+  }
+
+  const now = Date.now();
+  const windowDurationMs = 24 * 60 * 60 * 1000;
+  const elapsedMs = now - refTimestamp;
+  const remainingMs = windowDurationMs - elapsedMs;
+
+  const isExpired = remainingMs <= 0;
+  const hoursLeft = Math.max(0, Math.floor(remainingMs / (1000 * 60 * 60)));
+  const minutesLeft = Math.max(0, Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60)));
+
+  const elapsedHours = Math.floor(elapsedMs / (1000 * 60 * 60));
+  const elapsedMinutes = Math.floor((elapsedMs % (1000 * 60 * 60)) / (1000 * 60));
+  const elapsedDays = Math.floor(elapsedHours / 24);
+
+  let level = 'healthy'; // 'healthy' | 'warning' | 'urgent' | 'expired'
+  if (isExpired) {
+    level = 'expired';
+  } else if (remainingMs <= 1 * 60 * 60 * 1000) {
+    level = 'urgent';
+  } else if (remainingMs <= 6 * 60 * 60 * 1000) {
+    level = 'warning';
+  }
+
+  return {
+    refTimestamp,
+    isExpired,
+    level,
+    hoursLeft,
+    minutesLeft,
+    elapsedHours,
+    elapsedMinutes,
+    elapsedDays,
+    remainingMs,
+    isLastFromCustomer: Boolean(lastCustomerTimestamp && lastCustomerTimestamp === lastMessageTimestamp),
+  };
+}
+
