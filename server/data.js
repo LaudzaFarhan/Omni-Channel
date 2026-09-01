@@ -32,6 +32,8 @@ export function mapUser(row) {
     sessionLimit: row.session_limit,
     messagesSent: row.messages_sent,
     trialExpired: row.trial_expired,
+    trialEndsAt: row.trial_ends_at,
+    customTrialDays: row.custom_trial_days ?? null,
     // Agents the customer paid for. NULL means they inherit the plan's included
     // count; sessionLimit above still wins as an explicit admin override.
     purchasedAgents: row.purchased_agents ?? null,
@@ -110,8 +112,8 @@ export function mapTransaction(row) {
 
 const USER_COLUMNS = `
   id, email, name, role, is_approved, plan_id, message_limit, session_limit,
-  messages_sent, trial_expired, must_reset_password, purchased_agents, owner_user_id,
-  created_at, last_login_at
+  messages_sent, trial_expired, trial_ends_at, custom_trial_days, must_reset_password,
+  purchased_agents, owner_user_id, created_at, last_login_at
 `;
 
 // ---------------------------------------------------------------------------
@@ -179,6 +181,8 @@ const ADMIN_WRITABLE = {
   messagesSent: 'messages_sent',
   trialExpired: 'trial_expired',
   purchasedAgents: 'purchased_agents',
+  trialEndsAt: 'trial_ends_at',
+  customTrialDays: 'custom_trial_days',
 };
 
 // Builds a parameterised UPDATE from a whitelist. Passing null for

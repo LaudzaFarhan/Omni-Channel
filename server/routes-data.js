@@ -280,6 +280,30 @@ export function mountDataRoutes(app, io) {
         patch.trialExpired = Boolean(body.trialExpired);
       }
 
+      if (Object.prototype.hasOwnProperty.call(body, 'trialEndsAt')) {
+        if (body.trialEndsAt === null || body.trialEndsAt === '') {
+          patch.trialEndsAt = null;
+        } else {
+          const d = new Date(body.trialEndsAt);
+          if (!Number.isFinite(d.getTime())) {
+            return res.status(400).json({ error: 'Invalid trialEndsAt timestamp.' });
+          }
+          patch.trialEndsAt = d;
+        }
+      }
+
+      if (Object.prototype.hasOwnProperty.call(body, 'customTrialDays')) {
+        if (body.customTrialDays === null || body.customTrialDays === '') {
+          patch.customTrialDays = null;
+        } else {
+          const days = parseInt(body.customTrialDays, 10);
+          if (!Number.isInteger(days) || days < 0) {
+            return res.status(400).json({ error: 'customTrialDays must be a whole number of 0 or more.' });
+          }
+          patch.customTrialDays = days;
+        }
+      }
+
       if (Object.keys(patch).length === 0) {
         return res.status(400).json({ error: 'No supported fields to update.' });
       }

@@ -1055,28 +1055,46 @@ export default function App() {
       }
     : userProfile;
 
-  // Calculate trial status. The trial length comes from the plan, so a plan with
-  // trialDays of 0 has no countdown at all.
-  const trialDays = effectiveLimits?.trialDays ?? 0;
+  // Calculate trial status. Supports custom trial duration and explicit expiration dates.
   let isTrialExpired = userProfile?.trialExpired || false;
-  let trialDaysLeft = trialDays;
-  if (userProfile && userProfile.role !== 'admin' && trialDays > 0) {
-    let createdAtDate = new Date();
-    if (userProfile.createdAt) {
-      if (typeof userProfile.createdAt.toDate === 'function') {
-        createdAtDate = userProfile.createdAt.toDate();
-      } else if (userProfile.createdAt.seconds) {
-        createdAtDate = new Date(userProfile.createdAt.seconds * 1000);
-      } else {
-        createdAtDate = new Date(userProfile.createdAt);
+  let trialDaysLeft = 0;
+
+  if (userProfile && userProfile.role !== 'admin') {
+    if (userProfile.trialEndsAt) {
+      const endsAt = new Date(userProfile.trialEndsAt);
+      if (Number.isFinite(endsAt.getTime())) {
+        const msLeft = endsAt.getTime() - Date.now();
+        if (msLeft <= 0) {
+          isTrialExpired = true;
+          trialDaysLeft = 0;
+        } else {
+          if (!userProfile.trialExpired) isTrialExpired = false;
+          trialDaysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+        }
       }
-    }
-    const differenceMs = Date.now() - createdAtDate.getTime();
-    const differenceDays = differenceMs / (1000 * 60 * 60 * 24);
-    if (differenceDays >= trialDays) {
-      isTrialExpired = true;
     } else {
-      trialDaysLeft = Math.max(0, trialDays - Math.floor(differenceDays));
+      const trialDays = userProfile.customTrialDays ?? effectiveLimits?.trialDays ?? 0;
+      trialDaysLeft = trialDays;
+      if (trialDays > 0) {
+        let createdAtDate = new Date();
+        if (userProfile.createdAt) {
+          if (typeof userProfile.createdAt.toDate === 'function') {
+            createdAtDate = userProfile.createdAt.toDate();
+          } else if (userProfile.createdAt.seconds) {
+            createdAtDate = new Date(userProfile.createdAt.seconds * 1000);
+          } else {
+            createdAtDate = new Date(userProfile.createdAt);
+          }
+        }
+        const differenceMs = Date.now() - createdAtDate.getTime();
+        const differenceDays = differenceMs / (1000 * 60 * 60 * 24);
+        if (differenceDays >= trialDays) {
+          isTrialExpired = true;
+          trialDaysLeft = 0;
+        } else {
+          trialDaysLeft = Math.max(0, trialDays - Math.floor(differenceDays));
+        }
+      }
     }
   }
 

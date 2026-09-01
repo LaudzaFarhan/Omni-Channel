@@ -226,6 +226,86 @@ export default function UsersTab({
   };
 
   // --- Trial ----------------------------------------------------------------
+  const getTrialInfo = (u, effective) => {
+    if (u.role === 'admin') return { label: 'Admin (No trial)', isExpired: false, isCustom: false, daysLeft: null };
+    if (u.trialExpired) return { label: 'Expired', isExpired: true, isCustom: Boolean(u.trialEndsAt || u.customTrialDays), daysLeft: 0 };
+    
+    if (u.trialEndsAt) {
+      const endsAt = new Date(u.trialEndsAt);
+      if (Number.isFinite(endsAt.getTime())) {
+        const msLeft = endsAt.getTime() - Date.now();
+        if (msLeft <= 0) {
+          return { label: 'Expired', isExpired: true, isCustom: true, daysLeft: 0, endsAt };
+        }
+        const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+        return { label: `${daysLeft}d left`, isExpired: false, isCustom: true, daysLeft, endsAt };
+      }
+    }
+
+    const trialDays = u.customTrialDays ?? effective.plan?.trialDays ?? 0;
+    if (trialDays > 0) {
+      let createdAtDate = u.createdAt ? new Date(u.createdAt) : new Date();
+      const diffDays = (Date.now() - createdAtDate.getTime()) / (1000 * 60 * 60 * 24);
+      if (diffDays >= trialDays) {
+        return { label: 'Expired', isExpired: true, isCustom: Boolean(u.customTrialDays), daysLeft: 0 };
+      }
+      const daysLeft = Math.max(0, trialDays - Math.floor(diffDays));
+      return { label: `${daysLeft}d left`, isExpired: false, isCustom: Boolean(u.customTrialDays), daysLeft };
+    }
+
+    return { label: 'No trial', isExpired: false, isCustom: false, daysLeft: null };
+  };
+
+  const openTrialModal = (userObj, trialInfo) => {
+    const defaultDays = trialInfo.daysLeft && trialInfo.daysLeft > 0 ? trialInfo.daysLeft : 7;
+    setModalInputValue(String(defaultDays));
+    setActiveModal({
+      type: 'editTrial',
+      userObj,
+      trialInfo,
+      customDays: String(defaultDays),
+      isExpired: trialInfo.isExpired,
+    });
+  };
+
+  const confirmTrialChange = (days, isExpired = false) => {
+    const { userObj } = activeModal;
+    const numDays = parseInt(days, 10);
+    if (!Number.isFinite(numDays) || numDays < 0) {
+      showToast({ type: 'error', title: 'Invalid days', message: 'Enter a valid number of days (0 or more).' });
+      return;
+    }
+
+    if (isExpired || numDays === 0) {
+      return runMutation(userObj.uid, 'Trial expired', () =>
+        adminUpdateUser(userObj.uid, {
+          trialExpired: true,
+          trialEndsAt: new Date().toISOString(),
+          customTrialDays: numDays,
+        })
+      );
+    }
+
+    const endsAt = new Date(Date.now() + numDays * 24 * 60 * 60 * 1000);
+    return runMutation(userObj.uid, `Trial set to ${numDays} days`, () =>
+      adminUpdateUser(userObj.uid, {
+        trialExpired: false,
+        trialEndsAt: endsAt.toISOString(),
+        customTrialDays: numDays,
+      })
+    );
+  };
+
+  const resetTrialToPlan = (userObj) => {
+    return runMutation(userObj.uid, 'Trial reset to plan default', () =>
+      adminUpdateUser(userObj.uid, {
+        trialExpired: false,
+        trialEndsAt: null,
+        customTrialDays: null,
+      })
+    );
+  };
+
   const handleToggleTrialExpired = (userObj) =>
     runMutation(userObj.uid, 'Trial status updated', () =>
       adminUpdateUser(userObj.uid, { trialExpired: !(userObj.trialExpired || false) })
@@ -451,7 +531,7 @@ export default function UsersTab({
                   <th style={{ padding: '12px 16px' }}>Role</th>
                   <th style={{ padding: '12px 16px' }}>Status</th>
                   <th style={{ padding: '12px 16px' }}>Plan</th>
-                  <th style={{ padding: '12px 16px' }}>Trial Expired</th>
+                  <th style={{ padding: '12px 16px' }}>Trial Status</th>
                   <th style={{ padding: '12px 16px' }}>Devices</th>
                   <th style={{ padding: '12px 16px' }}>Message Quota</th>
                   <th style={{ padding: '12px 16px' }}>Actions</th>
@@ -538,16 +618,53 @@ export default function UsersTab({
                         )}
                       </td>
 
+                      {/* Trial status & custom period */}
                       <td style={{ padding: '16px' }}>
-                        <label className="switch">
-                          <input
-                            type="checkbox"
-                            checked={u.trialExpired || false}
-                            onChange={() => handleToggleTrialExpired(u)}
-                            disabled={u.role === 'admin' || busy}
-                          />
-                          <span className="slider round"></span>
-                        </label>
+                        {(() => {
+                          const trialInfo = getTrialInfo(u, effective);
+                          const isExpired = trialInfo.isExpired;
+                          const hasTrial = trialInfo.daysLeft !== null || isExpired;
+                          
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <span
+                                  style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: '5px',
+                                    fontSize: '0.74rem', fontWeight: '700', padding: '2px 8px', borderRadius: '5px',
+                                    background: isExpired ? 'rgba(239, 68, 68, 0.12)' : hasTrial ? 'var(--success-soft)' : 'rgba(255,255,255,0.05)',
+                                    color: isExpired ? '#ef4444' : hasTrial ? 'var(--success)' : 'var(--text-dimmed)',
+                                    border: `1px solid ${isExpired ? 'rgba(239, 68, 68, 0.25)' : hasTrial ? 'var(--success-border)' : 'var(--border-color)'}`,
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  <span style={{
+                                    width: '6px', height: '6px', borderRadius: '50%',
+                                    backgroundColor: isExpired ? '#ef4444' : hasTrial ? 'var(--success)' : 'var(--text-dimmed)',
+                                  }} />
+                                  {trialInfo.label}
+                                </span>
+                                {trialInfo.isCustom && <SourceBadge source="override" />}
+                              </div>
+
+                              {u.role !== 'admin' && (
+                                <button
+                                  onClick={() => openTrialModal(u, trialInfo)}
+                                  disabled={busy}
+                                  title="Change trial duration or expire trial"
+                                  style={{
+                                    alignSelf: 'flex-start', background: 'transparent', border: 'none',
+                                    color: 'var(--primary)', fontSize: '0.73rem', fontWeight: '600',
+                                    cursor: busy ? 'not-allowed' : 'pointer', padding: 0,
+                                    textDecoration: 'underline',
+                                  }}
+                                >
+                                  {trialInfo.isCustom ? 'Edit Days' : 'Set Trial'}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Device limit */}
@@ -709,6 +826,7 @@ export default function UsersTab({
               <h3 style={{ fontSize: '1.15rem', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {activeModal.type === 'editLimit' && <><Sliders size={18} style={{ color: 'var(--primary)' }} /> Update Message Quota</>}
                 {activeModal.type === 'editSessionLimit' && <><Layers size={18} style={{ color: 'var(--primary)' }} /> Update Device Limit</>}
+                {activeModal.type === 'editTrial' && <><Clock size={18} style={{ color: 'var(--primary)' }} /> Set Trial Period</>}
                 {activeModal.type === 'confirmRole' && <><Shield size={18} style={{ color: '#f59e0b' }} /> Change Account Role</>}
                 {activeModal.type === 'changePlan' && <><CheckCircle2 size={18} style={{ color: 'var(--primary)' }} /> Assign Plan</>}
                 {activeModal.type === 'resetUsage' && <><RotateCcw size={18} style={{ color: 'var(--primary)' }} /> Reset Usage Counter</>}
@@ -837,6 +955,98 @@ export default function UsersTab({
               </div>
             )}
 
+            {activeModal.type === 'editTrial' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                  Set a custom trial duration for <strong>{activeModal.userObj?.name || activeModal.userObj?.email}</strong>.
+                  This grants an active trial period starting from today.
+                </div>
+
+                {/* Quick Presets */}
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    Quick presets (days from now):
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {[3, 7, 14, 30, 60].map(val => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setModalInputValue(String(val))}
+                        style={{
+                          background: modalInputValue === String(val) ? 'var(--primary-soft)' : 'rgba(255,255,255,0.05)',
+                          border: `1px solid ${modalInputValue === String(val) ? 'var(--primary-border)' : 'var(--border-color)'}`,
+                          color: modalInputValue === String(val) ? 'var(--primary)' : 'var(--text-muted)',
+                          padding: '5px 12px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: '600',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {val} Days
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom Days Input */}
+                <div>
+                  <label htmlFor="custom-trial-days-input" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    Custom Trial Length (number of days):
+                  </label>
+                  <input
+                    id="custom-trial-days-input"
+                    type="number"
+                    min="0"
+                    max="365"
+                    value={modalInputValue}
+                    onChange={(e) => setModalInputValue(e.target.value)}
+                    style={{
+                      width: '100%', padding: '10px 14px', borderRadius: '8px',
+                      border: '1px solid var(--border-color)', background: 'rgba(255,255,255,0.05)',
+                      color: 'var(--text-main)', fontSize: '1rem', outline: 'none',
+                    }}
+                  />
+                  {(() => {
+                    const days = parseInt(modalInputValue, 10);
+                    if (Number.isFinite(days) && days > 0) {
+                      const expDate = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+                      return (
+                        <div style={{ fontSize: '0.78rem', color: 'var(--success)', marginTop: '6px' }}>
+                          ✓ Trial will be active until: <strong>{expDate.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</strong> ({days} days from now)
+                        </div>
+                      );
+                    }
+                    if (days === 0) {
+                      return (
+                        <div style={{ fontSize: '0.78rem', color: '#ef4444', marginTop: '6px' }}>
+                          Setting to 0 days will expire the trial immediately.
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+
+                {/* Reset to plan default */}
+                {(activeModal.userObj?.trialEndsAt || activeModal.userObj?.customTrialDays) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetTrialToPlan(activeModal.userObj);
+                      setActiveModal(null);
+                    }}
+                    style={{
+                      alignSelf: 'flex-start', background: 'transparent',
+                      border: '1px solid var(--border-color)', color: 'var(--text-muted)',
+                      padding: '6px 12px', borderRadius: '6px', fontSize: '0.78rem',
+                      cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    }}
+                  >
+                    <Link2Off size={13} /> Reset to Plan Default (remove custom days)
+                  </button>
+                )}
+              </div>
+            )}
+
             {activeModal.type === 'changePlan' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <label htmlFor="admin-plan-select" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
@@ -925,6 +1135,7 @@ export default function UsersTab({
                 onClick={() => {
                   if (activeModal.type === 'editLimit') confirmLimitChange();
                   if (activeModal.type === 'editSessionLimit') confirmSessionLimitChange();
+                  if (activeModal.type === 'editTrial') confirmTrialChange(modalInputValue);
                   if (activeModal.type === 'confirmRole') confirmRoleChange();
                   if (activeModal.type === 'changePlan') confirmPlanChange();
                   if (activeModal.type === 'resetUsage') confirmResetUsage();
@@ -941,7 +1152,7 @@ export default function UsersTab({
                   opacity: isPending(activeModal.userObj?.uid) ? 0.6 : 1,
                 }}
               >
-                {activeModal.type === 'deleteUser' ? 'Delete Profile' : 'Confirm & Save'}
+                {activeModal.type === 'deleteUser' ? 'Delete Profile' : activeModal.type === 'editTrial' ? 'Apply Trial' : 'Confirm & Save'}
               </button>
             </div>
           </div>
