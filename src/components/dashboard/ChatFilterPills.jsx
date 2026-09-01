@@ -12,10 +12,11 @@ import React from 'react';
 //   status  where the conversation stands commercially (chat_settings.status)
 //   tag     the operator's own labels (localStorage, per browser)
 export default function ChatFilterPills({
-  filter,          // { kind: 'all' | 'status' | 'tag', value }
+  filter,          // { kind: 'all' | 'status' | 'tag' | 'window', value }
   onChange,
   totalCount,
   statusCounts,    // { prospect, closed_won, dropped }
+  over24hCount = 0,
   tags,            // [{ label, color, bg }]
   tagCounts,
 }) {
@@ -48,6 +49,17 @@ export default function ChatFilterPills({
       {/* "New Leads" rather than "Prospect": an untouched conversation is a new lead,
           which is what the operator is looking for. */}
       <Pill kind="status" value="prospect" label="New Leads" count={statusCounts.prospect} />
+
+      {/* Filter for customers where 24h follow-up window is expired / inactive */}
+      {over24hCount > 0 && (
+        <Pill
+          kind="window"
+          value="over24h"
+          label="> 24 Jam"
+          count={over24hCount}
+          color="#ef4444"
+        />
+      )}
 
       {/* Only offered once something has actually been marked, so the row does not carry
           two permanently empty pills on a fresh account. */}

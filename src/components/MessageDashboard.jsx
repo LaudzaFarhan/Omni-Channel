@@ -4,6 +4,7 @@ import ChatWindow from './ChatWindow.jsx';
 import StatsPanel from './StatsPanel.jsx';
 import ChatFilterPills from './dashboard/ChatFilterPills.jsx';
 import { loadAllTags, loadGlobalCustomTags, PRESET_TAGS } from '../utils/contactTags.js';
+import { get24HourWindowStatus } from '../utils/timeFormat.js';
 import { fetchChatStatuses } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
 
@@ -178,6 +179,10 @@ export default function MessageDashboard({
     return counts;
   }, [chats, contactTags, globalCustomTags]);
 
+  const over24hCount = useMemo(() => {
+    return chats.filter(c => get24HourWindowStatus(c)?.isExpired === true).length;
+  }, [chats]);
+
   return (
     // This wrapper exists to be the fullscreen element. It replaces a fragment, so it has
     // to reproduce the row layout the two panels previously got from App's flex container.
@@ -194,6 +199,7 @@ export default function MessageDashboard({
           onChange={setFilter}
           totalCount={chats.length}
           statusCounts={statusCounts}
+          over24hCount={over24hCount}
           tags={[...PRESET_TAGS, ...globalCustomTags]}
           tagCounts={tagCounts}
         />
@@ -209,6 +215,7 @@ export default function MessageDashboard({
             userInfo={userInfo}
             selectedTagFilter={filter.kind === 'tag' ? filter.value : null}
             statusFilter={filter.kind === 'status' ? filter.value : null}
+            windowFilter={filter.kind === 'window' ? filter.value : null}
             chatStatuses={chatStatuses}
             savedNames={savedNames}
           />

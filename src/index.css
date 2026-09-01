@@ -4523,6 +4523,12 @@ input:checked + .slider:before {
   color: #f59e0b;
 }
 
+.convlog-tag.is-expired {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
 .pulsing-dot {
   width: 6px;
   height: 6px;
@@ -4703,6 +4709,17 @@ input:checked + .slider:before {
   border-color: #f59e0b;
   background: rgba(245, 158, 11, 0.12);
   box-shadow: 0 0 16px rgba(245, 158, 11, 0.2);
+}
+
+.convlog-stat.is-expired-stat {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.convlog-stat.is-expired-stat.is-active {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.2);
 }
 
 .convlog-stat-icon-wrapper {

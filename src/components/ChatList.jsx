@@ -4,7 +4,7 @@ import { loadAllTags } from '../utils/contactTags.js';
 import { getChatDisplayName, getInitials } from '../utils/displayName.js';
 import { get24HourWindowStatus } from '../utils/timeFormat.js';
 
-export default function ChatList({ chats, setChats, searchQuery, setSearchQuery, activeChatJid, setActiveChatJid, userInfo, selectedTagFilter, savedNames = {}, statusFilter = null, chatStatuses = {} }) {
+export default function ChatList({ chats, setChats, searchQuery, setSearchQuery, activeChatJid, setActiveChatJid, userInfo, selectedTagFilter, savedNames = {}, statusFilter = null, windowFilter = null, chatStatuses = {} }) {
   // Load contact tags (reactively updated via custom event)
   const [contactTags, setContactTags] = React.useState(loadAllTags);
 
@@ -70,6 +70,12 @@ export default function ChatList({ chats, setChats, searchQuery, setSearchQuery,
     // touched still appears under New Leads — which is the point of that filter.
     if (statusFilter) {
       return (chatStatuses[chat.id] || 'prospect') === statusFilter;
+    }
+
+    // 24-Hour follow-up window filter (> 24h expired)
+    if (windowFilter === 'over24h') {
+      const win = get24HourWindowStatus(chat);
+      return win?.isExpired === true;
     }
 
     return true;

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   MessageSquare, RefreshCw, ChevronRight, Loader2, Info, Inbox, ArrowDownLeft, ArrowUpRight,
-  Search, X, Users, UserCheck, MessageCircle, Clock, ArrowUpDown, Filter,
+  Search, X, Users, UserCheck, MessageCircle, Clock, ArrowUpDown, Filter, AlertTriangle,
 } from 'lucide-react';
 import { fetchConversationLog } from '../../utils/api.js';
 import { getChatDisplayName, getInitials, avatarColor, isSelfChat } from '../../utils/displayName.js';
@@ -13,6 +13,7 @@ const FILTERS = [
   { key: 'all', label: 'Semua Percakapan', icon: Users },
   { key: 'customer', label: 'Dimulai Pelanggan', icon: MessageCircle },
   { key: 'awaiting', label: 'Belum Dibalas', icon: Clock },
+  { key: 'over24h', label: '> 24 Jam Inaktif', icon: AlertTriangle },
 ];
 
 export default function ConversationLog({
@@ -95,16 +96,21 @@ export default function ConversationLog({
   }, [chats]);
 
   const allRows = useMemo(() => {
+    const now = Date.now();
     return (data?.conversations || [])
       .filter(c => !c.isGroup)
       .map((c) => {
         const chat = chatById.get(c.jid)
           || { id: c.jid, name: c.name, phoneNumber: c.phoneNumber };
+        const lastTime = c.lastTs ? new Date(c.lastTs).getTime() : 0;
+        const isOver24h = lastTime > 0 && (now - lastTime > 24 * 60 * 60 * 1000);
+
         return {
           ...c,
           chat,
           label: getChatDisplayName(chat, userInfo, savedNames[c.jid]),
           awaiting: c.incoming > 0 && c.outgoing === 0,
+          isOver24h,
         };
       })
       .filter(c => !isSelfChat(c.chat, userInfo));
@@ -119,6 +125,8 @@ export default function ConversationLog({
       result = result.filter(c => c.initiatedBy === 'customer');
     } else if (filter === 'awaiting') {
       result = result.filter(c => c.awaiting);
+    } else if (filter === 'over24h') {
+      result = result.filter(c => c.isOver24h);
     }
 
     // Search query
@@ -164,10 +172,13 @@ export default function ConversationLog({
 
   const emptyMessage = () => {
     if (searchQuery) return `Tidak ada percakapan yang cocok dengan "${searchQuery}".`;
+    if (filter === 'over24h') return 'Tidak ada percakapan yang inaktif atau belum direspon lebih dari 24 jam.';
     if (filter === 'awaiting') return 'Semua pesan pelanggan sudah dibalas.';
     if (filter === 'customer') return 'Belum ada percakapan yang dimulai oleh pelanggan.';
     return 'Belum ada percakapan pelanggan yang tercatat.';
   };
+
+  const over24hTotal = useMemo(() => allRows.filter(r => r.isOver24h).length, [allRows]);
 
   const list = (
     <>
@@ -189,14 +200,14 @@ export default function ConversationLog({
             <Inbox size={32} style={{ color: 'var(--text-dimmed)' }} />
           </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: '380px', margin: '0 auto 16px' }}>{emptyMessage()}</p>
-          {searchQuery && (
+          {(searchQuery || filter !== 'all') && (
             <button
               type="button"
               className="chat-pill active"
-              onClick={() => setSearchQuery('')}
+              onClick={() => { setSearchQuery(''); setFilter('all'); }}
               style={{ margin: '0 auto', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
             >
-              <X size={14} /> Hapus Pencarian
+              <X size={14} /> Reset Filter
             </button>
           )}
         </div>
@@ -233,6 +244,12 @@ export default function ConversationLog({
                       {row.awaiting && (
                         <span className="convlog-tag is-awaiting">
                           <span className="pulsing-dot" /> Belum dibalas
+                        </span>
+                      )}
+
+                      {row.isOver24h && (
+                        <span className="convlog-tag is-expired" title="Tidak ada respon atau pesan baru dalam 24 jam terakhir">
+                          &gt; 24 Jam Inaktif
                         </span>
                       )}
 
@@ -454,7 +471,24 @@ export default function ConversationLog({
             </div>
           </button>
 
-          {/* 4. Pesan Masuk */}
+          {/* 4. Inaktif > 24 Jam */}
+          <button
+            type="button"
+            className={`convlog-stat ${over24hTotal > 0 ? 'is-expired-stat' : ''} ${filter === 'over24h' ? 'is-active' : ''}`}
+            onClick={() => { setFilter('over24h'); }}
+          >
+            <div className="convlog-stat-icon-wrapper" style={{ color: over24hTotal > 0 ? '#ef4444' : 'var(--text-dimmed)', background: over24hTotal > 0 ? 'rgba(239, 68, 68, 0.12)' : 'rgba(255,255,255,0.04)', borderColor: over24hTotal > 0 ? 'rgba(239, 68, 68, 0.3)' : 'var(--border-color)' }}>
+              <AlertTriangle size={20} />
+            </div>
+            <div className="convlog-stat-content">
+              <span className="convlog-stat-value" style={{ color: over24hTotal > 0 ? '#ef4444' : 'inherit' }}>
+                {over24hTotal.toLocaleString()}
+              </span>
+              <span className="convlog-stat-label">&gt; 24 Jam Inaktif</span>
+            </div>
+          </button>
+
+          {/* 5. Pesan Masuk */}
           <div className="convlog-stat">
             <div className="convlog-stat-icon-wrapper" style={{ color: '#06b6d4', background: 'rgba(6, 182, 212, 0.12)', borderColor: 'rgba(6, 182, 212, 0.25)' }}>
               <ArrowDownLeft size={20} />
@@ -465,7 +499,7 @@ export default function ConversationLog({
             </div>
           </div>
 
-          {/* 5. Pesan Keluar */}
+          {/* 6. Pesan Keluar */}
           <div className="convlog-stat">
             <div className="convlog-stat-icon-wrapper" style={{ color: '#a855f7', background: 'rgba(168, 85, 247, 0.12)', borderColor: 'rgba(168, 85, 247, 0.25)' }}>
               <ArrowUpRight size={20} />
@@ -488,7 +522,8 @@ export default function ConversationLog({
               const isActive = filter === key;
               const count = key === 'all' ? (totals?.customers ?? 0)
                 : key === 'customer' ? (totals?.customerInitiated ?? 0)
-                : (totals?.awaitingReply ?? 0);
+                : key === 'awaiting' ? (totals?.awaitingReply ?? 0)
+                : over24hTotal;
 
               return (
                 <button
