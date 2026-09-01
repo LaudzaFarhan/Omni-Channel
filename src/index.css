@@ -4403,8 +4403,6 @@ input:checked + .slider:before {
    Conversation log
    --------------------------------------------------------------------------- */
 .convlog-panel {
-  /* Bounded so a busy account cannot push the rest of the page off screen; the list
-     inside scrolls instead. */
   max-height: 460px;
 }
 
@@ -4428,27 +4426,30 @@ input:checked + .slider:before {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
 }
 
 .convlog-row {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: 14px;
   width: 100%;
-  padding: 11px 10px;
-  border: none;
-  border-radius: 10px;
-  background: transparent;
+  padding: 14px 16px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: var(--overlay-subtle);
   color: inherit;
   font-family: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background 0.13s ease;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .convlog-row:hover {
-  background: var(--overlay-subtle);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--primary-border);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 
 .convlog-row:focus-visible {
@@ -4457,16 +4458,17 @@ input:checked + .slider:before {
 }
 
 .convlog-avatar {
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
-  border-radius: 50%;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .convlog-body {
@@ -4478,12 +4480,12 @@ input:checked + .slider:before {
 .convlog-top {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .convlog-name {
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   font-weight: 700;
   color: var(--text-main);
   overflow: hidden;
@@ -4492,16 +4494,17 @@ input:checked + .slider:before {
   max-width: 100%;
 }
 
-/* Who started it, and whether anyone has answered. Text as well as colour, because the
-   distinction is the point of the row and colour alone does not carry it. */
 .convlog-tag {
   flex-shrink: 0;
-  padding: 1px 7px;
-  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
   border: 1px solid var(--border-color);
   background: var(--overlay-subtle);
   color: var(--text-dimmed);
-  font-size: 0.64rem;
+  font-size: 0.68rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -4515,55 +4518,58 @@ input:checked + .slider:before {
 }
 
 .convlog-tag.is-awaiting {
-  border-color: var(--warning-border);
-  background: var(--warning-soft);
-  color: var(--warning);
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.14);
+  color: #f59e0b;
+}
+
+.pulsing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+  animation: pulse-dot 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.75); }
 }
 
 .convlog-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
-  margin-top: 3px;
-  font-size: 0.75rem;
+  margin-top: 5px;
+  font-size: 0.78rem;
   color: var(--text-dimmed);
 }
 
 .convlog-counts {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
 }
 
-.convlog-counts svg {
-  opacity: 0.75;
-}
-
-/* Second and later icons need separating from the number before them. */
-.convlog-counts svg + svg,
-.convlog-counts svg:not(:first-child) {
-  margin-left: 5px;
-}
-
-/* The whole per-agent view, reduced to one line per conversation. */
 .convlog-agents {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 .convlog-agent {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 8px 2px 5px;
+  gap: 6px;
+  padding: 3px 10px 3px 6px;
   border-radius: 999px;
   border: 1px solid var(--border-color);
-  background: var(--overlay-subtle);
-  font-size: 0.72rem;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.74rem;
   font-weight: 600;
   color: var(--text-muted);
 }
@@ -4576,9 +4582,12 @@ input:checked + .slider:before {
 }
 
 .convlog-agent b {
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   font-weight: 700;
-  color: var(--text-dimmed);
+  color: var(--primary);
+  background: var(--primary-soft);
+  padding: 1px 5px;
+  border-radius: 4px;
 }
 
 .convlog-agent.is-muted {
@@ -4588,45 +4597,40 @@ input:checked + .slider:before {
 
 .convlog-tail {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 8px;
   flex-shrink: 0;
   padding-top: 2px;
 }
 
 .convlog-when {
-  font-size: 0.74rem;
+  font-size: 0.78rem;
   color: var(--text-dimmed);
   white-space: nowrap;
+  font-weight: 500;
 }
 
 .convlog-unread {
-  min-width: 19px;
-  height: 19px;
+  min-width: 20px;
+  height: 20px;
   padding: 0 6px;
   border-radius: 10px;
   background: var(--primary);
   color: var(--primary-contrast);
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-/* Full-page variant */
 .convlog-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 20px;
   flex-wrap: wrap;
-}
-
-.convlog-header h2 {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .convlog-refresh {
@@ -4634,20 +4638,22 @@ input:checked + .slider:before {
   align-items: center;
   gap: 7px;
   flex-shrink: 0;
-  padding: 9px 15px;
-  border-radius: 8px;
+  padding: 10px 18px;
+  border-radius: 10px;
   border: 1px solid var(--border-color);
-  background: transparent;
-  color: var(--text-muted);
+  background: var(--overlay-subtle);
+  color: var(--text-main);
   font-family: inherit;
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   font-weight: 600;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .convlog-refresh:hover:not(:disabled) {
-  background: var(--overlay-subtle);
-  color: var(--text-main);
+  background: var(--primary-soft);
+  border-color: var(--primary-border);
+  color: var(--primary);
 }
 
 .convlog-refresh:disabled {
@@ -4657,31 +4663,67 @@ input:checked + .slider:before {
 
 .convlog-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
 }
 
 .convlog-stat {
-  padding: 12px 14px;
-  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 16px;
   border: 1px solid var(--border-color);
   background: var(--card-bg);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: inherit;
+  color: inherit;
+}
+
+.convlog-stat:hover {
+  transform: translateY(-2px);
+  border-color: var(--primary-border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+}
+
+.convlog-stat.is-active {
+  border-color: var(--primary);
+  background: var(--primary-subtle);
+  box-shadow: 0 0 16px var(--primary-soft);
 }
 
 .convlog-stat.is-awaiting {
-  border-color: var(--warning-border);
-  background: var(--warning-soft);
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.05);
 }
 
-.convlog-stat.is-awaiting .convlog-stat-value,
-.convlog-stat.is-awaiting .convlog-stat-label {
-  color: var(--warning);
+.convlog-stat.is-awaiting.is-active {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.2);
+}
+
+.convlog-stat-icon-wrapper {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.convlog-stat-content {
+  display: flex;
+  flex-direction: column;
 }
 
 .convlog-stat-value {
   display: block;
-  font-size: 1.5rem;
+  font-size: 1.55rem;
   font-weight: 800;
   line-height: 1.1;
   color: var(--text-main);
@@ -4689,84 +4731,28 @@ input:checked + .slider:before {
 
 .convlog-stat-label {
   display: block;
-  margin-top: 2px;
-  font-size: 0.75rem;
+  margin-top: 4px;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-dimmed);
 }
 
-.convlog-filters {
-  padding: 0 0 12px;
-}
-
-/* Notes and states shared by both variants */
-.convlog-alert,
-.convlog-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 14px;
-  font-size: 0.78rem;
-  line-height: 1.45;
-}
-
-.convlog-alert {
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--warning-border);
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-
-.convlog-note {
+.convlog-loadmore-btn {
+  padding: 10px 24px;
   border-radius: 8px;
+  border: 1px solid var(--border-color);
   background: var(--overlay-subtle);
-  color: var(--text-muted);
-}
-
-.convlog-error {
-  padding: 14px;
-  border-radius: 8px;
-  border-left: 4px solid #ef4444;
-  background: rgba(239, 68, 68, 0.08);
+  color: var(--text-main);
   font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-.convlog-error strong {
-  color: #ef4444;
-}
-
-.convlog-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 40px;
-  color: var(--text-dimmed);
-  font-size: 0.88rem;
-}
-
-/* Footer action, shared with the pipeline panel. */
-.convlog-seeall {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  flex-shrink: 0;
-  width: 100%;
-  padding: 11px;
-  border: none;
-  border-top: 1px solid var(--border-color);
-  background: transparent;
-  color: var(--primary);
-  font-family: inherit;
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.convlog-seeall:hover {
-  background: var(--primary-subtle);
+.convlog-loadmore-btn:hover {
+  background: var(--primary-soft);
+  border-color: var(--primary-border);
+  color: var(--primary);
 }
 
 /* ---------------------------------------------------------------------------

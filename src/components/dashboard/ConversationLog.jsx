@@ -1,36 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   MessageSquare, RefreshCw, ChevronRight, Loader2, Info, Inbox, ArrowDownLeft, ArrowUpRight,
+  Search, X, Users, UserCheck, MessageCircle, Clock, ArrowUpDown, Filter,
 } from 'lucide-react';
 import { fetchConversationLog } from '../../utils/api.js';
 import { getChatDisplayName, getInitials, avatarColor, isSelfChat } from '../../utils/displayName.js';
 import { shortWhen, fullWhen, shortDuration } from '../../utils/timeFormat.js';
 import { subscribeSocket } from '../../utils/socket.js';
 
-// Which conversations to show. One selection at a time, because these overlap: an
-// unanswered chat is also a customer-initiated one, so independent toggles would produce
-// combinations that mean nothing.
+// Which conversations to show
 const FILTERS = [
-  { key: 'all', label: 'Semua' },
-  { key: 'customer', label: 'Dari pelanggan' },
-  { key: 'awaiting', label: 'Belum dibalas' },
+  { key: 'all', label: 'Semua Percakapan', icon: Users },
+  { key: 'customer', label: 'Dimulai Pelanggan', icon: MessageCircle },
+  { key: 'awaiting', label: 'Belum Dibalas', icon: Clock },
 ];
 
-/**
- * The team's customer conversation history.
- *
- * Replaces a per-agent grouping that repeated the same customer under every teammate who
- * had replied, and split one teammate into two rows when some of their messages predated
- * uid stamping. Here the conversation is the row and the agents who answered are a
- * detail inside it, so a customer appears exactly once and the history reads as a log.
- *
- * Two variants share this code because they are the same list at two sizes: `panel` is
- * the compact home-page card, `page` is the full view with filters. Splitting them into
- * separate components is what let the old copies drift apart in the first place.
- *
- * Groups and the self-chat are excluded. A group is not a customer, and counting them
- * makes "how many customers started a conversation" unanswerable.
- */
 export default function ConversationLog({
   activeSessionId = 'default',
   chats = [],
@@ -51,6 +35,9 @@ export default function ConversationLog({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('recent'); // 'recent' | 'messages' | 'waiting'
+  const [displayCount, setDisplayCount] = useState(30);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -100,17 +87,15 @@ export default function ConversationLog({
     };
   }, [load]);
 
-  // Resolve labels the way the rest of the app does, so a customer reads identically
-  // here and in the chat list. The server's own label is the fallback for a chat that has
-  // aged out of the live list.
+  // Resolve labels the way the rest of the app does
   const chatById = useMemo(() => {
     const map = new Map();
     chats.forEach((c) => { if (c?.id) map.set(c.id, c); });
     return map;
   }, [chats]);
 
-  const rows = useMemo(() => {
-    const all = (data?.conversations || [])
+  const allRows = useMemo(() => {
+    return (data?.conversations || [])
       .filter(c => !c.isGroup)
       .map((c) => {
         const chat = chatById.get(c.jid)
@@ -123,28 +108,62 @@ export default function ConversationLog({
         };
       })
       .filter(c => !isSelfChat(c.chat, userInfo));
+  }, [data, chatById, userInfo, savedNames]);
 
-    if (filter === 'customer') return all.filter(c => c.initiatedBy === 'customer');
-    if (filter === 'awaiting') return all.filter(c => c.awaiting);
-    return all;
-  }, [data, chatById, userInfo, savedNames, filter]);
+  // Filter & Search & Sort
+  const filteredAndSortedRows = useMemo(() => {
+    let result = allRows;
 
-  const visible = isPanel ? rows.slice(0, limit) : rows;
+    // Filter type
+    if (filter === 'customer') {
+      result = result.filter(c => c.initiatedBy === 'customer');
+    } else if (filter === 'awaiting') {
+      result = result.filter(c => c.awaiting);
+    }
+
+    // Search query
+    const q = searchQuery.toLowerCase().trim();
+    if (q) {
+      result = result.filter(c => {
+        const matchLabel = (c.label || '').toLowerCase().includes(q);
+        const matchPhone = (c.chat?.phoneNumber || c.phoneNumber || '').toLowerCase().includes(q);
+        const matchJid = (c.jid || '').toLowerCase().includes(q);
+        const matchAgent = (c.agents || []).some(a => (a.name || '').toLowerCase().includes(q));
+        return matchLabel || matchPhone || matchJid || matchAgent;
+      });
+    }
+
+    // Sort
+    return [...result].sort((a, b) => {
+      if (sortBy === 'messages') {
+        const aTotal = (a.incoming || 0) + (a.outgoing || 0);
+        const bTotal = (b.incoming || 0) + (b.outgoing || 0);
+        return bTotal - aTotal;
+      }
+      if (sortBy === 'waiting') {
+        if (a.awaiting !== b.awaiting) return a.awaiting ? -1 : 1;
+        const aWait = a.firstCustomerTs ? (Date.now() - new Date(a.firstCustomerTs).getTime()) : 0;
+        const bWait = b.firstCustomerTs ? (Date.now() - new Date(b.firstCustomerTs).getTime()) : 0;
+        return bWait - aWait;
+      }
+      // default: recent
+      const aTime = a.lastTs ? new Date(a.lastTs).getTime() : 0;
+      const bTime = b.lastTs ? new Date(b.lastTs).getTime() : 0;
+      return bTime - aTime;
+    });
+  }, [allRows, filter, searchQuery, sortBy]);
+
+  const visible = isPanel ? filteredAndSortedRows.slice(0, limit) : filteredAndSortedRows.slice(0, displayCount);
   const totals = data?.totals;
 
-  // Hand the totals up after render rather than during the fetch, so a parent setting
-  // state in response cannot re-enter this component's own update.
+  // Hand the totals up after render
   useEffect(() => {
     if (totals) onTotals?.(totals);
-    // onTotals is intentionally omitted: parents commonly pass an inline arrow, which
-    // would make this fire on every parent render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [totals]);
 
-  // ---------------------------------------------------------------------------
-  // pieces shared by both variants
-  // ---------------------------------------------------------------------------
   const emptyMessage = () => {
+    if (searchQuery) return `Tidak ada percakapan yang cocok dengan "${searchQuery}".`;
     if (filter === 'awaiting') return 'Semua pesan pelanggan sudah dibalas.';
     if (filter === 'customer') return 'Belum ada percakapan yang dimulai oleh pelanggan.';
     return 'Belum ada percakapan pelanggan yang tercatat.';
@@ -160,24 +179,34 @@ export default function ConversationLog({
 
       {loading && !data && (
         <div className="convlog-loading">
-          <Loader2 size={18} className="spin-icon" /> Memuat…
+          <Loader2 size={20} className="spin-icon" /> Memuat riwayat percakapan…
         </div>
       )}
 
       {!loading && !error && visible.length === 0 && (
-        <div className="dashboard-empty-state">
-          <div className="dashboard-empty-icon"><Inbox size={36} /></div>
-          <p>{emptyMessage()}</p>
+        <div className="dashboard-empty-state" style={{ padding: '60px 20px' }}>
+          <div className="dashboard-empty-icon" style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--overlay-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <Inbox size={32} style={{ color: 'var(--text-dimmed)' }} />
+          </div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: '380px', margin: '0 auto 16px' }}>{emptyMessage()}</p>
+          {searchQuery && (
+            <button
+              type="button"
+              className="chat-pill active"
+              onClick={() => setSearchQuery('')}
+              style={{ margin: '0 auto', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <X size={14} /> Hapus Pencarian
+            </button>
+          )}
         </div>
       )}
 
       {visible.length > 0 && (
         <ul className="convlog-list">
           {visible.map((row) => {
-            // When the conversation started. The customer's first message is the
-            // meaningful date for a log of inbound conversations; a chat we opened
-            // ourselves falls back to its oldest retained message.
             const startedTs = row.firstCustomerTs || row.firstTs;
+            const phoneStr = row.chat?.phoneNumber || (row.jid?.includes('@') ? row.jid.split('@')[0] : '');
 
             return (
               <li key={row.jid}>
@@ -195,42 +224,56 @@ export default function ConversationLog({
                     <span className="convlog-top">
                       <span className="convlog-name">{row.label}</span>
 
+                      {phoneStr && phoneStr !== row.label && (
+                        <span className="convlog-phone" style={{ fontSize: '0.75rem', color: 'var(--text-dimmed)', marginRight: '4px' }}>
+                          +{phoneStr}
+                        </span>
+                      )}
+
+                      {row.awaiting && (
+                        <span className="convlog-tag is-awaiting">
+                          <span className="pulsing-dot" /> Belum dibalas
+                        </span>
+                      )}
+
                       {row.initiatedBy === 'customer' && (
                         <span className="convlog-tag is-customer">Pelanggan mulai</span>
                       )}
                       {row.initiatedBy === 'us' && (
                         <span className="convlog-tag">Kami mulai</span>
                       )}
-                      {/* The opening message has aged out of the retained window, so
-                          claiming either side started it would be a guess. */}
                       {row.initiatedBy === 'unknown' && (
                         <span
                           className="convlog-tag"
-                          title={`Percakapan lebih panjang dari ${data?.retainedPerChat || 100} pesan terakhir yang disimpan, jadi pembukanya tidak diketahui.`}
+                          title={`Percakapan lebih panjang dari ${data?.retainedPerChat || 100} pesan terakhir yang disimpan.`}
                         >
                           Awal tidak diketahui
                         </span>
                       )}
-                      {row.awaiting && <span className="convlog-tag is-awaiting">Belum dibalas</span>}
                     </span>
 
                     <span className="convlog-meta">
                       {startedTs && (
-                        <span title={fullWhen(startedTs)}>Mulai {shortWhen(startedTs)}</span>
+                        <span title={fullWhen(startedTs)} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <Clock size={12} /> Mulai {shortWhen(startedTs)}
+                        </span>
                       )}
                       <span className="convlog-counts">
-                        <ArrowDownLeft size={12} /> {row.incoming}
-                        <ArrowUpRight size={12} /> {row.outgoing}
+                        <span style={{ color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                          <ArrowDownLeft size={13} /> {row.incoming} masuk
+                        </span>
+                        <span style={{ color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '2px', marginLeft: '6px' }}>
+                          <ArrowUpRight size={13} /> {row.outgoing} keluar
+                        </span>
                       </span>
                       {row.responseMs !== null && row.responseMs !== undefined && (
-                        <span title="Selisih antara pesan pertama pelanggan dan balasan pertama tim">
-                          Dibalas dalam {shortDuration(row.responseMs)}
+                        <span title="Selisih antara pesan pertama pelanggan dan balasan pertama tim" style={{ color: 'var(--success)' }}>
+                          ⚡ Dibalas dalam {shortDuration(row.responseMs)}
                         </span>
                       )}
                     </span>
 
-                    {/* Who actually handled it. This is the whole per-agent view reduced
-                        to one line, which is all it needed to be. */}
+                    {/* Agents who handled the conversation */}
                     {row.agents.length > 0 && (
                       <span className="convlog-agents">
                         {row.agents.map(agent => (
@@ -264,7 +307,7 @@ export default function ConversationLog({
                       <span className="convlog-unread">{row.unreadCount}</span>
                     )}
                     <span className="customer-open">
-                      Lihat <ChevronRight size={12} />
+                      Buka Chat <ChevronRight size={14} />
                     </span>
                   </span>
                 </button>
@@ -272,6 +315,19 @@ export default function ConversationLog({
             );
           })}
         </ul>
+      )}
+
+      {/* Pagination / Batch loading in Page variant */}
+      {!isPanel && filteredAndSortedRows.length > displayCount && (
+        <div style={{ textAlign: 'center', padding: '20px 0 10px 0', borderTop: '1px solid var(--border-color)', marginTop: '12px' }}>
+          <button
+            type="button"
+            className="convlog-loadmore-btn"
+            onClick={() => setDisplayCount(prev => prev + 30)}
+          >
+            Tampilkan Lebih Banyak ({visible.length} dari {filteredAndSortedRows.length})
+          </button>
+        </div>
       )}
     </>
   );
@@ -292,8 +348,6 @@ export default function ConversationLog({
           )}
         </div>
 
-        {/* Surfaced above the list because it is the one number here that asks for
-            action, and it would otherwise be buried several rows down. */}
         {totals && totals.awaitingReply > 0 && (
           <div className="convlog-alert">
             <Info size={14} />
@@ -303,9 +357,9 @@ export default function ConversationLog({
 
         <div className="convlog-scroll">{list}</div>
 
-        {onSeeAll && rows.length > visible.length && (
+        {onSeeAll && allRows.length > visible.length && (
           <button type="button" className="convlog-seeall" onClick={onSeeAll}>
-            Lihat semua {rows.length} percakapan <ChevronRight size={13} />
+            Lihat semua {allRows.length} percakapan <ChevronRight size={13} />
           </button>
         )}
       </div>
@@ -316,82 +370,229 @@ export default function ConversationLog({
   // page variant: the full view
   // ---------------------------------------------------------------------------
   return (
-    <div className="view-container">
-      <div className="view-header convlog-header">
-        <div>
-          <h2>
-            <MessageSquare size={26} style={{ color: 'var(--primary)' }} /> Riwayat Percakapan
-          </h2>
-          <p>
-            Satu baris per pelanggan, percakapan terbaru di atas. Setiap baris menunjukkan
-            siapa yang memulai, berapa pesan masuk dan keluar, serta agen mana yang
-            membalas. Menampilkan percakapan terbaru, bukan seluruh riwayat.
-          </p>
+    <div className="view-container" style={{ gap: '20px' }}>
+      {/* Top Banner Header */}
+      <div className="convlog-header glass" style={{ padding: '24px', borderRadius: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+          <div style={{
+            width: '48px', height: '48px', borderRadius: '12px',
+            background: 'var(--primary-soft)', border: '1px solid var(--primary-border)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)',
+            flexShrink: 0,
+          }}>
+            <MessageSquare size={26} />
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <h2 style={{ fontSize: '1.4rem', fontWeight: '700', margin: 0 }}>Riwayat Percakapan</h2>
+              {totals && (
+                <span style={{ fontSize: '0.8rem', fontWeight: '700', padding: '2px 10px', borderRadius: '12px', background: 'var(--primary-soft)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
+                  {totals.customers} Total Kontak
+                </span>
+              )}
+            </div>
+            <p style={{ margin: '6px 0 0 0', color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: '680px', lineHeight: '1.5' }}>
+              Pantau seluruh aktivitas percakapan pelanggan secara terpusat, respon agen tim, serta identifikasi pesan pelanggan yang belum terbalas.
+            </p>
+          </div>
         </div>
 
-        <button onClick={load} disabled={loading} className="convlog-refresh" title="Muat ulang">
+        <button onClick={load} disabled={loading} className="convlog-refresh" title="Muat ulang data">
           <RefreshCw size={15} className={loading ? 'spin-icon' : ''} /> Segarkan
         </button>
       </div>
 
+      {/* Modern Interactive Stat Cards Grid */}
       {totals && (
         <div className="convlog-summary">
+          {/* 1. Total Pelanggan */}
+          <button
+            type="button"
+            className={`convlog-stat ${filter === 'all' && !searchQuery ? 'is-active' : ''}`}
+            onClick={() => { setFilter('all'); setSearchQuery(''); }}
+          >
+            <div className="convlog-stat-icon-wrapper" style={{ color: 'var(--primary)', background: 'var(--primary-soft)', borderColor: 'var(--primary-border)' }}>
+              <Users size={20} />
+            </div>
+            <div className="convlog-stat-content">
+              <span className="convlog-stat-value">{totals.customers.toLocaleString()}</span>
+              <span className="convlog-stat-label">Total Pelanggan</span>
+            </div>
+          </button>
+
+          {/* 2. Dimulai Pelanggan */}
+          <button
+            type="button"
+            className={`convlog-stat ${filter === 'customer' ? 'is-active' : ''}`}
+            onClick={() => { setFilter('customer'); }}
+          >
+            <div className="convlog-stat-icon-wrapper" style={{ color: 'var(--success)', background: 'var(--success-soft)', borderColor: 'var(--success-border)' }}>
+              <MessageCircle size={20} />
+            </div>
+            <div className="convlog-stat-content">
+              <span className="convlog-stat-value" style={{ color: 'var(--success)' }}>
+                {totals.customerInitiated.toLocaleString()}
+              </span>
+              <span className="convlog-stat-label">Dimulai Pelanggan</span>
+            </div>
+          </button>
+
+          {/* 3. Belum Dibalas */}
+          <button
+            type="button"
+            className={`convlog-stat ${totals.awaitingReply > 0 ? 'is-awaiting' : ''} ${filter === 'awaiting' ? 'is-active' : ''}`}
+            onClick={() => { setFilter('awaiting'); }}
+          >
+            <div className="convlog-stat-icon-wrapper" style={{ color: totals.awaitingReply > 0 ? 'var(--warning)' : 'var(--text-dimmed)', background: totals.awaitingReply > 0 ? 'var(--warning-soft)' : 'rgba(255,255,255,0.04)', borderColor: totals.awaitingReply > 0 ? 'var(--warning-border)' : 'var(--border-color)' }}>
+              <Clock size={20} />
+            </div>
+            <div className="convlog-stat-content">
+              <span className="convlog-stat-value" style={{ color: totals.awaitingReply > 0 ? 'var(--warning)' : 'inherit' }}>
+                {totals.awaitingReply.toLocaleString()}
+              </span>
+              <span className="convlog-stat-label">Belum Dibalas</span>
+            </div>
+          </button>
+
+          {/* 4. Pesan Masuk */}
           <div className="convlog-stat">
-            <span className="convlog-stat-value">{totals.customers}</span>
-            <span className="convlog-stat-label">Pelanggan</span>
+            <div className="convlog-stat-icon-wrapper" style={{ color: '#06b6d4', background: 'rgba(6, 182, 212, 0.12)', borderColor: 'rgba(6, 182, 212, 0.25)' }}>
+              <ArrowDownLeft size={20} />
+            </div>
+            <div className="convlog-stat-content">
+              <span className="convlog-stat-value">{totals.incoming.toLocaleString()}</span>
+              <span className="convlog-stat-label">Pesan Masuk</span>
+            </div>
           </div>
+
+          {/* 5. Pesan Keluar */}
           <div className="convlog-stat">
-            <span className="convlog-stat-value">{totals.customerInitiated}</span>
-            <span className="convlog-stat-label">Dimulai pelanggan</span>
-          </div>
-          <div className={`convlog-stat ${totals.awaitingReply > 0 ? 'is-awaiting' : ''}`}>
-            <span className="convlog-stat-value">{totals.awaitingReply}</span>
-            <span className="convlog-stat-label">Belum dibalas</span>
-          </div>
-          <div className="convlog-stat">
-            <span className="convlog-stat-value">{totals.incoming}</span>
-            <span className="convlog-stat-label">Pesan masuk</span>
-          </div>
-          <div className="convlog-stat">
-            <span className="convlog-stat-value">{totals.outgoing}</span>
-            <span className="convlog-stat-label">Pesan keluar</span>
+            <div className="convlog-stat-icon-wrapper" style={{ color: '#a855f7', background: 'rgba(168, 85, 247, 0.12)', borderColor: 'rgba(168, 85, 247, 0.25)' }}>
+              <ArrowUpRight size={20} />
+            </div>
+            <div className="convlog-stat-content">
+              <span className="convlog-stat-value">{totals.outgoing.toLocaleString()}</span>
+              <span className="convlog-stat-label">Pesan Keluar</span>
+            </div>
           </div>
         </div>
       )}
 
-      <div className="chat-pill-row convlog-filters">
-        {FILTERS.map(({ key, label }) => (
-          <button
-            key={key}
-            type="button"
-            className={`chat-pill ${filter === key ? 'active' : ''}`}
-            aria-pressed={filter === key}
-            onClick={() => setFilter(key)}
-          >
-            {label}
-            <span className="chat-pill-count">
-              {key === 'all' ? (totals?.customers ?? 0)
+      {/* Main Content Card Container */}
+      <div className="convlog-card glass" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+        {/* Controls Toolbar: Search + Filter Pills + Sort Dropdown */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
+          {/* Filter Pills */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {FILTERS.map(({ key, label, icon: Icon }) => {
+              const isActive = filter === key;
+              const count = key === 'all' ? (totals?.customers ?? 0)
                 : key === 'customer' ? (totals?.customerInitiated ?? 0)
-                : (totals?.awaitingReply ?? 0)}
-            </span>
-          </button>
-        ))}
-      </div>
+                : (totals?.awaitingReply ?? 0);
 
-      <div className="view-content convlog-content">
-        {list}
-
-        {/* Said out loud rather than hidden: these messages are counted in the totals but
-            cannot be tied to a teammate, so the per-agent chips are knowingly partial. */}
-        {totals && totals.unattributedOutgoing > 0 && (
-          <div className="convlog-note">
-            <Info size={15} />
-            <span>
-              {totals.unattributedOutgoing} pesan terkirim tidak terlacak ke agen mana pun —
-              dikirim dari HP, oleh bot, atau sebelum fitur ini aktif.
-            </span>
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className={`chat-pill ${isActive ? 'active' : ''}`}
+                  aria-pressed={isActive}
+                  onClick={() => setFilter(key)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 14px', fontSize: '0.85rem' }}
+                >
+                  <Icon size={14} />
+                  <span>{label}</span>
+                  <span className="chat-pill-count">{count.toLocaleString()}</span>
+                </button>
+              );
+            })}
           </div>
-        )}
+
+          {/* Right Toolbar: Search & Sort */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            {/* Search Input */}
+            <div className="search-input-wrapper" style={{ width: '260px' }}>
+              <Search className="search-icon" size={15} />
+              <input
+                type="text"
+                placeholder="Cari nama, nomor, agen..."
+                className="search-input"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  style={{
+                    position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
+                    background: 'transparent', border: 'none', color: 'var(--text-dimmed)',
+                    cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center',
+                  }}
+                  title="Hapus pencarian"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Sort Dropdown */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <ArrowUpDown size={14} style={{ color: 'var(--text-muted)' }} />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                aria-label="Urutkan percakapan"
+                style={{
+                  background: 'var(--bg-main)', color: 'var(--text-main)',
+                  border: '1px solid var(--border-color)', padding: '7px 12px',
+                  borderRadius: '8px', fontSize: '0.84rem', outline: 'none', cursor: 'pointer',
+                  fontWeight: '600',
+                }}
+              >
+                <option value="recent">Terbaru</option>
+                <option value="messages">Paling Banyak Pesan</option>
+                <option value="waiting">Paling Lama Menunggu</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Counter Info Bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+          <span>
+            Menampilkan <strong>{visible.length}</strong> dari <strong>{filteredAndSortedRows.length}</strong> percakapan
+            {searchQuery && <span> untuk pencarian "<em>{searchQuery}</em>"</span>}
+          </span>
+          {totals && totals.awaitingReply > 0 && filter !== 'awaiting' && (
+            <button
+              type="button"
+              onClick={() => setFilter('awaiting')}
+              style={{
+                background: 'var(--warning-soft)', border: '1px solid var(--warning-border)',
+                color: 'var(--warning)', padding: '3px 8px', borderRadius: '6px',
+                fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px',
+              }}
+            >
+              <Clock size={12} /> {totals.awaitingReply} pesan perlu respon
+            </button>
+          )}
+        </div>
+
+        {/* Conversation List */}
+        <div className="view-content convlog-content" style={{ margin: 0, padding: 0 }}>
+          {list}
+
+          {/* Unattributed messages note */}
+          {totals && totals.unattributedOutgoing > 0 && (
+            <div className="convlog-note" style={{ marginTop: '14px' }}>
+              <Info size={15} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <span>
+                {totals.unattributedOutgoing.toLocaleString()} pesan terkirim tidak terlacak ke agen spesifik —
+                dikirim dari HP langsung, oleh bot/webhook, atau sebelum pencatatan agen aktif.
+              </span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
