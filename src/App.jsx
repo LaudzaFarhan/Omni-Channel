@@ -1076,14 +1076,15 @@ export default function App() {
       const trialDays = userProfile.customTrialDays ?? effectiveLimits?.trialDays ?? 0;
       trialDaysLeft = trialDays;
       if (trialDays > 0) {
+        const refDate = userProfile.ownerCreatedAt || userProfile.createdAt;
         let createdAtDate = new Date();
-        if (userProfile.createdAt) {
-          if (typeof userProfile.createdAt.toDate === 'function') {
-            createdAtDate = userProfile.createdAt.toDate();
-          } else if (userProfile.createdAt.seconds) {
-            createdAtDate = new Date(userProfile.createdAt.seconds * 1000);
+        if (refDate) {
+          if (typeof refDate.toDate === 'function') {
+            createdAtDate = refDate.toDate();
+          } else if (refDate.seconds) {
+            createdAtDate = new Date(refDate.seconds * 1000);
           } else {
-            createdAtDate = new Date(userProfile.createdAt);
+            createdAtDate = new Date(refDate);
           }
         }
         const differenceMs = Date.now() - createdAtDate.getTime();

@@ -228,6 +228,15 @@ export default function UsersTab({
 
   // --- Trial ----------------------------------------------------------------
   const getTrialInfo = (u, effective) => {
+    // If this is a team member, always evaluate against the workspace owner
+    if (u.ownerUserId) {
+      const owner = (users || []).find(o => o.uid === u.ownerUserId);
+      if (owner) {
+        const ownerEffective = resolveEffectiveLimits(owner, plans);
+        return getTrialInfo(owner, ownerEffective);
+      }
+    }
+
     if (u.role === 'admin') return { label: 'Admin (No trial)', isExpired: false, isCustom: false, daysLeft: null };
     if (u.trialExpired) return { label: 'Expired', isExpired: true, isCustom: Boolean(u.trialEndsAt || u.customTrialDays), daysLeft: 0 };
     
@@ -245,7 +254,8 @@ export default function UsersTab({
 
     const trialDays = u.customTrialDays ?? effective.plan?.trialDays ?? 0;
     if (trialDays > 0) {
-      let createdAtDate = u.createdAt ? new Date(u.createdAt) : new Date();
+      const refDate = u.ownerCreatedAt || u.createdAt;
+      let createdAtDate = refDate ? new Date(refDate) : new Date();
       const diffDays = (Date.now() - createdAtDate.getTime()) / (1000 * 60 * 60 * 24);
       if (diffDays >= trialDays) {
         return { label: 'Expired', isExpired: true, isCustom: Boolean(u.customTrialDays), daysLeft: 0 };

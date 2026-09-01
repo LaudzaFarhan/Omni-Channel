@@ -137,6 +137,7 @@ export async function findUserById(id) {
       user.trialExpired = Boolean(ownerRow.trial_expired);
       user.trialEndsAt = ownerRow.trial_ends_at;
       user.customTrialDays = ownerRow.custom_trial_days;
+      user.ownerCreatedAt = ownerRow.created_at;
     }
   }
   return user;
@@ -189,7 +190,8 @@ export async function listUsers() {
            u.purchased_agents, u.owner_user_id, u.created_at, u.last_login_at,
            o.email AS owner_email, o.name AS owner_name, o.plan_id AS owner_plan_id,
            o.messages_sent AS owner_messages_sent, o.trial_expired AS owner_trial_expired,
-           o.trial_ends_at AS owner_trial_ends_at, o.custom_trial_days AS owner_custom_trial_days
+           o.trial_ends_at AS owner_trial_ends_at, o.custom_trial_days AS owner_custom_trial_days,
+           o.created_at AS owner_created_at
       FROM users u
       LEFT JOIN users o ON o.id = u.owner_user_id
      ORDER BY COALESCE(u.owner_user_id, u.id), (u.owner_user_id IS NOT NULL), u.created_at ASC
@@ -204,6 +206,7 @@ export async function listUsers() {
       user.trialExpired = Boolean(r.owner_trial_expired);
       user.trialEndsAt = r.owner_trial_ends_at;
       user.customTrialDays = r.owner_custom_trial_days;
+      user.ownerCreatedAt = r.owner_created_at;
     }
     return user;
   });
