@@ -845,6 +845,50 @@ app.get('/api/chats', approved, (req, res) => {
   res.json(sortedChats);
 });
 
+// Fetch group metadata (participants, description, admin roles)
+app.get('/api/group-metadata', approved, async (req, res) => {
+  const ownerId = req.workspaceId;
+  const sid = req.query.sessionId || 'default';
+  const jid = req.query.jid;
+
+  if (!jid || !jid.endsWith('@g.us')) {
+    return res.status(400).json({ error: 'Valid group JID required' });
+  }
+
+  const key = sessionKey(ownerId, sid);
+  const session = activeSessions[key];
+  if (!session || !session.sock) {
+    return res.status(503).json({ error: 'WhatsApp session not connected' });
+  }
+
+  try {
+    const metadata = await session.sock.groupMetadata(jid);
+    if (!metadata) {
+      return res.status(404).json({ error: 'Group metadata not found' });
+    }
+
+    res.json({
+      id: metadata.id,
+      subject: metadata.subject || '',
+      creation: metadata.creation || null,
+      owner: metadata.owner || '',
+      desc: metadata.desc ? metadata.desc.toString() : '',
+      descOwner: metadata.descOwner || null,
+      descTime: metadata.descTime || null,
+      restrict: !!metadata.restrict,
+      announce: !!metadata.announce,
+      size: metadata.size || (metadata.participants ? metadata.participants.length : 0),
+      participants: (metadata.participants || []).map(p => ({
+        id: p.id,
+        admin: p.admin || null,
+      }))
+    });
+  } catch (err) {
+    console.error(`[GroupMetadata] Error fetching group metadata for ${jid}:`, err.message);
+    res.status(500).json({ error: 'Failed to fetch group metadata', message: err.message });
+  }
+});
+
 // When conversations actually happen, as a 7x24 (weekday x hour) grid.
 //
 // Aggregated here rather than in the browser because the raw material is every

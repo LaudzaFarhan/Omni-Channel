@@ -240,6 +240,7 @@ export default function MessageDashboard({
           savedContacts={savedContacts}
           isFullscreen={isFullscreen}
           onToggleFullscreen={toggleFullscreen}
+          onOpenChat={setActiveChatJid}
           // Forwarding needs somewhere to forward TO, and the chat list lives here.
           chats={chats}
         />

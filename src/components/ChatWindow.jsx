@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, AlertTriangle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown, ChevronRight, Pause, Play, UserPlus, UserCheck, MoreVertical, Search, Trophy, UserMinus, RotateCcw, Maximize2, Minimize2, Reply, Forward, Copy, Zap } from 'lucide-react';
+import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, AlertTriangle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown, ChevronRight, Pause, Play, UserPlus, UserCheck, MoreVertical, Search, Trophy, UserMinus, RotateCcw, Maximize2, Minimize2, Reply, Forward, Copy, Zap, Users, MessageSquare } from 'lucide-react';
 import { fetchWithAuth, saveContact, updateContact, setChatStatus as apiSetChatStatus } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
 import { showToast } from '../utils/toastBus.js';
@@ -319,9 +319,14 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   // Fullscreen is owned by MessageDashboard: the element that expands has to contain the
   // chat list as well, and that is a sibling of this component. The button lives here
   // because the conversation header is where it belongs.
-  isFullscreen = false, onToggleFullscreen = null,
+  isFullscreen = false, onToggleFullscreen = null, onOpenChat = null,
   // Every conversation, so a message can be forwarded somewhere other than this one.
   chats = [] }) {
+  const isGroup = !!(activeChat && activeChat.id && activeChat.id.endsWith('@g.us'));
+  const [groupMeta, setGroupMeta] = useState(null);
+  const [loadingGroupMeta, setLoadingGroupMeta] = useState(false);
+  const [participantSearch, setParticipantSearch] = useState('');
+
   // Saving the person you are talking to is the main way contacts get created —
   // expecting the operator to copy a number over to the contacts page instead
   // would mean the address book stays empty.
@@ -338,6 +343,43 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+
+  // Fetch group metadata whenever active group chat changes
+  useEffect(() => {
+    if (!isGroup || !activeChat?.id) {
+      setGroupMeta(null);
+      setParticipantSearch('');
+      return;
+    }
+    let active = true;
+    setLoadingGroupMeta(true);
+    fetchWithAuth(`/api/group-metadata?jid=${encodeURIComponent(activeChat.id)}&sessionId=${encodeURIComponent(activeSessionId || 'default')}`)
+      .then(data => {
+        if (active && data && !data.error) {
+          setGroupMeta(data);
+        }
+      })
+      .catch(err => {
+        console.warn('Failed to load group metadata:', err);
+      })
+      .finally(() => {
+        if (active) setLoadingGroupMeta(false);
+      });
+
+    return () => { active = false; };
+  }, [isGroup, activeChat?.id, activeSessionId]);
+
+  const groupParticipants = useMemo(() => {
+    if (!isGroup) return [];
+    const list = groupMeta?.participants || [];
+    if (!participantSearch.trim()) return list;
+    const q = participantSearch.toLowerCase();
+    return list.filter(p => {
+      const phone = p.id.split('@')[0];
+      const name = (savedNames[p.id] || savedContacts[p.id]?.name || savedContacts[phone]?.name || '').toLowerCase();
+      return phone.includes(q) || name.includes(q);
+    });
+  }, [isGroup, groupMeta, participantSearch, savedNames, savedContacts]);
 
   const handleCopyPhone = (text) => {
     if (!text) return;
@@ -1973,79 +2015,268 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
         </div>
       </div>
 
-      {/* Right Drawer: Contact Info OR Quick Replies */}
+      {/* Right Drawer: Contact Info OR Group Info OR Quick Replies */}
       {activeRightPanel === 'contact_info' && (
         <div className="chat-right-drawer contact-profile-drawer">
           <div className="drawer-header">
-            <button className="drawer-close-btn" onClick={() => setActiveRightPanel(null)} title="Tutup Detail Profil">
+            <button className="drawer-close-btn" onClick={() => setActiveRightPanel(null)} title={isGroup ? 'Tutup Info Grup' : 'Tutup Detail Profil'}>
               <X size={18} />
             </button>
-            <h3>Info Kontak</h3>
+            <h3>{isGroup ? 'Info Grup' : 'Info Kontak'}</h3>
           </div>
 
-          <div className="contact-profile-card">
-            <div className="contact-profile-avatar" style={{ background: avatarColor(activeChat.id) }}>
-              {getInitials(getDisplayName(activeChat))}
+          {isGroup ? (
+            /* ====================================================
+               GROUP PROFILE CARD (WhatsApp Style)
+               ==================================================== */
+            <div className="contact-profile-card">
+              <div className="contact-profile-avatar" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}>
+                <Users size={24} color="#ffffff" />
+              </div>
+              <div className="contact-profile-name">{getDisplayName(activeChat)}</div>
+              <div className="contact-profile-phone" style={{ color: 'var(--text-dimmed)', fontSize: '0.82rem' }}>
+                <span>Grup WhatsApp • {groupMeta?.size || groupMeta?.participants?.length || '...'} peserta</span>
+              </div>
+
+              {groupMeta?.desc ? (
+                <div style={{
+                  marginTop: '12px',
+                  padding: '10px 12px',
+                  background: 'var(--overlay-subtle)',
+                  borderRadius: '8px',
+                  fontSize: '0.82rem',
+                  color: 'var(--text-muted)',
+                  lineHeight: '1.45',
+                  textAlign: 'left',
+                  width: '100%',
+                  wordBreak: 'break-word',
+                  border: '1px solid var(--border-color)',
+                }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-dimmed)', marginBottom: '4px' }}>
+                    Deskripsi Grup
+                  </div>
+                  {groupMeta.desc}
+                </div>
+              ) : null}
             </div>
-            <div className="contact-profile-name">{getDisplayName(activeChat)}</div>
-            {contactPhone && (
-              <div className="contact-profile-phone">
-                <span>{formatPhone(contactPhone)}</span>
+          ) : (
+            /* ====================================================
+               1-ON-1 CONTACT PROFILE CARD
+               ==================================================== */
+            <div className="contact-profile-card">
+              <div className="contact-profile-avatar" style={{ background: avatarColor(activeChat.id) }}>
+                {getInitials(getDisplayName(activeChat))}
+              </div>
+              <div className="contact-profile-name">{getDisplayName(activeChat)}</div>
+              {contactPhone && (
+                <div className="contact-profile-phone">
+                  <span>{formatPhone(contactPhone)}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyPhone(formatPhone(contactPhone))}
+                    title="Salin nomor telepon"
+                    style={{
+                      border: 'none', background: 'transparent', color: copiedPhone ? 'var(--success)' : 'var(--text-dimmed)',
+                      cursor: 'pointer', padding: '2px', display: 'inline-flex', alignItems: 'center',
+                    }}
+                  >
+                    {copiedPhone ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
+                </div>
+              )}
+
+              {/* 24h Window Badge */}
+              {windowStatus && (
+                <div style={{ marginTop: '4px', marginBottom: '12px' }}>
+                  <span className={`window-24h-pill is-${windowStatus.level}`}>
+                    {windowStatus.level === 'healthy' && <Clock size={11} />}
+                    {windowStatus.level === 'warning' && <span className="pulsing-dot" />}
+                    {windowStatus.level === 'urgent' && <AlertTriangle size={11} />}
+                    {windowStatus.level === 'expired' && <Clock size={11} />}
+                    <span>
+                      {windowStatus.isExpired
+                        ? '24h Expired'
+                        : windowStatus.level === 'urgent'
+                        ? `${windowStatus.minutesLeft}m tersisa!`
+                        : `24h: ${windowStatus.hoursLeft}j ${windowStatus.minutesLeft}m`}
+                    </span>
+                  </span>
+                </div>
+              )}
+
+              {/* Contact Action */}
+              {canSaveContact && (
                 <button
                   type="button"
-                  onClick={() => handleCopyPhone(formatPhone(contactPhone))}
-                  title="Salin nomor telepon"
+                  onClick={() => setEditingContact(true)}
                   style={{
-                    border: 'none', background: 'transparent', color: copiedPhone ? 'var(--success)' : 'var(--text-dimmed)',
-                    cursor: 'pointer', padding: '2px', display: 'inline-flex', alignItems: 'center',
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    padding: '6px 14px', borderRadius: '8px', fontSize: '0.8rem',
+                    fontWeight: '600', cursor: 'pointer', background: 'var(--primary-soft)',
+                    border: '1px solid var(--primary-border)', color: 'var(--primary)',
+                    transition: 'all 0.15s ease',
                   }}
                 >
-                  {copiedPhone ? <Check size={14} /> : <Copy size={14} />}
+                  {savedContact ? <><Pencil size={13} /> Edit Kontak</> : <><UserPlus size={13} /> Simpan ke Kontak</>}
                 </button>
+              )}
+            </div>
+          )}
+
+          {/* ====================================================
+             GROUP PARTICIPANTS LIST (WhatsApp Group Style)
+             ==================================================== */}
+          {isGroup && (
+            <div className="contact-profile-section" style={{ padding: '14px 16px' }}>
+              <div className="contact-profile-section-title" style={{ marginBottom: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Users size={14} style={{ color: 'var(--primary)' }} />
+                  <span>Daftar Peserta ({groupMeta?.participants?.length || (loadingGroupMeta ? '...' : 0)})</span>
+                </div>
+                {loadingGroupMeta && <Loader2 size={13} className="animate-spin" style={{ color: 'var(--text-dimmed)' }} />}
               </div>
-            )}
 
-            {/* 24h Window Badge */}
-            {windowStatus && (
-              <div style={{ marginTop: '4px', marginBottom: '12px' }}>
-                <span className={`window-24h-pill is-${windowStatus.level}`}>
-                  {windowStatus.level === 'healthy' && <Clock size={11} />}
-                  {windowStatus.level === 'warning' && <span className="pulsing-dot" />}
-                  {windowStatus.level === 'urgent' && <AlertTriangle size={11} />}
-                  {windowStatus.level === 'expired' && <Clock size={11} />}
-                  <span>
-                    {windowStatus.isExpired
-                      ? '24h Expired'
-                      : windowStatus.level === 'urgent'
-                      ? `${windowStatus.minutesLeft}m tersisa!`
-                      : `24h: ${windowStatus.hoursLeft}j ${windowStatus.minutesLeft}m`}
-                  </span>
-                </span>
+              {/* Search Participants */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '6px 10px', background: 'var(--bg-main)',
+                border: '1px solid var(--border-color)', borderRadius: '8px',
+                marginBottom: '10px',
+              }}>
+                <Search size={13} style={{ color: 'var(--text-dimmed)', flexShrink: 0 }} />
+                <input
+                  type="text"
+                  placeholder="Cari nama / nomor peserta..."
+                  value={participantSearch}
+                  onChange={(e) => setParticipantSearch(e.target.value)}
+                  style={{
+                    border: 'none', background: 'transparent', color: 'var(--text-main)',
+                    fontSize: '0.78rem', outline: 'none', width: '100%',
+                  }}
+                />
+                {participantSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setParticipantSearch('')}
+                    style={{ border: 'none', background: 'transparent', color: 'var(--text-dimmed)', cursor: 'pointer', padding: 0 }}
+                  >
+                    <X size={12} />
+                  </button>
+                )}
               </div>
-            )}
 
-            {/* Contact Action */}
-            {canSaveContact && (
-              <button
-                type="button"
-                onClick={() => setEditingContact(true)}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '6px',
-                  padding: '6px 14px', borderRadius: '8px', fontSize: '0.8rem',
-                  fontWeight: '600', cursor: 'pointer', background: 'var(--primary-soft)',
-                  border: '1px solid var(--primary-border)', color: 'var(--primary)',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                {savedContact ? <><Pencil size={13} /> Edit Kontak</> : <><UserPlus size={13} /> Simpan ke Kontak</>}
-              </button>
-            )}
-          </div>
+              {/* Participants List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '280px', overflowY: 'auto' }}>
+                {groupParticipants.map(p => {
+                  const rawPhone = p.id.split('@')[0];
+                  const formatted = formatPhone(rawPhone);
+                  const isMe = userInfo?.id && (p.id.includes(userInfo.id.split('@')[0]) || p.id === userInfo.id);
+                  const savedName = savedNames[p.id] || savedContacts[p.id]?.name || savedContacts[rawPhone]?.name;
+                  const displayName = isMe ? `${savedName || formatted} (Anda)` : (savedName || formatted);
+                  const isSuperAdmin = p.admin === 'superadmin';
+                  const isAdmin = p.admin === 'admin' || isSuperAdmin;
 
-          {/* Section: Contact Tags */}
+                  return (
+                    <div
+                      key={p.id}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '8px 10px', background: 'var(--overlay-subtle)',
+                        borderRadius: '8px', border: '1px solid var(--border-color)', gap: '8px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                        <div style={{
+                          width: '32px', height: '32px', borderRadius: '50%',
+                          background: avatarColor(p.id), color: '#fff', fontSize: '0.75rem',
+                          fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          flexShrink: 0,
+                        }}>
+                          {getInitials(displayName)}
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{
+                            fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-main)',
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                            display: 'flex', alignItems: 'center', gap: '6px',
+                          }}>
+                            <span>{displayName}</span>
+                            {isSuperAdmin ? (
+                              <span style={{
+                                fontSize: '0.62rem', fontWeight: '700', padding: '1px 5px',
+                                borderRadius: '4px', background: 'rgba(245,158,11,0.15)',
+                                color: '#d97706', border: '1px solid rgba(245,158,11,0.3)', flexShrink: 0,
+                              }}>
+                                Pembuat
+                              </span>
+                            ) : isAdmin ? (
+                              <span style={{
+                                fontSize: '0.62rem', fontWeight: '700', padding: '1px 5px',
+                                borderRadius: '4px', background: 'rgba(16,185,129,0.15)',
+                                color: 'var(--success)', border: '1px solid rgba(16,185,129,0.3)', flexShrink: 0,
+                              }}>
+                                Admin
+                              </span>
+                            ) : null}
+                          </div>
+                          {savedName && (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-dimmed)' }}>
+                              {formatted}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {!isMe && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyPhone(formatted)}
+                            title="Salin nomor"
+                            style={{
+                              border: 'none', background: 'transparent', color: 'var(--text-dimmed)',
+                              cursor: 'pointer', padding: '4px', borderRadius: '4px', display: 'inline-flex',
+                            }}
+                          >
+                            <Copy size={13} />
+                          </button>
+                          {onOpenChat && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onOpenChat(p.id);
+                                setActiveRightPanel(null);
+                              }}
+                              title="Kirim pesan pribadi"
+                              style={{
+                                border: '1px solid var(--primary-border)', background: 'var(--primary-soft)',
+                                color: 'var(--primary)', cursor: 'pointer', padding: '4px 8px',
+                                borderRadius: '6px', fontSize: '0.72rem', fontWeight: '600',
+                                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                              }}
+                            >
+                              <MessageSquare size={12} /> Chat
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {groupParticipants.length === 0 && !loadingGroupMeta && (
+                  <div style={{ textAlign: 'center', padding: '16px 0', fontSize: '0.78rem', color: 'var(--text-dimmed)' }}>
+                    {participantSearch ? 'Tidak ada peserta yang cocok' : 'Daftar peserta belum dimuat'}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Section: Contact / Group Tags */}
           <div className="contact-profile-section">
             <div className="contact-profile-section-title">
-              <span>Label Kontak (Tags)</span>
+              <span>{isGroup ? 'Label Grup (Tags)' : 'Label Kontak (Tags)'}</span>
               {currentTags.length > 0 && (
                 <button
                   type="button"
@@ -2177,62 +2408,64 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
             )}
           </div>
 
-          {/* Section: Status Prospek */}
-          <div className="contact-profile-section">
-            <div className="contact-profile-section-title">
-              <span>Status Prospek</span>
+          {/* Section: Status Prospek (Only for 1-on-1 chats) */}
+          {!isGroup && (
+            <div className="contact-profile-section">
+              <div className="contact-profile-section-title">
+                <span>Status Prospek</span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => handleSetStatus('prospect')}
+                  disabled={statusBusy}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '8px 12px', borderRadius: '8px', border: `1px solid ${chatStatus === 'prospect' ? 'var(--primary-border)' : 'var(--border-color)'}`,
+                    background: chatStatus === 'prospect' ? 'var(--primary-soft)' : 'transparent',
+                    color: chatStatus === 'prospect' ? 'var(--primary)' : 'var(--text-main)',
+                    fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left',
+                  }}
+                >
+                  <span>New Leads / Prospek Aktif</span>
+                  {chatStatus === 'prospect' && <Check size={14} />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSetStatus('closed_won')}
+                  disabled={statusBusy}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '8px 12px', borderRadius: '8px', border: `1px solid ${chatStatus === 'closed_won' ? 'var(--success-border)' : 'var(--border-color)'}`,
+                    background: chatStatus === 'closed_won' ? 'var(--success-soft)' : 'transparent',
+                    color: chatStatus === 'closed_won' ? 'var(--success)' : 'var(--text-main)',
+                    fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left',
+                  }}
+                >
+                  <span>🏆 Closed Won</span>
+                  {chatStatus === 'closed_won' && <Check size={14} />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSetStatus('dropped')}
+                  disabled={statusBusy}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '8px 12px', borderRadius: '8px', border: `1px solid ${chatStatus === 'dropped' ? 'rgba(239,68,68,0.3)' : 'var(--border-color)'}`,
+                    background: chatStatus === 'dropped' ? 'rgba(239,68,68,0.1)' : 'transparent',
+                    color: chatStatus === 'dropped' ? '#ef4444' : 'var(--text-main)',
+                    fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left',
+                  }}
+                >
+                  <span>Bukan Prospek</span>
+                  {chatStatus === 'dropped' && <Check size={14} />}
+                </button>
+              </div>
             </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <button
-                type="button"
-                onClick={() => handleSetStatus('prospect')}
-                disabled={statusBusy}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '8px 12px', borderRadius: '8px', border: `1px solid ${chatStatus === 'prospect' ? 'var(--primary-border)' : 'var(--border-color)'}`,
-                  background: chatStatus === 'prospect' ? 'var(--primary-soft)' : 'transparent',
-                  color: chatStatus === 'prospect' ? 'var(--primary)' : 'var(--text-main)',
-                  fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left',
-                }}
-              >
-                <span>New Leads / Prospek Aktif</span>
-                {chatStatus === 'prospect' && <Check size={14} />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSetStatus('closed_won')}
-                disabled={statusBusy}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '8px 12px', borderRadius: '8px', border: `1px solid ${chatStatus === 'closed_won' ? 'var(--success-border)' : 'var(--border-color)'}`,
-                  background: chatStatus === 'closed_won' ? 'var(--success-soft)' : 'transparent',
-                  color: chatStatus === 'closed_won' ? 'var(--success)' : 'var(--text-main)',
-                  fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left',
-                }}
-              >
-                <span>🏆 Closed Won</span>
-                {chatStatus === 'closed_won' && <Check size={14} />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSetStatus('dropped')}
-                disabled={statusBusy}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '8px 12px', borderRadius: '8px', border: `1px solid ${chatStatus === 'dropped' ? 'rgba(239,68,68,0.3)' : 'var(--border-color)'}`,
-                  background: chatStatus === 'dropped' ? 'rgba(239,68,68,0.1)' : 'transparent',
-                  color: chatStatus === 'dropped' ? '#ef4444' : 'var(--text-main)',
-                  fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', textAlign: 'left',
-                }}
-              >
-                <span>Bukan Prospek</span>
-                {chatStatus === 'dropped' && <Check size={14} />}
-              </button>
-            </div>
-          </div>
+          )}
 
           {/* Section: AI Agent Hold */}
           <div className="contact-profile-section">
