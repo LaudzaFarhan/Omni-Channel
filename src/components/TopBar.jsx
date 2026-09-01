@@ -1,13 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bell, MessageCircle, Columns, ChevronDown, Plus, Phone, Trash2, Check, Loader2, QrCode, RefreshCw } from 'lucide-react';
+import { Bell, Columns, ChevronDown, Plus, Phone, Trash2, Check, Loader2, QrCode, RefreshCw } from 'lucide-react';
 import VersionBadge from './VersionBadge.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
+import TeamPresenceDropdown from './TeamPresenceDropdown.jsx';
 
 export default function TopBar({ 
   user, userProfile, connectionStatus, userInfo, onWhatsAppLogout,
   waSessions = [], activeSessionId, onSwitchSession, onAddSession, onRemoveSession,
   sidebarCollapsed, onToggleSidebar, syncing, onSyncHistory,
-  notifications = [], onToggleNotifications
+  notifications = [], onToggleNotifications,
+  isSupervisor = true, onNavigateTab
 }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -162,10 +164,12 @@ export default function TopBar({
 
         <ThemeToggle className="topbar-icon-btn" />
 
-        <button className="live-support-btn">
-          <MessageCircle size={16} />
-          <span>Live Support</span>
-        </button>
+        <TeamPresenceDropdown 
+          user={user}
+          userProfile={userProfile}
+          isSupervisor={isSupervisor}
+          onNavigateTab={onNavigateTab}
+        />
 
         <div className="notification-bell-wrapper">
           <button 

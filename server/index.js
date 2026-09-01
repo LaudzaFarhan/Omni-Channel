@@ -40,6 +40,7 @@ import { mountAuthRoutes } from './routes-auth.js';
 import { mountDataRoutes } from './routes-data.js';
 import { mountContactRoutes } from './routes-contacts.js';
 import { mountTeamRoutes } from './routes-team.js';
+import { onUserConnected, onUserDisconnected, setUserPresence } from './presence.js';
 
 const PORT = process.env.PORT || 5000;
 // Bind to loopback by default so a VPS only exposes the app through its reverse
@@ -721,6 +722,9 @@ io.on('connection', async (socket) => {
   };
   announceOccupancy();
 
+  // Track user presence in workspace
+  onUserConnected(workspaceId, memberId, socket.id, io);
+
   // Send all existing WA session statuses to the newly connected browser tab
   const userSessions = Object.entries(activeSessions)
     .filter(([k, v]) => v.uid === workspaceId)
@@ -731,6 +735,14 @@ io.on('connection', async (socket) => {
       user: v.user,
     }));
   socket.emit('all-sessions', userSessions);
+
+  // Listen for client requesting to change their presence status (online / away / off)
+  socket.on('set-presence', async (data) => {
+    const status = data?.status;
+    if (['online', 'away', 'off'].includes(status)) {
+      await setUserPresence(workspaceId, memberId, status, io);
+    }
+  });
 
   // Listen for client requesting to init a specific WA session
   socket.on('init-session', (data) => {
@@ -758,6 +770,7 @@ io.on('connection', async (socket) => {
 
   socket.on('disconnect', () => {
     console.log(`[Socket] ${socket.profile.email} left workspace ${workspaceId}`);
+    onUserDisconnected(workspaceId, memberId, socket.id, io);
     // Runs after the socket has left the room, so the recount reflects reality.
     announceOccupancy();
   });

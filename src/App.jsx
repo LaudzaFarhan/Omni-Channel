@@ -1141,6 +1141,8 @@ export default function App() {
             onSyncHistory={handleSyncHistory}
             notifications={notifications}
             onToggleNotifications={() => setShowNotificationsDrawer(prev => !prev)}
+            isSupervisor={isSupervisor}
+            onNavigateTab={(tab) => setActiveTab(tab)}
           />
           <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden' }}>
             {isTrialExpired && activeTab !== 'subscription' && activeTab !== 'profile' && (

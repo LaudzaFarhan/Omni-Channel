@@ -370,6 +370,17 @@ export async function removeMember(memberId) {
 }
 
 // ---------------------------------------------------------------------------
+// team presence (available to both supervisor and agents)
+// ---------------------------------------------------------------------------
+export async function fetchTeamPresence() {
+  return apiFetch('/api/team/presence');
+}
+
+export async function updateTeamPresence(status) {
+  return apiJson('/api/team/presence', 'POST', { status });
+}
+
+// ---------------------------------------------------------------------------
 // invitations (unauthenticated — the recipient has no account yet)
 // ---------------------------------------------------------------------------
 // Both use `request` rather than `apiFetch`: the recipient is signed out, so there

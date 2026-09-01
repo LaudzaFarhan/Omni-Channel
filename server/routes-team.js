@@ -21,8 +21,9 @@ import {
 import {
   generateUserId, hashRefreshToken, normalizeEmail, isValidEmail,
 } from './auth.js';
-import { supervisor, clientIp } from './middleware.js';
+import { supervisor, approved, clientIp } from './middleware.js';
 import { userRoom } from './scope.js';
+import { getWorkspaceTeamPresence, setUserPresence } from './presence.js';
 
 // A week is long enough for someone to get round to it, short enough that a link
 // forwarded into a group chat months ago is dead.
@@ -306,6 +307,33 @@ export function mountTeamRoutes(app, io) {
     } catch (err) {
       console.error('[Team] Remove failed:', err);
       res.status(500).json({ error: 'Could not remove that member.' });
+    }
+  });
+
+  // =========================================================================
+  // presence (accessible to everyone in the workspace: supervisor + agents)
+  // =========================================================================
+  app.get('/api/team/presence', approved, async (req, res) => {
+    try {
+      const data = await getWorkspaceTeamPresence(req.workspaceId);
+      res.json(data);
+    } catch (err) {
+      console.error('[Team] Get presence failed:', err);
+      res.status(500).json({ error: 'Could not load team presence.' });
+    }
+  });
+
+  app.post('/api/team/presence', approved, async (req, res) => {
+    try {
+      const status = req.body?.status;
+      if (!['online', 'away', 'off'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid status. Must be online, away, or off.' });
+      }
+      await setUserPresence(req.workspaceId, req.profile.uid, status, io);
+      res.json({ success: true, status });
+    } catch (err) {
+      console.error('[Team] Set presence failed:', err);
+      res.status(500).json({ error: 'Could not update presence.' });
     }
   });
 }
