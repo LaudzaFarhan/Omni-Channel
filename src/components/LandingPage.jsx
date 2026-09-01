@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Users, Zap, Shield, Check, HelpCircle, Pause, Play, Code } from 'lucide-react';
+import { MessageSquare, Users, Zap, Shield, Check, HelpCircle, Pause, Play, Code, Calendar, Clock, UserCheck, BarChart3, Tag } from 'lucide-react';
 import { BrandLockup } from './BrandMark.jsx';
 
 export default function LandingPage({ onGoToDashboard }) {
@@ -159,7 +159,7 @@ export default function LandingPage({ onGoToDashboard }) {
             </h1>
             <p className="hero-subtitle" style={{ fontSize: '1.15rem' }}>
               Connect your WhatsApp Business number once to our secure local gateway. 
-              Let your entire customer support team chat, reply, and manage leads simultaneously from a single, unified inbox.
+              Let your entire customer support & sales team chat, reply, and manage leads simultaneously from a single, unified inbox.
             </p>
             <div className="hero-ctas">
               <button className="nav-btn hero-btn-large" onClick={onGoToDashboard}>
@@ -338,9 +338,9 @@ export default function LandingPage({ onGoToDashboard }) {
 
       {/* Features Grid */}
       <section id="features" className="features-section">
-        <h2 className="section-title">Built for High-Growth Customer Support</h2>
+        <h2 className="section-title">Built for High-Growth Sales & Support Teams</h2>
         <p className="section-subtitle">
-          Everything your sales and support agents need to engage customers faster on WhatsApp, without device limits.
+          Everything your team needs to scale customer engagement on WhatsApp — without device limits, missed follow-ups, or lost context.
         </p>
         
         <div className="features-grid">
@@ -348,29 +348,39 @@ export default function LandingPage({ onGoToDashboard }) {
             <div className="feature-card-icon">
               <Users size={24} />
             </div>
-            <h3>Unlimited Support Agents</h3>
+            <h3>Unlimited Support & Sales Agents</h3>
             <p>
-              Connect 1 WhatsApp Business number and invite your entire team. No more sharing a single phone or hitting browser session caps.
+              Connect 1 WhatsApp Business number and invite your entire team. Bypass WhatsApp's 4-device limit with simultaneous multi-agent chatting.
             </p>
           </div>
 
           <div className="feature-card glass">
             <div className="feature-card-icon">
-              <Zap size={24} />
+              <Calendar size={24} />
             </div>
-            <h3>One-Click Quick Replies</h3>
+            <h3>Sales Tracking & Calendar Analytics</h3>
             <p>
-              Respond to common sales or customer questions in under 2 seconds. Create canned replies to save time and maintain brand voice.
+              Track which sales member initiated each chat. Filter complete conversation histories with calendar date presets and view team activity leaderboards.
             </p>
           </div>
 
           <div className="feature-card glass">
             <div className="feature-card-icon">
-              <MessageSquare size={24} />
+              <Clock size={24} />
             </div>
-            <h3>Real-Time Sync & Webhooks</h3>
+            <h3>24-Hour Follow-up SLA & Alerting</h3>
             <p>
-              Instantly sync and stream incoming texts, media, and statuses across all logged-in agent dashboards via active WebSockets.
+              Real-time 24-hour response countdowns, automated warning banners, and 1-click filters for customers awaiting reply over 24 hours.
+            </p>
+          </div>
+
+          <div className="feature-card glass">
+            <div className="feature-card-icon">
+              <Tag size={24} />
+            </div>
+            <h3>Customer Profile & Tagging System</h3>
+            <p>
+              WhatsApp-style contact drawer, customizable color tags with compact view, and commercial pipeline status tracking (New Leads, Closed Won).
             </p>
           </div>
 
@@ -378,9 +388,19 @@ export default function LandingPage({ onGoToDashboard }) {
             <div className="feature-card-icon">
               <Shield size={24} />
             </div>
-            <h3>100% Private Data Hosting</h3>
+            <h3>AI Bot Automation & Agent Hold</h3>
             <p>
-              Since the engine runs locally on your machine/server, your private client conversations are cached securely and never sold to third parties.
+              Deploy auto-reply bots with 1-click human agent takeover (Hold / Resume). Full control via REST API endpoints and Webhook event streams.
+            </p>
+          </div>
+
+          <div className="feature-card glass">
+            <div className="feature-card-icon">
+              <Zap size={24} />
+            </div>
+            <h3>⚡ Lightning Quick Replies</h3>
+            <p>
+              Respond in seconds with pre-saved message templates, inline slash ('/') shortcuts, and rich media attachments (images, audio, documents).
             </p>
           </div>
         </div>
@@ -390,7 +410,7 @@ export default function LandingPage({ onGoToDashboard }) {
       <section id="pricing" className="pricing-section">
         <h2 className="section-title">Affordable Pricing Plans</h2>
         <p className="section-subtitle">
-          Get started today and scale your support operations without paying per-agent fees.
+          Get started today and scale your support operations without paying per-conversation or per-device surcharges.
         </p>
 
         <div className="pricing-grid">
@@ -442,15 +462,27 @@ export default function LandingPage({ onGoToDashboard }) {
               </li>
               <li className="pricing-feature-item">
                 <Check size={18} />
-                <span>Quick Replies Templates</span>
+                <span>Sales Tracking & Conversation Logs</span>
               </li>
               <li className="pricing-feature-item">
                 <Check size={18} />
-                <span>Real-Time Message Syncing</span>
+                <span>24-Hour Follow-up SLA & Overdue Alert</span>
               </li>
               <li className="pricing-feature-item">
                 <Check size={18} />
-                <span>Local Message Cache Store</span>
+                <span>Customer Profile Drawer & Contact Tags</span>
+              </li>
+              <li className="pricing-feature-item">
+                <Check size={18} />
+                <span>⚡ Lightning Quick Replies & '/' Shortcuts</span>
+              </li>
+              <li className="pricing-feature-item">
+                <Check size={18} />
+                <span>Real-Time Message Sync & Media Attachments</span>
+              </li>
+              <li className="pricing-feature-item">
+                <Check size={18} />
+                <span>Local Message Database & Contact Store</span>
               </li>
             </ul>
             <button className="pricing-btn primary" onClick={onGoToDashboard}>
@@ -463,7 +495,7 @@ export default function LandingPage({ onGoToDashboard }) {
             <div className="pricing-card-header">
               <div className="pricing-plan-name">Unlimited Plan</div>
               <div className="pricing-price">Rp 1.500.000<span>/bulan</span></div>
-              <p className="pricing-desc">For scaling support centers and support teams.</p>
+              <p className="pricing-desc">For scaling sales teams, call centers, and fast-growing businesses.</p>
             </div>
             <ul className="pricing-features-list">
               <li className="pricing-feature-item">
@@ -472,19 +504,39 @@ export default function LandingPage({ onGoToDashboard }) {
               </li>
               <li className="pricing-feature-item">
                 <Check size={18} />
-                <span><strong>Unlimited</strong> Support Agents</span>
+                <span><strong>Unlimited</strong> Support & Sales Agents</span>
               </li>
               <li className="pricing-feature-item">
                 <Check size={18} />
-                <span>Advanced Templates & Macros</span>
+                <span>Sales History Logs & Calendar Date Range Filter</span>
               </li>
               <li className="pricing-feature-item">
                 <Check size={18} />
-                <span>Real-Time Inbox Collaboration</span>
+                <span>Team Performance & Activity Leaderboard</span>
               </li>
               <li className="pricing-feature-item">
                 <Check size={18} />
-                <span>Priority Developer Support</span>
+                <span>24-Hour Follow-up SLA & Customer Alerting</span>
+              </li>
+              <li className="pricing-feature-item">
+                <Check size={18} />
+                <span>Customer Profile Drawer & Custom Tags System</span>
+              </li>
+              <li className="pricing-feature-item">
+                <Check size={18} />
+                <span>AI Bot Automation & 1-Click Hold / Handover API</span>
+              </li>
+              <li className="pricing-feature-item">
+                <Check size={18} />
+                <span>⚡ Unlimited Quick Reply Templates & Macros</span>
+              </li>
+              <li className="pricing-feature-item">
+                <Check size={18} />
+                <span>Real-Time Inbox Collaboration & WebSockets</span>
+              </li>
+              <li className="pricing-feature-item">
+                <Check size={18} />
+                <span>Priority 24/7 Developer & Technical Support</span>
               </li>
             </ul>
             <button className="pricing-btn secondary" onClick={onGoToDashboard}>
@@ -504,6 +556,20 @@ export default function LandingPage({ onGoToDashboard }) {
             <div className="faq-question">How does it bypass the 4-device WhatsApp Web limit?</div>
             <div className="faq-answer">
               WhatsApp Web restricts a phone to 4 concurrent linked companion devices. Our gateway connects to your phone as **one** companion device. The gateway then distributes the live connection to unlimited web browsers, allowing as many agents as you want to chat simultaneously.
+            </div>
+          </div>
+
+          <div className="faq-item">
+            <div className="faq-question">How does the 24-Hour Follow-up Window work?</div>
+            <div className="faq-answer">
+              The system tracks the time elapsed since the customer's last incoming message. You get live badges and notifications showing the remaining window, plus a dedicated filter to immediately find customers waiting for follow-up over 24 hours.
+            </div>
+          </div>
+
+          <div className="faq-item">
+            <div className="faq-question">Can I track individual sales team performance?</div>
+            <div className="faq-answer">
+              Yes! Every conversation logs which sales agent sent the message or initiated contact. You can filter by calendar date ranges (Today, Yesterday, Last 7 Days, Month, Custom) and view an agent activity leaderboard.
             </div>
           </div>
 
