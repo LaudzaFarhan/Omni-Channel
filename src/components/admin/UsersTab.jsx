@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { adminUpdateUser, adminDeleteUser } from '../../utils/api.js';
+import { adminUpdateUser, adminDeleteUser, adminSetFeatureAccess, adminClearFeatureAccess } from '../../utils/api.js';
 import {
   Users, UserCheck, UserX, Shield, Search, Clock, Download, Filter, X,
   AlertTriangle, CheckCircle2, Sliders, Layers, RotateCcw, Trash2, Link2Off,
+  ToggleLeft, Lock, ShieldCheck, ShieldOff,
 } from 'lucide-react';
 import { showToast } from '../../utils/toastBus.js';
 import {
@@ -64,7 +65,10 @@ function SourceBadge({ source }) {
   );
 }
 
-export default function UsersTab({ currentUser, users, loading, error, plans, plansLoading, onRefresh }) {
+export default function UsersTab({
+  currentUser, users, loading, error, plans, plansLoading, onRefresh,
+  features = [], onFeaturesChanged, onRefreshFeatures,
+}) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'pending' | 'approved'
   const [planFilter, setPlanFilter] = useState('all');
@@ -72,6 +76,7 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
   // { type, userObj, ...payload }
   const [activeModal, setActiveModal] = useState(null);
   const [modalInputValue, setModalInputValue] = useState('');
+  const [featuresUser, setFeaturesUser] = useState(null);
   // Rows with an in-flight write, so the affected controls can be disabled
   // instead of silently accepting a second click.
   const [pendingUids, setPendingUids] = useState([]);
@@ -614,6 +619,28 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
                         ) : (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <button
+                              onClick={() => setFeaturesUser(u)}
+                              disabled={busy}
+                              title="Control feature access for this customer"
+                              style={{
+                                background: 'var(--primary-soft)',
+                                border: '1px solid var(--primary-border)',
+                                color: 'var(--primary)',
+                                padding: '6px 11px',
+                                borderRadius: '6px',
+                                fontSize: '0.82rem',
+                                fontWeight: '600',
+                                cursor: busy ? 'not-allowed' : 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              <ToggleLeft size={14} /> Features
+                            </button>
+
+                            <button
                               onClick={() => handleToggleApproval(u.uid, u.isApproved)}
                               disabled={busy}
                               style={{
@@ -920,6 +947,259 @@ export default function UsersTab({ currentUser, users, loading, error, plans, pl
           </div>
         </div>
       )}
+
+      {featuresUser && (
+        <CustomerFeaturesDialog
+          targetUser={featuresUser}
+          features={features}
+          onClose={() => setFeaturesUser(null)}
+          onFeaturesChanged={onFeaturesChanged}
+          onRefreshFeatures={onRefreshFeatures}
+        />
+      )}
     </>
+  );
+}
+
+/**
+ * Dialog to control feature access specifically for a single customer.
+ */
+function CustomerFeaturesDialog({ targetUser, features = [], onClose, onFeaturesChanged, onRefreshFeatures }) {
+  const [busyKey, setBusyKey] = useState(null);
+  const [search, setSearch] = useState('');
+
+  const runChange = async (key, mutate) => {
+    if (busyKey) return;
+    setBusyKey(key);
+    try {
+      const next = await mutate();
+      if (Array.isArray(next) && onFeaturesChanged) onFeaturesChanged(next);
+      else if (onRefreshFeatures) await onRefreshFeatures();
+      showToast({ type: 'success', title: 'Feature access updated', message: 'Change saved.' });
+    } catch (err) {
+      console.error('[Admin] Feature access update failed:', err);
+      showToast({ type: 'error', title: 'Update failed', message: err?.message || 'Could not update feature access.' });
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const handleSetAccess = (key, access) => {
+    return runChange(key, () => adminSetFeatureAccess(key, targetUser.uid, access));
+  };
+
+  const handleClearAccess = (key) => {
+    return runChange(key, () => adminClearFeatureAccess(key, targetUser.uid));
+  };
+
+  const filteredFeatures = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return features;
+    return features.filter(f => 
+      (f.label && f.label.toLowerCase().includes(q)) ||
+      (f.key && f.key.toLowerCase().includes(q)) ||
+      (f.surface && f.surface.toLowerCase().includes(q)) ||
+      (f.description && f.description.toLowerCase().includes(q))
+    );
+  }, [features, search]);
+
+  const globalStatusBadge = (status) => {
+    if (status === 'released') {
+      return (
+        <span style={{ fontSize: '0.7rem', fontWeight: '700', padding: '2px 7px', borderRadius: '4px', background: 'var(--success-soft)', color: 'var(--success)', border: '1px solid var(--success-border)' }}>
+          Global: Released
+        </span>
+      );
+    }
+    if (status === 'coming_soon') {
+      return (
+        <span style={{ fontSize: '0.7rem', fontWeight: '700', padding: '2px 7px', borderRadius: '4px', background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.25)' }}>
+          Global: Coming Soon
+        </span>
+      );
+    }
+    return (
+      <span style={{ fontSize: '0.7rem', fontWeight: '700', padding: '2px 7px', borderRadius: '4px', background: 'rgba(148,163,184,0.12)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}>
+        Global: Hidden
+      </span>
+    );
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)',
+        display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999, padding: '20px',
+      }}
+    >
+      <div
+        className="glass"
+        style={{
+          width: '100%', maxWidth: '720px', maxHeight: '88vh', overflowY: 'auto', padding: '26px',
+          borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '16px',
+          border: '1px solid var(--border-color)', background: 'var(--bg-main)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+          <div>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ToggleLeft size={19} style={{ color: 'var(--primary)' }} /> Feature Access for {targetUser.name || targetUser.email}
+            </h3>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '4px 0 0', lineHeight: '1.4' }}>
+              Override which features are visible or hidden for <strong>{targetUser.email}</strong>. Custom settings take precedence over the global rollout status.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close dialog"
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Search */}
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <Search size={14} style={{ position: 'absolute', left: '10px', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+          <input
+            type="text"
+            placeholder="Search features..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{
+              width: '100%', padding: '8px 12px 8px 32px', borderRadius: '8px',
+              border: '1px solid var(--border-color)', background: 'rgba(255,255,255,0.04)',
+              color: 'var(--text-main)', fontSize: '0.85rem', outline: 'none',
+            }}
+          />
+        </div>
+
+        {/* Features List */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '52vh', overflowY: 'auto', paddingRight: '4px' }}>
+          {filteredFeatures.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              No features found.
+            </div>
+          ) : (
+            filteredFeatures.map((f) => {
+              const isLocked = Boolean(f.locked);
+              const override = f.overrides?.find(o => o.userId === targetUser.uid)?.access;
+              const isAllow = override === 'allow';
+              const isDeny = override === 'deny';
+              const isDefault = !override;
+              const isBusy = busyKey === f.key;
+
+              // What this customer actually experiences
+              let effectiveStateText = 'Follows global rollout';
+              if (isAllow) effectiveStateText = '🟢 Forced Available (Early Access)';
+              else if (isDeny) effectiveStateText = '🔴 Forced Hidden from this customer';
+              else if (f.status === 'released') effectiveStateText = 'Available (Global default)';
+              else if (f.status === 'coming_soon') effectiveStateText = 'Coming soon badge (Global default)';
+              else effectiveStateText = 'Hidden (Global default)';
+
+              return (
+                <div
+                  key={f.key}
+                  style={{
+                    padding: '14px 16px', borderRadius: '10px',
+                    border: `1px solid ${override ? (isAllow ? 'var(--primary-border)' : 'rgba(239,68,68,0.3)') : 'var(--border-color)'}`,
+                    background: override ? (isAllow ? 'var(--primary-subtle)' : 'rgba(239,68,68,0.04)') : 'rgba(255,255,255,0.02)',
+                    display: 'flex', flexDirection: 'column', gap: '10px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: '220px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <strong style={{ fontSize: '0.92rem', color: 'var(--text-main)' }}>{f.label}</strong>
+                        {globalStatusBadge(f.status)}
+                        {isLocked && (
+                          <span style={{ fontSize: '0.68rem', fontWeight: '700', padding: '1px 6px', borderRadius: '4px', background: 'var(--overlay-subtle)', color: 'var(--text-dimmed)' }}>
+                            <Lock size={10} /> Always on
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        {f.description}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-dimmed)', marginTop: '4px' }}>
+                        <strong>Status for customer:</strong> {effectiveStateText}
+                      </div>
+                    </div>
+
+                    {/* Action Selector */}
+                    {!isLocked ? (
+                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => !isDefault && handleClearAccess(f.key)}
+                          disabled={isBusy}
+                          style={{
+                            padding: '6px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: '600',
+                            cursor: isBusy ? 'not-allowed' : 'pointer',
+                            background: isDefault ? 'rgba(255,255,255,0.1)' : 'transparent',
+                            color: isDefault ? 'var(--text-main)' : 'var(--text-muted)',
+                            border: `1px solid ${isDefault ? 'var(--border-color)' : 'transparent'}`,
+                          }}
+                        >
+                          Default (Rollout)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => !isAllow && handleSetAccess(f.key, 'allow')}
+                          disabled={isBusy}
+                          style={{
+                            padding: '6px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: '600',
+                            cursor: isBusy ? 'not-allowed' : 'pointer',
+                            background: isAllow ? 'var(--primary)' : 'transparent',
+                            color: isAllow ? '#fff' : 'var(--primary)',
+                            border: `1px solid ${isAllow ? 'var(--primary)' : 'var(--primary-border)'}`,
+                          }}
+                        >
+                          <ShieldCheck size={12} style={{ marginRight: '4px' }} /> Force Show
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => !isDeny && handleSetAccess(f.key, 'deny')}
+                          disabled={isBusy}
+                          style={{
+                            padding: '6px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: '600',
+                            cursor: isBusy ? 'not-allowed' : 'pointer',
+                            background: isDeny ? '#ef4444' : 'transparent',
+                            color: isDeny ? '#fff' : '#ef4444',
+                            border: `1px solid ${isDeny ? '#ef4444' : 'rgba(239,68,68,0.3)'}`,
+                          }}
+                        >
+                          <ShieldOff size={12} style={{ marginRight: '4px' }} /> Force Hide
+                        </button>
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-dimmed)', fontStyle: 'italic' }}>
+                        Core account feature
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              background: 'var(--primary)', border: 'none', color: 'var(--primary-contrast)',
+              padding: '9px 20px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '600',
+              cursor: 'pointer',
+            }}
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

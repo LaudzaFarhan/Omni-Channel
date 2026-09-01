@@ -15,7 +15,7 @@ import FeaturesTab from './admin/FeaturesTab.jsx';
 const TABS = [
   { id: 'users', label: 'Customers', icon: Users },
   { id: 'plans', label: 'Plans', icon: Layers },
-  { id: 'features', label: 'Features', icon: ToggleLeft },
+  { id: 'features', label: 'Feature Control', icon: ToggleLeft },
   { id: 'sessions', label: 'Live Sessions', icon: Activity },
   { id: 'transactions', label: 'Transactions', icon: CreditCard },
 ];
@@ -208,6 +208,9 @@ export default function AdminDashboard({ user, onLogout }) {
             plans={plans}
             plansLoading={loadingPlans}
             onRefresh={refreshUsers}
+            features={features}
+            onFeaturesChanged={setFeatures}
+            onRefreshFeatures={refreshFeatures}
           />
         )}
 

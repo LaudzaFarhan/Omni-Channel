@@ -63,6 +63,8 @@ const labelStyle = { fontSize: '0.8rem', color: 'var(--text-muted)', marginBotto
  */
 export default function FeaturesTab({ features, loading, error, users, onFeaturesChanged, onRefresh }) {
   const [busy, setBusy] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'released' | 'coming_soon' | 'hidden' | 'overrides'
   // Note edits are held locally until saved, so typing does not fire a request per keystroke.
   const [noteDrafts, setNoteDrafts] = useState({});
   // { feature } while the add-exception dialog is open.
@@ -125,15 +127,37 @@ export default function FeaturesTab({ features, loading, error, users, onFeature
   const clear = (feature, uid) =>
     run('Exception removed', () => adminClearFeatureAccess(feature.key, uid));
 
-  if (loading) {
-    return <div style={{ display: 'flex', justifyContent: 'center', padding: '60px' }}><div className="spinner"></div></div>;
-  }
-
   const list = features || [];
   const counts = STATUSES.map(s => ({
     ...s,
     n: list.filter(f => f.status === s.key).length,
   }));
+  const totalOverrides = list.reduce((acc, f) => acc + (f.overrides?.length || 0), 0);
+
+  const filteredList = useMemo(() => {
+    let res = list;
+    if (statusFilter !== 'all') {
+      if (statusFilter === 'overrides') {
+        res = res.filter(f => f.overrides && f.overrides.length > 0);
+      } else {
+        res = res.filter(f => f.status === statusFilter);
+      }
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      res = res.filter(f =>
+        (f.label && f.label.toLowerCase().includes(q)) ||
+        (f.key && f.key.toLowerCase().includes(q)) ||
+        (f.surface && f.surface.toLowerCase().includes(q)) ||
+        (f.description && f.description.toLowerCase().includes(q))
+      );
+    }
+    return res;
+  }, [list, statusFilter, searchQuery]);
+
+  if (loading) {
+    return <div style={{ display: 'flex', justifyContent: 'center', padding: '60px' }}><div className="spinner"></div></div>;
+  }
 
   return (
     <>
@@ -143,26 +167,83 @@ export default function FeaturesTab({ features, loading, error, users, onFeature
             <ToggleLeft size={18} style={{ color: 'var(--primary)' }} /> Feature Control
           </h3>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '6px 0 0', maxWidth: '680px', lineHeight: '1.5' }}>
-            Decide what every customer sees. Set a feature to <strong>Coming soon</strong> to announce
-            it without shipping it, or <strong>Hidden</strong> to keep it out of sight entirely. Add an
-            exception to give one account early access, or to withdraw a released feature from them.
-            Changes reach signed-in customers immediately.
+            Decide what every customer sees. Set a feature to <strong>Released</strong> to make it live for everyone, <strong>Coming soon</strong> to announce
+            it without shipping it, or <strong>Hidden</strong> to keep it out of sight entirely. Add customer exceptions to give specific accounts early access or withdraw access.
+            Changes take effect instantly.
           </p>
         </div>
 
+        {/* Quick Filter Chips */}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('all')}
+            style={{
+              padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700',
+              background: statusFilter === 'all' ? 'var(--primary-subtle)' : 'transparent',
+              color: statusFilter === 'all' ? 'var(--primary)' : 'var(--text-muted)',
+              border: `1px solid ${statusFilter === 'all' ? 'var(--primary-border)' : 'var(--border-color)'}`,
+              cursor: 'pointer', whiteSpace: 'nowrap',
+            }}
+          >
+            {list.length} All
+          </button>
           {counts.map(({ key, label, n, color, soft, border }) => (
-            <span
+            <button
               key={key}
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === key ? 'all' : key)}
               style={{
                 padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700',
-                background: soft, color, border: `1px solid ${border}`, whiteSpace: 'nowrap',
+                background: statusFilter === key ? soft : 'transparent',
+                color: statusFilter === key ? color : 'var(--text-muted)',
+                border: `1px solid ${statusFilter === key ? border : 'var(--border-color)'}`,
+                cursor: 'pointer', whiteSpace: 'nowrap',
               }}
             >
               {n} {label}
-            </span>
+            </button>
           ))}
+          {totalOverrides > 0 && (
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === 'overrides' ? 'all' : 'overrides')}
+              style={{
+                padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: '700',
+                background: statusFilter === 'overrides' ? 'var(--primary-subtle)' : 'transparent',
+                color: statusFilter === 'overrides' ? 'var(--primary)' : 'var(--text-muted)',
+                border: `1px solid ${statusFilter === 'overrides' ? 'var(--primary-border)' : 'var(--border-color)'}`,
+                cursor: 'pointer', whiteSpace: 'nowrap',
+              }}
+            >
+              {totalOverrides} Exception{totalOverrides === 1 ? '' : 's'}
+            </button>
+          )}
         </div>
+      </div>
+
+      {/* Search Filter Bar */}
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <Search size={15} style={{ position: 'absolute', left: '12px', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+        <input
+          type="text"
+          placeholder="Search features by name, key, description, or placement…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={{
+            width: '100%', padding: '10px 14px 10px 36px', borderRadius: '8px',
+            border: '1px solid var(--border-color)', background: 'rgba(255,255,255,0.03)',
+            color: 'var(--text-main)', fontSize: '0.88rem', outline: 'none',
+          }}
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            style={{ position: 'absolute', right: '12px', background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+          >
+            <X size={16} />
+          </button>
+        )}
       </div>
 
       {error && (
@@ -171,8 +252,14 @@ export default function FeaturesTab({ features, loading, error, users, onFeature
         </div>
       )}
 
+      {filteredList.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+          No features found matching the filter/search criteria.
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-        {list.map((feature) => {
+        {filteredList.map((feature) => {
           const meta = statusMeta(feature.status);
           const noteDraft = noteDrafts[feature.key];
           const noteDirty = noteDraft !== undefined && noteDraft !== (feature.note || '');
