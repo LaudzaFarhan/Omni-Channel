@@ -103,11 +103,20 @@ export function requireApproved(req, res, next) {
     });
   }
 
-  if (req.workspace && req.workspace.uid !== req.profile.uid && !req.workspace.isApproved) {
-    return res.status(403).json({
-      error: 'The account that invited you is pending administrator approval.',
-      code: 'workspace_not_approved',
-    });
+  if (req.workspace && req.workspace.uid !== req.profile.uid) {
+    if (!req.workspace.isApproved) {
+      return res.status(403).json({
+        error: 'The account that invited you is pending administrator approval.',
+        code: 'workspace_not_approved',
+      });
+    }
+
+    if (req.workspace.trialExpired) {
+      return res.status(403).json({
+        error: `Your workspace subscription or trial for ${req.workspace.name || req.workspace.email} has expired. Please ask your workspace owner to renew.`,
+        code: 'workspace_subscription_expired',
+      });
+    }
   }
 
   next();

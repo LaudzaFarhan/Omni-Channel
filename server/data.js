@@ -120,7 +120,26 @@ const USER_COLUMNS = `
 // users
 // ---------------------------------------------------------------------------
 export async function findUserById(id) {
-  return mapUser(await queryOne(`SELECT ${USER_COLUMNS} FROM users WHERE id = $1`, [id]));
+  const row = await queryOne(`SELECT ${USER_COLUMNS} FROM users WHERE id = $1`, [id]);
+  if (!row) return null;
+  const user = mapUser(row);
+  if (user && user.ownerUserId) {
+    const ownerRow = await queryOne(
+      `SELECT id, email, name, plan_id, trial_expired, trial_ends_at, custom_trial_days, created_at, is_approved
+         FROM users WHERE id = $1`,
+      [user.ownerUserId]
+    );
+    if (ownerRow) {
+      user.ownerEmail = ownerRow.email;
+      user.ownerName = ownerRow.name;
+      user.planId = user.planId || ownerRow.plan_id;
+      user.tier = user.planId;
+      user.trialExpired = Boolean(ownerRow.trial_expired);
+      user.trialEndsAt = ownerRow.trial_ends_at;
+      user.customTrialDays = ownerRow.custom_trial_days;
+    }
+  }
+  return user;
 }
 
 // Includes the password hash, so this is only for the login path.
@@ -164,8 +183,30 @@ export async function createUser({
 }
 
 export async function listUsers() {
-  const { rows } = await query(`SELECT ${USER_COLUMNS} FROM users ORDER BY created_at DESC`);
-  return rows.map(mapUser);
+  const { rows } = await query(`
+    SELECT u.id, u.email, u.name, u.role, u.is_approved, u.plan_id, u.message_limit, u.session_limit,
+           u.messages_sent, u.trial_expired, u.trial_ends_at, u.custom_trial_days, u.must_reset_password,
+           u.purchased_agents, u.owner_user_id, u.created_at, u.last_login_at,
+           o.email AS owner_email, o.name AS owner_name, o.plan_id AS owner_plan_id,
+           o.messages_sent AS owner_messages_sent, o.trial_expired AS owner_trial_expired,
+           o.trial_ends_at AS owner_trial_ends_at, o.custom_trial_days AS owner_custom_trial_days
+      FROM users u
+      LEFT JOIN users o ON o.id = u.owner_user_id
+     ORDER BY COALESCE(u.owner_user_id, u.id), (u.owner_user_id IS NOT NULL), u.created_at ASC
+  `);
+  return rows.map((r) => {
+    const user = mapUser(r);
+    if (user && user.ownerUserId) {
+      user.ownerEmail = r.owner_email ?? null;
+      user.ownerName = r.owner_name ?? null;
+      user.planId = user.planId || r.owner_plan_id;
+      user.tier = user.planId;
+      user.trialExpired = Boolean(r.owner_trial_expired);
+      user.trialEndsAt = r.owner_trial_ends_at;
+      user.customTrialDays = r.owner_custom_trial_days;
+    }
+    return user;
+  });
 }
 
 // Fields an admin may change, mapped to their columns. Anything not listed here
@@ -348,6 +389,105 @@ export async function deleteWorkspaceMember(workspaceId, memberId) {
     [memberId, workspaceId]
   );
   return rowCount > 0;
+}
+
+/**
+ * Validates whether an add-on team member is currently allowed to access the workspace.
+ * Rejects if the workspace owner's subscription or trial is expired, or if the
+ * workspace seat limit is exceeded.
+ */
+export async function checkTeamMemberWorkspaceStatus(memberUserId, ownerUserId) {
+  if (!ownerUserId) return { allowed: true };
+
+  const ownerRow = await queryOne(
+    `SELECT u.id, u.email, u.name, u.role, u.is_approved, u.plan_id, u.trial_expired,
+            u.trial_ends_at, u.custom_trial_days, u.created_at,
+            COALESCE(u.session_limit, u.purchased_agents, p.included_agents, p.session_limit, 1) AS seat_limit,
+            p.trial_days AS plan_trial_days
+       FROM users u
+       LEFT JOIN plans p ON p.id = u.plan_id
+      WHERE u.id = $1`,
+    [ownerUserId]
+  );
+
+  if (!ownerRow) {
+    return {
+      allowed: false,
+      error: 'The workspace account for this team member could not be found.',
+      code: 'workspace_not_found',
+    };
+  }
+
+  if (ownerRow.role !== 'admin' && !ownerRow.is_approved) {
+    return {
+      allowed: false,
+      error: `The workspace owner account (${ownerRow.name || ownerRow.email}) is currently pending approval.`,
+      code: 'workspace_pending_approval',
+    };
+  }
+
+  // Check trial / subscription expiration of the owner
+  if (ownerRow.role !== 'admin') {
+    let ownerExpired = Boolean(ownerRow.trial_expired);
+
+    if (!ownerExpired && ownerRow.trial_ends_at) {
+      if (new Date(ownerRow.trial_ends_at).getTime() <= Date.now()) {
+        ownerExpired = true;
+      }
+    } else if (!ownerExpired && ownerRow.custom_trial_days !== null && ownerRow.custom_trial_days !== undefined) {
+      const createdTime = new Date(ownerRow.created_at).getTime();
+      if ((Date.now() - createdTime) >= ownerRow.custom_trial_days * 86400000) {
+        ownerExpired = true;
+      }
+    } else if (!ownerExpired && ownerRow.plan_trial_days > 0) {
+      const createdTime = new Date(ownerRow.created_at).getTime();
+      if ((Date.now() - createdTime) >= ownerRow.plan_trial_days * 86400000) {
+        ownerExpired = true;
+      }
+    }
+
+    if (ownerExpired) {
+      return {
+        allowed: false,
+        error: `You cannot sign in because the workspace subscription or trial for ${ownerRow.name || ownerRow.email} has expired. Please ask your workspace owner to renew the subscription.`,
+        code: 'workspace_subscription_expired',
+        ownerEmail: ownerRow.email,
+        ownerName: ownerRow.name,
+      };
+    }
+  }
+
+  // Check seat limit
+  const seatLimit = Math.max(1, Number(ownerRow.seat_limit));
+  if (seatLimit <= 1) {
+    return {
+      allowed: false,
+      error: `You cannot sign in because the workspace (${ownerRow.name || ownerRow.email}) only has 1 agent seat which is reserved for the account owner. Please ask your workspace owner to add agent seats.`,
+      code: 'workspace_seat_limit_exceeded',
+      ownerEmail: ownerRow.email,
+      ownerName: ownerRow.name,
+    };
+  }
+
+  // Check member index among accepted workspace members
+  const membersResult = await query(
+    'SELECT id FROM users WHERE owner_user_id = $1 ORDER BY created_at ASC',
+    [ownerUserId]
+  );
+  const memberIndex = membersResult.rows.findIndex(r => r.id === memberUserId);
+  const maxAllowedMembers = seatLimit - 1; // owner takes 1 seat
+
+  if (memberIndex === -1 || memberIndex >= maxAllowedMembers) {
+    return {
+      allowed: false,
+      error: `You cannot sign in because the workspace has exceeded its limit of ${seatLimit} agent seat(s). Please ask your workspace owner (${ownerRow.name || ownerRow.email}) to add more agent seats.`,
+      code: 'workspace_seat_limit_exceeded',
+      ownerEmail: ownerRow.email,
+      ownerName: ownerRow.name,
+    };
+  }
+
+  return { allowed: true, ownerRow };
 }
 
 // ---------------------------------------------------------------------------

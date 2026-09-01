@@ -3,7 +3,7 @@ import { adminUpdateUser, adminDeleteUser, adminSetFeatureAccess, adminClearFeat
 import {
   Users, UserCheck, UserX, Shield, Search, Clock, Download, Filter, X,
   AlertTriangle, CheckCircle2, Sliders, Layers, RotateCcw, Trash2, Link2Off,
-  ToggleLeft, Lock, ShieldCheck, ShieldOff,
+  ToggleLeft, Lock, ShieldCheck, ShieldOff, CornerDownRight, Crown, UsersRound,
 } from 'lucide-react';
 import { showToast } from '../../utils/toastBus.js';
 import {
@@ -71,6 +71,7 @@ export default function UsersTab({
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'pending' | 'approved'
+  const [accountTypeFilter, setAccountTypeFilter] = useState('all'); // 'all' | 'workspaces' | 'members'
   const [planFilter, setPlanFilter] = useState('all');
 
   // { type, userObj, ...payload }
@@ -325,25 +326,46 @@ export default function UsersTab({
   // Pending and Approved views instead of hiding them from every filter.
   const isCustomer = (u) => (u.role || 'customer') !== 'admin';
 
-  const filteredUsers = users.filter((u) => {
-    const query = searchQuery.toLowerCase();
-    const matchesSearch =
-      (u.name || '').toLowerCase().includes(query) ||
-      (u.email || '').toLowerCase().includes(query);
+  const memberCountsByOwner = useMemo(() => {
+    const counts = {};
+    (users || []).forEach(u => {
+      if (u.ownerUserId) {
+        counts[u.ownerUserId] = (counts[u.ownerUserId] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [users]);
 
-    let matchesStatus = true;
-    if (statusFilter === 'pending') matchesStatus = !u.isApproved && isCustomer(u);
-    else if (statusFilter === 'approved') matchesStatus = Boolean(u.isApproved) && isCustomer(u);
+  const filteredUsers = useMemo(() => {
+    return (users || []).filter((u) => {
+      const query = searchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !query ||
+        (u.name || '').toLowerCase().includes(query) ||
+        (u.email || '').toLowerCase().includes(query) ||
+        (u.ownerEmail || '').toLowerCase().includes(query) ||
+        (u.ownerName || '').toLowerCase().includes(query);
 
-    const matchesPlan =
-      planFilter === 'all' || resolveEffectiveLimits(u, plans).planId === planFilter;
+      let matchesStatus = true;
+      if (statusFilter === 'pending') matchesStatus = !u.isApproved && isCustomer(u);
+      else if (statusFilter === 'approved') matchesStatus = Boolean(u.isApproved) && isCustomer(u);
 
-    return matchesSearch && matchesStatus && matchesPlan;
-  });
+      let matchesType = true;
+      if (accountTypeFilter === 'workspaces') matchesType = !u.ownerUserId;
+      else if (accountTypeFilter === 'members') matchesType = Boolean(u.ownerUserId);
+
+      const matchesPlan =
+        planFilter === 'all' || resolveEffectiveLimits(u, plans).planId === planFilter;
+
+      return matchesSearch && matchesStatus && matchesType && matchesPlan;
+    });
+  }, [users, searchQuery, statusFilter, accountTypeFilter, planFilter, plans]);
 
   const totalUsers = users.length;
   const pendingUsers = users.filter(u => !u.isApproved && isCustomer(u)).length;
   const approvedUsers = users.filter(u => Boolean(u.isApproved) && isCustomer(u)).length;
+  const workspaceOwnersCount = users.filter(u => !u.ownerUserId).length;
+  const teamMembersCount = users.filter(u => Boolean(u.ownerUserId)).length;
 
   // --- CSV ------------------------------------------------------------------
   const handleExportCSV = () => {
@@ -453,11 +475,56 @@ export default function UsersTab({
       {/* Registry */}
       <div className="glass" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px', flex: 1 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: '700' }}>Customer Registry</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: '700', margin: 0 }}>Customer Registry</h3>
             <span style={{ fontSize: '0.8rem', padding: '2px 8px', borderRadius: '12px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-dimmed)' }}>
               {filteredUsers.length} {filteredUsers.length === 1 ? 'user' : 'users'}
             </span>
+
+            {/* Quick account type selector */}
+            <div style={{ display: 'flex', gap: '6px', marginLeft: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => setAccountTypeFilter('all')}
+                style={{
+                  padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: '600',
+                  background: accountTypeFilter === 'all' ? 'var(--primary-subtle)' : 'transparent',
+                  color: accountTypeFilter === 'all' ? 'var(--primary)' : 'var(--text-muted)',
+                  border: `1px solid ${accountTypeFilter === 'all' ? 'var(--primary-border)' : 'var(--border-color)'}`,
+                  cursor: 'pointer',
+                }}
+              >
+                All ({totalUsers})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAccountTypeFilter('workspaces')}
+                style={{
+                  padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: '600',
+                  background: accountTypeFilter === 'workspaces' ? 'var(--primary-subtle)' : 'transparent',
+                  color: accountTypeFilter === 'workspaces' ? 'var(--primary)' : 'var(--text-muted)',
+                  border: `1px solid ${accountTypeFilter === 'workspaces' ? 'var(--primary-border)' : 'var(--border-color)'}`,
+                  cursor: 'pointer',
+                }}
+              >
+                Workspaces ({workspaceOwnersCount})
+              </button>
+              {teamMembersCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setAccountTypeFilter('members')}
+                  style={{
+                    padding: '4px 10px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: '600',
+                    background: accountTypeFilter === 'members' ? 'var(--primary-subtle)' : 'transparent',
+                    color: accountTypeFilter === 'members' ? 'var(--primary)' : 'var(--text-muted)',
+                    border: `1px solid ${accountTypeFilter === 'members' ? 'var(--primary-border)' : 'var(--border-color)'}`,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Team Members ({teamMembersCount})
+                </button>
+              )}
+            </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
@@ -555,34 +622,84 @@ export default function UsersTab({
                       key={u.uid}
                       style={{
                         borderBottom: '1px solid var(--border-color)',
+                        background: u.ownerUserId ? 'rgba(255,255,255,0.018)' : 'transparent',
                         opacity: busy ? 0.55 : 1,
                         transition: 'opacity 0.2s, background-color 0.2s',
                       }}
                     >
+                      {/* Name & Email */}
                       <td style={{ padding: '16px' }}>
-                        <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{u.name || 'N/A'}</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{u.email}</div>
+                        {u.ownerUserId ? (
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', paddingLeft: '16px' }}>
+                            <CornerDownRight size={15} style={{ color: 'var(--primary)', flexShrink: 0, marginTop: '3px' }} />
+                            <div>
+                              <div style={{ fontWeight: '600', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                {u.name || 'Unnamed Member'}
+                                <span style={{ fontSize: '0.65rem', fontWeight: '700', padding: '1px 6px', borderRadius: '4px', background: 'var(--primary-subtle)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
+                                  Team Member
+                                </span>
+                              </div>
+                              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{u.email}</div>
+                              <div style={{ fontSize: '0.73rem', color: 'var(--text-dimmed)', marginTop: '3px' }}>
+                                ↳ Workspace: <strong style={{ color: 'var(--text-main)' }}>{u.ownerName || u.ownerEmail}</strong>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div style={{ fontWeight: '600', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              {u.name || 'N/A'}
+                              {u.role !== 'admin' && (
+                                <span style={{ fontSize: '0.65rem', fontWeight: '700', padding: '1px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)', border: '1px solid var(--border-color)' }}>
+                                  Workspace Owner
+                                </span>
+                              )}
+                              {memberCountsByOwner[u.uid] > 0 && (
+                                <span style={{ fontSize: '0.65rem', fontWeight: '700', padding: '1px 6px', borderRadius: '4px', background: 'var(--primary-soft)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
+                                  {memberCountsByOwner[u.uid]} Member{memberCountsByOwner[u.uid] === 1 ? '' : 's'}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{u.email}</div>
+                          </div>
+                        )}
                       </td>
 
                       <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                         {formatDate(u.createdAt)}
                       </td>
 
+                      {/* Role */}
                       <td style={{ padding: '16px' }}>
-                        <button
-                          onClick={() => openRoleModal(u)}
-                          disabled={isMe || busy}
-                          title={isMe ? 'You cannot modify your own role' : 'Click to toggle role'}
-                          style={{
-                            background: u.role === 'admin' ? 'var(--primary-soft)' : 'rgba(255,255,255,0.05)',
-                            border: '1px solid ' + (u.role === 'admin' ? 'var(--primary-border)' : 'var(--border-color)'),
-                            color: u.role === 'admin' ? 'var(--primary)' : 'var(--text-muted)',
-                            padding: '4px 10px', borderRadius: '4px', fontSize: '0.8rem',
-                            fontWeight: '600', cursor: isMe || busy ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          {(u.role || 'customer').toUpperCase()}
-                        </button>
+                        {u.ownerUserId ? (
+                          <span
+                            title={`Team member of ${u.ownerName || u.ownerEmail}`}
+                            style={{
+                              background: 'var(--primary-soft)',
+                              border: '1px solid var(--primary-border)',
+                              color: 'var(--primary)',
+                              padding: '4px 10px', borderRadius: '4px', fontSize: '0.78rem',
+                              fontWeight: '700', display: 'inline-block',
+                            }}
+                          >
+                            MEMBER
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => openRoleModal(u)}
+                            disabled={isMe || busy}
+                            title={isMe ? 'You cannot modify your own role' : 'Click to toggle role'}
+                            style={{
+                              background: u.role === 'admin' ? 'var(--primary-soft)' : 'rgba(255,255,255,0.05)',
+                              border: '1px solid ' + (u.role === 'admin' ? 'var(--primary-border)' : 'var(--border-color)'),
+                              color: u.role === 'admin' ? 'var(--primary)' : 'var(--text-muted)',
+                              padding: '4px 10px', borderRadius: '4px', fontSize: '0.8rem',
+                              fontWeight: '600', cursor: isMe || busy ? 'not-allowed' : 'pointer',
+                            }}
+                          >
+                            {(u.role || 'customer').toUpperCase()}
+                          </button>
+                        )}
                       </td>
 
                       <td style={{ padding: '16px' }}>
@@ -597,24 +714,42 @@ export default function UsersTab({
 
                       {/* Plan assignment */}
                       <td style={{ padding: '16px' }}>
-                        <button
-                          onClick={() => openPlanModal(u)}
-                          disabled={busy}
-                          title="Click to change the assigned plan"
-                          style={{
-                            background: effective.plan.price > 0 ? 'var(--success-soft)' : 'rgba(255,255,255,0.05)',
-                            border: '1px solid ' + (effective.plan.price > 0 ? 'var(--success-border)' : 'var(--border-color)'),
-                            color: effective.plan.price > 0 ? 'var(--success)' : 'var(--text-muted)',
-                            padding: '4px 10px', borderRadius: '4px', fontSize: '0.8rem',
-                            fontWeight: '600', cursor: busy ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          {effective.planName.toUpperCase()}
-                        </button>
-                        {effective.planMissing && (
-                          <div style={{ fontSize: '0.7rem', color: '#f59e0b', marginTop: '4px' }}>
-                            plan "{u.planId || u.tier}" missing
+                        {u.ownerUserId ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-main)' }}>
+                                {effective.planName.toUpperCase()}
+                              </span>
+                              <span style={{ fontSize: '0.65rem', fontWeight: '700', padding: '1px 5px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-dimmed)', border: '1px solid var(--border-color)' }}>
+                                Inherited
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dimmed)' }}>
+                              From workspace
+                            </div>
                           </div>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => openPlanModal(u)}
+                              disabled={busy}
+                              title="Click to change the assigned plan"
+                              style={{
+                                background: effective.plan.price > 0 ? 'var(--success-soft)' : 'rgba(255,255,255,0.05)',
+                                border: '1px solid ' + (effective.plan.price > 0 ? 'var(--success-border)' : 'var(--border-color)'),
+                                color: effective.plan.price > 0 ? 'var(--success)' : 'var(--text-muted)',
+                                padding: '4px 10px', borderRadius: '4px', fontSize: '0.8rem',
+                                fontWeight: '600', cursor: busy ? 'not-allowed' : 'pointer',
+                              }}
+                            >
+                              {effective.planName.toUpperCase()}
+                            </button>
+                            {effective.planMissing && (
+                              <div style={{ fontSize: '0.7rem', color: '#f59e0b', marginTop: '4px' }}>
+                                plan "{u.planId || u.tier}" missing
+                              </div>
+                            )}
+                          </>
                         )}
                       </td>
 
@@ -647,7 +782,11 @@ export default function UsersTab({
                                 {trialInfo.isCustom && <SourceBadge source="override" />}
                               </div>
 
-                              {u.role !== 'admin' && (
+                              {u.ownerUserId ? (
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-dimmed)' }}>
+                                  Inherits workspace trial
+                                </div>
+                              ) : u.role !== 'admin' ? (
                                 <button
                                   onClick={() => openTrialModal(u, trialInfo)}
                                   disabled={busy}
@@ -661,7 +800,7 @@ export default function UsersTab({
                                 >
                                   {trialInfo.isCustom ? 'Edit Days' : 'Set Trial'}
                                 </button>
-                              )}
+                              ) : null}
                             </div>
                           );
                         })()}
@@ -669,64 +808,87 @@ export default function UsersTab({
 
                       {/* Device limit */}
                       <td style={{ padding: '16px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>{effective.sessionLimit}</span>
-                          <SourceBadge source={effective.sessionLimitSource} />
-                          <button
-                            onClick={() => openSessionLimitModal(u)}
-                            disabled={busy}
-                            style={{
-                              background: 'transparent', border: '1px solid var(--border-color)',
-                              padding: '3px 8px', borderRadius: '4px', fontSize: '0.75rem',
-                              color: 'var(--text-muted)', cursor: busy ? 'not-allowed' : 'pointer',
-                            }}
-                          >
-                            Edit
-                          </button>
-                        </div>
+                        {u.ownerUserId ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>1 Seat</span>
+                            <span style={{ fontSize: '0.65rem', fontWeight: '700', padding: '1px 5px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-dimmed)' }}>
+                              Inherited
+                            </span>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>{effective.sessionLimit}</span>
+                            <SourceBadge source={effective.sessionLimitSource} />
+                            <button
+                              onClick={() => openSessionLimitModal(u)}
+                              disabled={busy}
+                              style={{
+                                background: 'transparent', border: '1px solid var(--border-color)',
+                                padding: '3px 8px', borderRadius: '4px', fontSize: '0.75rem',
+                                color: 'var(--text-muted)', cursor: busy ? 'not-allowed' : 'pointer',
+                              }}
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        )}
                       </td>
 
                       {/* Message quota */}
                       <td style={{ padding: '16px', minWidth: '200px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                              {formatQuota(sent)} / {formatQuota(limit)}
-                            </span>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <SourceBadge source={effective.messageLimitSource} />
-                              <button
-                                onClick={() => openLimitModal(u)}
-                                disabled={busy}
-                                style={{
-                                  background: 'transparent', border: 'none', color: 'var(--primary)',
-                                  fontSize: '0.75rem', cursor: busy ? 'not-allowed' : 'pointer',
-                                  textDecoration: 'underline',
-                                }}
-                              >
-                                Change
-                              </button>
+                        {u.ownerUserId ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                              Shared: <strong>{formatQuota(sent)}</strong> / {formatQuota(limit)}
+                            </div>
+                            <div style={{ height: '6px', width: '100%', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: '3px', transition: 'width 0.3s' }}></div>
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dimmed)' }}>
+                              Workspace pool
                             </div>
                           </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                {formatQuota(sent)} / {formatQuota(limit)}
+                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <SourceBadge source={effective.messageLimitSource} />
+                                <button
+                                  onClick={() => openLimitModal(u)}
+                                  disabled={busy}
+                                  style={{
+                                    background: 'transparent', border: 'none', color: 'var(--primary)',
+                                    fontSize: '0.75rem', cursor: busy ? 'not-allowed' : 'pointer',
+                                    textDecoration: 'underline',
+                                  }}
+                                >
+                                  Change
+                                </button>
+                              </div>
+                            </div>
 
-                          <div style={{ height: '6px', width: '100%', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: '3px', transition: 'width 0.3s' }}></div>
+                            <div style={{ height: '6px', width: '100%', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: '3px', transition: 'width 0.3s' }}></div>
+                            </div>
+
+                            <button
+                              onClick={() => setActiveModal({ type: 'resetUsage', userObj: u })}
+                              disabled={busy || sent === 0}
+                              title="Set the sent-message counter back to zero"
+                              style={{
+                                alignSelf: 'flex-start', background: 'transparent', border: 'none',
+                                color: sent === 0 ? 'var(--text-dimmed)' : 'var(--text-muted)',
+                                fontSize: '0.7rem', cursor: busy || sent === 0 ? 'not-allowed' : 'pointer',
+                                padding: 0, display: 'inline-flex', alignItems: 'center', gap: '4px',
+                              }}
+                            >
+                              <RotateCcw size={11} /> Reset usage
+                            </button>
                           </div>
-
-                          <button
-                            onClick={() => setActiveModal({ type: 'resetUsage', userObj: u })}
-                            disabled={busy || sent === 0}
-                            title="Set the sent-message counter back to zero"
-                            style={{
-                              alignSelf: 'flex-start', background: 'transparent', border: 'none',
-                              color: sent === 0 ? 'var(--text-dimmed)' : 'var(--text-muted)',
-                              fontSize: '0.7rem', cursor: busy || sent === 0 ? 'not-allowed' : 'pointer',
-                              padding: 0, display: 'inline-flex', alignItems: 'center', gap: '4px',
-                            }}
-                          >
-                            <RotateCcw size={11} /> Reset usage
-                          </button>
-                        </div>
+                        )}
                       </td>
 
                       {/* Actions */}

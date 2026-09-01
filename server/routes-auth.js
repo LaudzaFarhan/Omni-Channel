@@ -17,6 +17,7 @@ import {
   storeRefreshToken, findValidRefreshToken, revokeRefreshToken,
   revokeAllRefreshTokens, recordAudit,
   findPendingInviteByTokenHash, markInviteAccepted, setMemberName,
+  checkTeamMemberWorkspaceStatus,
 } from './data.js';
 import { authenticated, rateLimit, clientIp } from './middleware.js';
 
@@ -184,6 +185,18 @@ export function mountAuthRoutes(app) {
 
         const profile = mapUser(row);
 
+        // If this is a team member, ensure the workspace owner's subscription is active
+        // and workspace agent seat limits are not exceeded.
+        if (profile.ownerUserId) {
+          const check = await checkTeamMemberWorkspaceStatus(profile.uid, profile.ownerUserId);
+          if (!check.allowed) {
+            return res.status(403).json({
+              error: check.error,
+              code: check.code,
+            });
+          }
+        }
+
         // Transparently upgrade hashes created with weaker parameters.
         if (needsRehash(row.password_hash)) {
           await setPasswordHash(profile.uid, await hashPassword(password));
@@ -226,6 +239,18 @@ export function mountAuthRoutes(app) {
         if (!profile) {
           await revokeRefreshToken(refreshToken);
           return res.status(401).json({ error: 'Account no longer exists.', code: 'account_missing' });
+        }
+
+        // If this is a team member, reject refresh if workspace subscription/seat is expired.
+        if (profile.ownerUserId) {
+          const check = await checkTeamMemberWorkspaceStatus(profile.uid, profile.ownerUserId);
+          if (!check.allowed) {
+            await revokeRefreshToken(refreshToken);
+            return res.status(403).json({
+              error: check.error,
+              code: check.code,
+            });
+          }
         }
 
         await revokeRefreshToken(refreshToken);

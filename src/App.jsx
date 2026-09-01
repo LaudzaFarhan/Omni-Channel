@@ -1169,17 +1169,31 @@ export default function App() {
                   <div style={{ background: 'rgba(239, 68, 68, 0.1)', width: '60px', height: '60px', borderRadius: '50%', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto' }}>
                     <AlertTriangle size={32} />
                   </div>
-                  <h3 style={{ fontSize: '1.5rem', fontWeight: '700', marginBottom: '12px' }}>Free Trial Expired</h3>
+                  <h3 style={{ fontSize: '1.5rem', fontWeight: '700', marginBottom: '12px' }}>
+                    {isSupervisor ? 'Subscription or Free Trial Expired' : 'Workspace Access Paused'}
+                  </h3>
                   <p style={{ color: 'var(--text-muted)', marginBottom: '24px', fontSize: '0.95rem', lineHeight: '1.5' }}>
-                    Your 7-day free trial has ended. Subscribe to Premium to continue using the dashboard.
+                    {isSupervisor
+                      ? 'Your free trial or subscription period has ended. Subscribe or renew to continue using the dashboard.'
+                      : `The subscription or trial period for this workspace has ended. Please ask your workspace owner (${userProfile?.ownerEmail || 'your supervisor'}) to renew the subscription so you can continue working.`}
                   </p>
-                  <button 
-                    className="upgrade-btn" 
-                    style={{ width: '100%', padding: '14px', borderRadius: '8px' }}
-                    onClick={() => setActiveTab('subscription')}
-                  >
-                    Upgrade to Premium
-                  </button>
+                  {isSupervisor ? (
+                    <button 
+                      className="upgrade-btn" 
+                      style={{ width: '100%', padding: '14px', borderRadius: '8px' }}
+                      onClick={() => setActiveTab('subscription')}
+                    >
+                      Upgrade / Renew Subscription
+                    </button>
+                  ) : (
+                    <button 
+                      className="logout-button" 
+                      style={{ width: '100%', padding: '14px', borderRadius: '8px', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                      onClick={handleWebsiteLogout}
+                    >
+                      <LogOut size={16} /> Sign Out
+                    </button>
+                  )}
                 </div>
               </div>
             )}
