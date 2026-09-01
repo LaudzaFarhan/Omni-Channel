@@ -1301,17 +1301,6 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
               {isHeld ? <><Play size={13} /> Resume Agent</> : <><Pause size={13} /> Hold Agent</>}
             </button>
 
-            {/* Quick Reply Drawer Toggle */}
-            <button
-              className={`icon-button ${activeRightPanel === 'quick_reply' ? 'active' : ''}`}
-              onClick={() => setActiveRightPanel(prev => prev === 'quick_reply' ? null : 'quick_reply')}
-              title="Quick Reply"
-              aria-pressed={activeRightPanel === 'quick_reply'}
-              style={{ color: activeRightPanel === 'quick_reply' ? 'var(--primary)' : 'var(--text-muted)' }}
-            >
-              <Zap size={18} />
-            </button>
-
             {/* Fullscreen. Expands the chat list and this conversation together over the
                 nav sidebar and top bar. Rendered only when a handler is supplied, so the
                 button is never present without something behind it. */}
