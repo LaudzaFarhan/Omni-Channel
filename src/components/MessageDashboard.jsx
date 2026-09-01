@@ -183,6 +183,10 @@ export default function MessageDashboard({
     return chats.filter(c => get24HourWindowStatus(c)?.isExpired === true).length;
   }, [chats]);
 
+  const unreadChatsCount = useMemo(() => {
+    return chats.filter(c => (c.unreadCount || 0) > 0).length;
+  }, [chats]);
+
   return (
     // This wrapper exists to be the fullscreen element. It replaces a fragment, so it has
     // to reproduce the row layout the two panels previously got from App's flex container.
@@ -200,6 +204,7 @@ export default function MessageDashboard({
           totalCount={chats.length}
           statusCounts={statusCounts}
           over24hCount={over24hCount}
+          unreadCount={unreadChatsCount}
           tags={[...PRESET_TAGS, ...globalCustomTags]}
           tagCounts={tagCounts}
         />
@@ -215,7 +220,8 @@ export default function MessageDashboard({
             userInfo={userInfo}
             selectedTagFilter={filter.kind === 'tag' ? filter.value : null}
             statusFilter={filter.kind === 'status' ? filter.value : null}
-            windowFilter={filter.kind === 'window' ? filter.value : null}
+            windowFilter={filter.kind === 'window' ? filter.value : (filter.kind === 'unread' ? 'unread' : null)}
+            unreadFilter={filter.kind === 'unread'}
             chatStatuses={chatStatuses}
             savedNames={savedNames}
           />

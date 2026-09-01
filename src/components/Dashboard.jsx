@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Send, MailOpen, Users, Phone, BookUser, Clock3, TrendingUp, Clock, MessageSquare,
+  Send, MailOpen, Users, Phone, BookUser, Clock3, TrendingUp, Clock, MessageSquare, X, Search, ArrowRight, CheckCheck,
 } from 'lucide-react';
 import {
   getChatDisplayName, getInitials, avatarColor, isSelfChat,
@@ -9,6 +9,7 @@ import { relativeWhen, fullWhen } from '../utils/timeFormat.js';
 import { fetchChatStatuses, fetchTeam } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
 import { isReleased, isVisible } from '../utils/features.js';
+import { jidToPhone, formatPhone } from '../utils/phone.js';
 import InteractionHeatmap from './dashboard/InteractionHeatmap.jsx';
 import CustomerList from './dashboard/CustomerList.jsx';
 import ConversationLog from './dashboard/ConversationLog.jsx';
@@ -55,6 +56,10 @@ export default function Dashboard({
   // Totals reported by the conversation log, reused by the feature grid so the two do not
   // make the same request twice.
   const [logTotals, setLogTotals] = useState(null);
+
+  // Unread conversations modal state
+  const [showUnreadModal, setShowUnreadModal] = useState(false);
+  const [unreadSearchQuery, setUnreadSearchQuery] = useState('');
 
   const chatList = Array.isArray(chats) ? chats : [];
 
@@ -141,7 +146,32 @@ export default function Dashboard({
     ? waSessions.filter(s => s.status === 'connected').length
     : 0;
 
-  const unreadChats = chatList.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+  // Unread calculations:
+  // 1. unreadConversations: List of customer chats where unreadCount > 0
+  // 2. unreadMessagesTotal: Total number of unread messages across all chats
+  // 3. unreadChatsCount: Number of distinct chats with unread messages
+  const unreadConversations = useMemo(
+    () => chatList
+      .filter(c => (c.unreadCount || 0) > 0 && !isSelfChat(c, userInfo))
+      .sort((a, b) => (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0)),
+    [chatList, userInfo]
+  );
+  const unreadMessagesTotal = useMemo(
+    () => unreadConversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0),
+    [unreadConversations]
+  );
+  const unreadChatsCount = unreadConversations.length;
+
+  const filteredUnreadList = useMemo(() => {
+    const q = unreadSearchQuery.trim().toLowerCase();
+    if (!q) return unreadConversations;
+    return unreadConversations.filter(chat => {
+      const name = (getChatDisplayName(chat, userInfo, savedNames[chat.id]) || '').toLowerCase();
+      const phone = (jidToPhone(chat.phoneNumber) || jidToPhone(chat.id) || '').toLowerCase();
+      const lastMsg = (chat.lastMessage || '').toLowerCase();
+      return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
+    });
+  }, [unreadConversations, unreadSearchQuery, userInfo, savedNames]);
 
   // Conversations with actual customers: the same exclusions the customer list applies, so
   // the card and the panel beside it cannot report different numbers. A group is not a
@@ -162,10 +192,6 @@ export default function Dashboard({
   ), [chatList]);
 
   // Conversations active on each of the last 7 days, from each chat's most recent message.
-  //
-  // Named for what it measures. It was titled "Aktivitas Pengiriman" (messages sent),
-  // which this cannot show: a chat contributes to exactly one day however many messages
-  // it carried, and inbound traffic counts too.
   const activityData = useMemo(() => {
     const now = new Date();
     return Array.from({ length: 7 }, (_, i) => {
@@ -241,22 +267,22 @@ export default function Dashboard({
       tone: 'neutral',
     },
     {
-      // Was labelled "Pesan Masuk", which this is not: it is the unread total, and it
-      // drops to zero as soon as the team reads its inbox.
       label: 'Belum Dibaca',
-      value: unreadChats,
-      sub: unreadChats > 0 ? 'menunggu dibuka' : 'kotak masuk bersih',
+      value: unreadMessagesTotal,
+      sub: unreadChatsCount > 0 ? `${unreadChatsCount} percakapan menunggu dibuka` : 'kotak masuk bersih',
       icon: MailOpen,
       tone: 'brand',
+      clickable: true,
+      onClick: () => setShowUnreadModal(true),
     },
     {
-      // Was labelled "Total Kontak" while counting chats, groups and the self-chat
-      // included — a number that never matched the contacts page.
       label: 'Percakapan Pelanggan',
       value: customerConversations,
       sub: 'tanpa grup',
       icon: Users,
       tone: 'violet',
+      clickable: true,
+      onClick: () => onNavigate?.('messages'),
     },
     {
       label: 'Kontak Tersimpan',
@@ -264,6 +290,8 @@ export default function Dashboard({
       sub: 'di buku alamat',
       icon: BookUser,
       tone: 'cyan',
+      clickable: true,
+      onClick: () => onNavigate?.('contacts'),
     },
     {
       label: 'Nomor Aktif',
@@ -293,8 +321,18 @@ export default function Dashboard({
         {stats.map((stat) => {
           const Icon = stat.icon;
           const tone = TONES[stat.tone] || TONES.neutral;
+          const isClickable = Boolean(stat.clickable || stat.onClick);
           return (
-            <div key={stat.label} className="dashboard-stat-card" style={{ background: tone.gradient }}>
+            <div
+              key={stat.label}
+              className={`dashboard-stat-card ${isClickable ? 'is-clickable' : ''}`}
+              style={{
+                background: tone.gradient,
+                cursor: isClickable ? 'pointer' : 'default',
+              }}
+              onClick={stat.onClick}
+              title={isClickable ? `Klik untuk melihat detail ${stat.label}` : undefined}
+            >
               <div className="stat-card-header">
                 <div className="stat-card-icon" style={{ background: tone.iconBg }}>
                   <Icon size={18} style={{ color: tone.iconColor }} />
@@ -481,7 +519,7 @@ export default function Dashboard({
         onNavigate={onNavigate}
         features={features}
         metrics={{
-          unreadChats,
+          unreadChats: unreadMessagesTotal,
           conversations: customerConversations,
           contacts: contactCount,
           awaitingReply: logTotals?.awaitingReply || 0,
@@ -493,6 +531,277 @@ export default function Dashboard({
           messageLimit,
         }}
       />
+
+      {/* Unread Conversations Modal / Dialog */}
+      {showUnreadModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 9999,
+            padding: '20px',
+            animation: 'fadeIn 0.2s ease',
+          }}
+          onClick={() => setShowUnreadModal(false)}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '560px',
+              maxHeight: '85vh',
+              display: 'flex',
+              flexDirection: 'column',
+              borderRadius: '16px',
+              overflow: 'hidden',
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-panel, var(--bg-sidebar))',
+              boxShadow: '0 24px 48px rgba(0, 0, 0, 0.35)',
+              animation: 'profileFadeScale 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '18px 22px',
+                borderBottom: '1px solid var(--border-color)',
+                background: 'var(--overlay-subtle)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    background: 'var(--primary-soft)',
+                    color: 'var(--primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <MailOpen size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '700', color: 'var(--text-main)' }}>
+                    Pesan Belum Dibaca
+                  </h3>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-dimmed)', marginTop: '2px' }}>
+                    {unreadMessagesTotal} pesan baru di {unreadChatsCount} percakapan
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowUnreadModal(false)}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '6px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Search Input if more than 3 unread */}
+            {unreadConversations.length > 3 && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 18px',
+                  borderBottom: '1px solid var(--border-color)',
+                  background: 'var(--bg-main)',
+                }}
+              >
+                <Search size={15} style={{ color: 'var(--text-dimmed)' }} />
+                <input
+                  type="text"
+                  placeholder="Cari percakapan belum dibaca..."
+                  value={unreadSearchQuery}
+                  onChange={(e) => setUnreadSearchQuery(e.target.value)}
+                  style={{
+                    flex: 1,
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--text-main)',
+                    fontSize: '0.84rem',
+                    outline: 'none',
+                  }}
+                />
+                {unreadSearchQuery && (
+                  <button
+                    onClick={() => setUnreadSearchQuery('')}
+                    style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Unread Chats List */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
+              {filteredUnreadList.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-dimmed)' }}>
+                  <MailOpen size={36} style={{ color: 'var(--text-muted)', opacity: 0.4, marginBottom: '12px' }} />
+                  <div style={{ fontSize: '0.95rem', fontWeight: '600', color: 'var(--text-main)', marginBottom: '4px' }}>
+                    {unreadSearchQuery ? 'Tidak ada percakapan yang cocok' : 'Kotak masuk bersih!'}
+                  </div>
+                  <div style={{ fontSize: '0.82rem' }}>
+                    {unreadSearchQuery ? 'Coba cari dengan kata kunci lain.' : 'Semua pesan masuk telah dibuka dan dibaca.'}
+                  </div>
+                </div>
+              ) : (
+                filteredUnreadList.map((chat) => {
+                  const name = getDisplayName(chat);
+                  const phone = jidToPhone(chat.phoneNumber) || jidToPhone(chat.id);
+                  const formattedPhone = phone ? formatPhone(phone) : null;
+                  return (
+                    <div
+                      key={chat.id}
+                      onClick={() => {
+                        onOpenChat?.(chat.id);
+                        setShowUnreadModal(false);
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '12px 14px',
+                        borderRadius: '10px',
+                        cursor: 'pointer',
+                        transition: 'background 0.15s ease',
+                        borderBottom: '1px solid var(--border-color)',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--overlay-subtle)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      {/* Avatar */}
+                      <div
+                        style={{
+                          width: '44px',
+                          height: '44px',
+                          borderRadius: '12px',
+                          background: avatarColor(chat.id),
+                          color: '#fff',
+                          fontWeight: '800',
+                          fontSize: '0.95rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {getInitials(name)}
+                      </div>
+
+                      {/* Content */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3px' }}>
+                          <div style={{ fontWeight: '700', fontSize: '0.88rem', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {name}
+                          </div>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-dimmed)', flexShrink: 0 }}>
+                            {chat.lastMessageTimestamp ? relativeWhen(chat.lastMessageTimestamp) : ''}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {chat.lastMessage || (formattedPhone ? formattedPhone : 'Pesan baru')}
+                          </div>
+                          <span
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: '999px',
+                              fontSize: '0.72rem',
+                              fontWeight: '700',
+                              background: 'var(--primary)',
+                              color: 'var(--primary-contrast, #fff)',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {chat.unreadCount} baru
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div
+              style={{
+                padding: '12px 18px',
+                borderTop: '1px solid var(--border-color)',
+                background: 'var(--overlay-subtle)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setShowUnreadModal(false)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)',
+                  background: 'transparent',
+                  color: 'var(--text-main)',
+                  fontSize: '0.82rem',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+              >
+                Tutup
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUnreadModal(false);
+                  onNavigate?.('messages');
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'var(--primary)',
+                  color: 'var(--primary-contrast, #fff)',
+                  fontSize: '0.82rem',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+              >
+                <span>Buka di Chat Inbox</span>
+                <ArrowRight size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

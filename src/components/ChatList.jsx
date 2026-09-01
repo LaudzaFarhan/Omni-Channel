@@ -4,7 +4,7 @@ import { loadAllTags } from '../utils/contactTags.js';
 import { getChatDisplayName, getInitials } from '../utils/displayName.js';
 import { get24HourWindowStatus } from '../utils/timeFormat.js';
 
-export default function ChatList({ chats, setChats, searchQuery, setSearchQuery, activeChatJid, setActiveChatJid, userInfo, selectedTagFilter, savedNames = {}, statusFilter = null, windowFilter = null, chatStatuses = {} }) {
+export default function ChatList({ chats, setChats, searchQuery, setSearchQuery, activeChatJid, setActiveChatJid, userInfo, selectedTagFilter, savedNames = {}, statusFilter = null, windowFilter = null, unreadFilter = false, chatStatuses = {} }) {
   // Load contact tags (reactively updated via custom event)
   const [contactTags, setContactTags] = React.useState(loadAllTags);
 
@@ -60,6 +60,11 @@ export default function ChatList({ chats, setChats, searchQuery, setSearchQuery,
     }
     
     if (!isMatched) return false;
+
+    // Filter unread chats
+    if (unreadFilter || windowFilter === 'unread') {
+      return (chat.unreadCount || 0) > 0;
+    }
 
     if (selectedTagFilter) {
       const tagsForChat = contactTags[chat.id] || [];

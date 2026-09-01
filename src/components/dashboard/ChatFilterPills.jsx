@@ -3,11 +3,12 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 
 // Filter pills above the chat list with compact view optimization.
 export default function ChatFilterPills({
-  filter,          // { kind: 'all' | 'status' | 'tag' | 'window', value }
+  filter,          // { kind: 'all' | 'status' | 'tag' | 'window' | 'unread', value }
   onChange,
   totalCount,
   statusCounts = {},    // { prospect, closed_won, dropped }
   over24hCount = 0,
+  unreadCount = 0,
   tags = [],            // [{ label, color, bg }]
   tagCounts = {},
 }) {
@@ -87,6 +88,17 @@ export default function ChatFilterPills({
           label="> 24 Jam"
           count={over24hCount}
           color="#ef4444"
+        />
+      )}
+
+      {/* 3.5. Unread Chats */}
+      {unreadCount > 0 && (
+        <Pill
+          kind="unread"
+          value="unread"
+          label="Belum Dibaca"
+          count={unreadCount}
+          color="#3b82f6"
         />
       )}
 
