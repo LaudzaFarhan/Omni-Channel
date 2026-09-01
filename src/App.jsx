@@ -28,6 +28,7 @@ import Team from './components/Team.jsx';
 import ConversationLog from './components/dashboard/ConversationLog.jsx';
 import ComingSoon from './components/ComingSoon.jsx';
 import AcceptInvite from './components/AcceptInvite.jsx';
+import BlogPost from './components/BlogPost.jsx';
 import { showToast } from './utils/toastBus.js';
 
 export default function App() {
@@ -999,9 +1000,18 @@ export default function App() {
         />
       );
     }
+    if (currentPath === '/blog' || currentPath.startsWith('/blog') || currentPath.startsWith('/cara-integrasi')) {
+      return (
+        <BlogPost 
+          onBack={() => navigateTo('/')}
+          onGoToDashboard={() => navigateTo('/login')}
+        />
+      );
+    }
     return (
       <LandingPage 
         onGoToDashboard={() => navigateTo('/login')} 
+        onOpenBlog={() => navigateTo('/blog')}
       />
     );
   }

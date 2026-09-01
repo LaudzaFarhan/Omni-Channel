@@ -142,6 +142,7 @@ export default function LandingPage({ onGoToDashboard }) {
           <li><a href="#features" onClick={(e) => { e.preventDefault(); handleScrollTo('features'); }}>Features</a></li>
           <li><a href="#pricing" onClick={(e) => { e.preventDefault(); handleScrollTo('pricing'); }}>Pricing</a></li>
           <li><a href="#faq" onClick={(e) => { e.preventDefault(); handleScrollTo('faq'); }}>FAQ</a></li>
+          <li><a href="/blog" onClick={(e) => { e.preventDefault(); onOpenBlog?.(); }}>Blog & Panduan API</a></li>
         </ul>
         <button className="nav-btn" onClick={onGoToDashboard}>
           Open Dashboard
@@ -596,9 +597,13 @@ export default function LandingPage({ onGoToDashboard }) {
       </section>
 
       {/* Footer */}
-      <footer className="landing-footer">
-        <div>© {new Date().getFullYear()} Omni Reach. All rights reserved.</div>
-        <div>Built for WhatsApp Business teams.</div>
+      <footer className="landing-footer" style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center', textAlign: 'center' }}>
+        <div style={{ display: 'flex', gap: '20px', fontSize: '0.86rem' }}>
+          <a href="/blog" onClick={(e) => { e.preventDefault(); onOpenBlog?.(); }} style={{ color: 'var(--primary)', fontWeight: '600', textDecoration: 'none' }}>
+            📖 Panduan WhatsApp Unofficial API Indonesia
+          </a>
+        </div>
+        <div>© {new Date().getFullYear()} Omni Reach. Platform WhatsApp Unofficial API Indo & Multi-Agent CRM.</div>
       </footer>
     </div>
   );
