@@ -1464,14 +1464,13 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
               )}
             </div>
 
-            {/* The only control that hides the side panel. The composer's template button
-                picks a template instead — two different jobs, two different places. */}
+            {/* Panel toggle button */}
             <button 
-              className="icon-button" 
-              onClick={() => setShowQuickReplies(!showQuickReplies)}
-              title={showQuickReplies ? 'Sembunyikan panel template' : 'Tampilkan panel template'}
-              aria-expanded={showQuickReplies}
-              style={{ color: showQuickReplies ? 'var(--primary)' : 'var(--text-muted)' }}
+              className={`icon-button ${activeRightPanel === 'contact_info' ? 'active' : ''}`} 
+              onClick={() => setActiveRightPanel(prev => prev === 'contact_info' ? null : 'contact_info')}
+              title={activeRightPanel === 'contact_info' ? 'Tutup info kontak' : 'Buka info kontak'}
+              aria-expanded={activeRightPanel === 'contact_info'}
+              style={{ color: activeRightPanel === 'contact_info' ? 'var(--primary)' : 'var(--text-muted)' }}
             >
               <PanelRight size={20} />
             </button>
@@ -1557,10 +1556,10 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                 <button
                   type="button"
                   className="window-24h-action-btn"
-                  onClick={() => setShowQuickReplies(true)}
-                  title="Buka panel template pesan"
+                  onClick={() => setActiveRightPanel('quick_reply')}
+                  title="Buka panel Quick Reply"
                 >
-                  <FileText size={12} /> Gunakan Template
+                  <Zap size={12} /> Quick Reply
                 </button>
               )}
               {windowStatus.level === 'healthy' && (
