@@ -1004,13 +1004,15 @@ export default function App() {
       return (
         <BlogPost 
           onBack={() => navigateTo('/')}
-          onGoToDashboard={() => navigateTo('/login')}
+          onGoToDashboard={() => navigateTo('/register')}
         />
       );
     }
     return (
       <LandingPage 
-        onGoToDashboard={() => navigateTo('/login')} 
+        onGoToDashboard={() => navigateTo('/login')}
+        onGoToLogin={() => navigateTo('/login')}
+        onGoToRegister={() => navigateTo('/register')}
         onOpenBlog={() => navigateTo('/blog')}
       />
     );

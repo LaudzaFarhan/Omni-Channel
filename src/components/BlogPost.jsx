@@ -133,7 +133,7 @@ Mulai uji coba gratis dan integrasikan nomor WhatsApp bisnis Anda sekarang di:
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-main)', color: 'var(--text-main)', fontFamily: "'Outfit', sans-serif" }}>
+    <div style={{ height: '100vh', width: '100vw', overflowY: 'auto', background: 'var(--bg-main)', color: 'var(--text-main)', fontFamily: "'Outfit', sans-serif" }}>
       {/* Header Navigation */}
       <nav style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -202,7 +202,7 @@ Mulai uji coba gratis dan integrasikan nomor WhatsApp bisnis Anda sekarang di:
 
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px', fontSize: '0.84rem', color: 'var(--text-dimmed)' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-              <Calendar size={14} /> 1 September 2026
+              <Calendar size={14} /> 2 Juli 2026 (2 bulan lalu)
             </span>
             <span>•</span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>

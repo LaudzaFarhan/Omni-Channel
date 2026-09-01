@@ -2,7 +2,10 @@ import React from 'react';
 import { MessageSquare, Users, Zap, Shield, Check, HelpCircle, Pause, Play, Code, Calendar, Clock, UserCheck, BarChart3, Tag } from 'lucide-react';
 import { BrandLockup } from './BrandMark.jsx';
 
-export default function LandingPage({ onGoToDashboard, onOpenBlog }) {
+export default function LandingPage({ onGoToDashboard, onGoToLogin, onGoToRegister, onOpenBlog }) {
+  const handleRegister = onGoToRegister || onGoToDashboard;
+  const handleLogin = onGoToLogin || onGoToDashboard;
+
   const [agentCount, setAgentCount] = React.useState(3);
 
   const calculatePrice = (count) => {
@@ -99,14 +102,26 @@ export default function LandingPage({ onGoToDashboard, onOpenBlog }) {
             if (!activeRef.current) return;
             setHoldingAgent(null);
             setTypingAgent(step.agent);
-            currentStep++;
-            timerRef.current = setTimeout(runLoop, 1500);
+            timerRef.current = setTimeout(() => {
+              if (!activeRef.current) return;
+              setTypingAgent(null);
+              currentStep++;
+              if (currentStep < chatSteps.length) {
+                setMessages(prev => [...prev, chatSteps[currentStep]]);
+                currentStep++;
+              }
+              runLoop();
+            }, 1500);
           };
           return; // Stop the loop — release will resume it
         }
         setTypingAgent(step.agent);
         delay = 1500;
-      } else {
+      } else if (step.type === 'outgoing') {
+        setTypingAgent(null);
+        setMessages(prev => [...prev, step]);
+        delay = 3000;
+      } else if (step.type === 'incoming') {
         setTypingAgent(null);
         setMessages(prev => [...prev, step]);
         delay = 3000;
@@ -144,8 +159,8 @@ export default function LandingPage({ onGoToDashboard, onOpenBlog }) {
           <li><a href="#faq" onClick={(e) => { e.preventDefault(); handleScrollTo('faq'); }}>FAQ</a></li>
           <li><a href="/blog" onClick={(e) => { e.preventDefault(); onOpenBlog?.(); }}>Blog & Panduan API</a></li>
         </ul>
-        <button className="nav-btn" onClick={onGoToDashboard}>
-          Open Dashboard
+        <button className="nav-btn" onClick={handleLogin}>
+          Login / Masuk
         </button>
       </nav>
 
@@ -162,7 +177,7 @@ export default function LandingPage({ onGoToDashboard, onOpenBlog }) {
               Solusi WhatsApp Unofficial API Indo tercepat dan terandal untuk bisnis. Hubungkan nomor WhatsApp Anda dalam 1 klik, aktifkan unlimited multi-agent CS & sales inbox, automasi Bot AI dengan Webhook realtime, dan pantau SLA follow-up 24 jam tanpa batasan kuota pesan.
             </p>
             <div className="hero-ctas">
-              <button className="nav-btn hero-btn-large" onClick={onGoToDashboard}>
+              <button className="nav-btn hero-btn-large" onClick={handleRegister}>
                 Mulai Uji Coba Gratis
               </button>
               <a href="#pricing" className="btn-secondary hero-btn-large" onClick={(e) => { e.preventDefault(); handleScrollTo('pricing'); }}>
@@ -485,8 +500,8 @@ export default function LandingPage({ onGoToDashboard, onOpenBlog }) {
                 <span>Local Message Database & Contact Store</span>
               </li>
             </ul>
-            <button className="pricing-btn primary" onClick={onGoToDashboard}>
-              Get Started Now
+            <button className="pricing-btn primary" onClick={handleRegister}>
+              Mulai Uji Coba 7 Hari
             </button>
           </div>
 
@@ -539,8 +554,8 @@ export default function LandingPage({ onGoToDashboard, onOpenBlog }) {
                 <span>Priority 24/7 Developer & Technical Support</span>
               </li>
             </ul>
-            <button className="pricing-btn secondary" onClick={onGoToDashboard}>
-              Upgrade to Unlimited
+            <button className="pricing-btn secondary" onClick={handleRegister}>
+              Daftar Paket Unlimited
             </button>
           </div>
         </div>
