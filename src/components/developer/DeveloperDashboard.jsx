@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import {
   Key, Webhook, Play, FileCode, Bot, Copy, Check, Plus, Trash2, RefreshCw,
   Send, Shield, CheckCircle2, XCircle, Clock, AlertTriangle, ExternalLink,
-  Code2, Eye, EyeOff, Layers, Radio, Sparkles, Terminal, Activity, ArrowRight
+  Code2, Eye, EyeOff, Layers, Radio, Sparkles, Terminal, Activity, ArrowRight,
+  Zap, Lock, Cpu, Server, CheckCheck, HelpCircle, ChevronRight, Globe,
+  Download, Database, Sliders, Smartphone, CornerDownRight
 } from 'lucide-react';
 import { fetchWithAuth } from '../../utils/api.js';
 import { showToast } from '../../utils/toastBus.js';
@@ -15,7 +17,9 @@ export default function DeveloperDashboard({ userProfile, activeSessionId = 'def
   const [loadingKeys, setLoadingKeys] = useState(true);
   const [showNewKeyModal, setShowNewKeyModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
-  const [newKeyScopes, setNewKeyScopes] = useState(['messages:send', 'messages:read', 'contacts:sync', 'sessions:read', 'agent:hold']);
+  const [newKeyScopes, setNewKeyScopes] = useState([
+    'messages:send', 'messages:read', 'contacts:sync', 'sessions:read', 'agent:hold'
+  ]);
   const [creatingKey, setCreatingKey] = useState(false);
   const [revealedKey, setRevealedKey] = useState(null); // Once generated
 
@@ -52,25 +56,33 @@ export default function DeveloperDashboard({ userProfile, activeSessionId = 'def
   const [copiedSnippet, setCopiedSnippet] = useState(false);
   const [copiedKeyId, setCopiedKeyId] = useState(null);
 
+  // Auth helper format tab
+  const [authHeaderFormat, setAuthHeaderFormat] = useState('bearer');
+
   const availableScopes = [
-    { id: 'messages:send', label: 'Send Messages', desc: 'Send text, media, documents, and templates' },
-    { id: 'messages:read', label: 'Read Messages & History', desc: 'Fetch conversation logs and message history' },
-    { id: 'contacts:sync', label: 'Contacts Sync', desc: 'Read and update saved CRM contacts' },
-    { id: 'sessions:read', label: 'Sessions & QR', desc: 'Check device connection state and QR codes' },
-    { id: 'agent:hold', label: 'AI Bot Hold / Resume', desc: 'Pause and resume automated replies for chats' },
+    { id: 'messages:send', label: 'messages:send', title: 'Send Messages', desc: 'Send text, media, documents, and templates', color: '#3b82f6' },
+    { id: 'messages:read', label: 'messages:read', title: 'Read Messages & History', desc: 'Fetch conversation logs and message history', color: '#10b981' },
+    { id: 'contacts:sync', label: 'contacts:sync', title: 'Contacts Sync', desc: 'Read and update saved address book & CRM contacts', color: '#8b5cf6' },
+    { id: 'sessions:read', label: 'sessions:read', title: 'Sessions & QR', desc: 'Check device connection state and QR codes', color: '#06b6d4' },
+    { id: 'agent:hold', label: 'agent:hold', title: 'AI Bot Hold / Resume', desc: 'Pause and resume automated replies for chats', color: '#f59e0b' },
   ];
 
   const availableEvents = [
-    { id: 'message.received', label: 'message.received', desc: 'Incoming customer messages (text, media, location, buttons)' },
-    { id: 'message.sent', label: 'message.sent', desc: 'Outbound messages dispatched by human agents or API' },
-    { id: 'message.status', label: 'message.status', desc: 'Delivery receipts, double-ticks, and read receipts' },
-    { id: 'session.status', label: 'session.status', desc: 'Connection updates (QR ready, connected, disconnected)' },
-    { id: 'agent.hold', label: 'agent.hold', desc: 'Fired when a human agent takes over and pauses bot replies' },
-    { id: 'agent.resume', label: 'agent.resume', desc: 'Fired when bot auto-reply is resumed for a conversation' },
+    { id: 'message.received', label: 'message.received', title: 'Incoming Message', desc: 'Real-time incoming customer messages (text, media, location, buttons)' },
+    { id: 'message.sent', label: 'message.sent', title: 'Outbound Message', desc: 'Messages sent by operators, bots, or external REST API' },
+    { id: 'message.status', label: 'message.status', title: 'Delivery Status Update', desc: 'Delivery receipts, double grey ticks, and blue read receipts' },
+    { id: 'session.status', label: 'session.status', title: 'Device Connection', desc: 'WhatsApp session updates (QR code ready, connected, disconnected)' },
+    { id: 'agent.hold', label: 'agent.hold', title: 'Human Agent Takeover', desc: 'Fired when a human agent takes over and pauses bot replies' },
+    { id: 'agent.resume', label: 'agent.resume', title: 'AI Bot Resumed', desc: 'Fired when bot auto-reply is resumed for a conversation' },
   ];
 
   // Base API URL
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000';
+
+  // Quota details
+  const sent = userProfile?.messagesSent || 0;
+  const limit = userProfile?.messageLimit ?? 500;
+  const quotaPercent = limit > 0 ? Math.min((sent / limit) * 100, 100) : 0;
 
   // Load API Keys
   const loadKeys = async () => {
@@ -99,7 +111,9 @@ export default function DeveloperDashboard({ userProfile, activeSessionId = 'def
           setWebhookConfig({
             webhookUrl: data.webhookUrl || '',
             secret: data.secret || '',
-            events: Array.isArray(data.events) && data.events.length > 0 ? data.events : ['message.received', 'message.status', 'session.status', 'agent.hold', 'agent.resume'],
+            events: Array.isArray(data.events) && data.events.length > 0
+              ? data.events
+              : ['message.received', 'message.status', 'session.status', 'agent.hold', 'agent.resume'],
             isActive: data.isActive !== undefined ? data.isActive : true,
           });
         }
@@ -531,207 +545,283 @@ func main() {
   };
 
   return (
-    <div className="view-container" style={{ paddingBottom: '60px' }}>
-      {/* Top Header */}
-      <div className="view-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Code2 className="text-primary" size={26} />
-              API & Webhook Integration
-            </h2>
-            <span className="badge" style={{ backgroundColor: 'var(--primary-subtle)', color: 'var(--primary)', fontWeight: '600', fontSize: '0.75rem' }}>
-              Developer Portal
-            </span>
+    <div className="view-container" style={{ paddingBottom: '60px', maxWidth: '1400px', margin: '0 auto' }}>
+      {/* ========================================================================= */}
+      {/* HERO / DEVELOPER HEADER */}
+      {/* ========================================================================= */}
+      <div style={{
+        position: 'relative',
+        borderRadius: '16px',
+        padding: '28px 32px',
+        marginBottom: '24px',
+        background: 'linear-gradient(135deg, rgba(63, 103, 216, 0.08) 0%, rgba(16, 185, 129, 0.04) 100%)',
+        border: '1px solid var(--border-color)',
+        overflow: 'hidden',
+        boxShadow: 'var(--shadow-card)'
+      }}>
+        <div style={{
+          position: 'absolute',
+          top: '-60px',
+          right: '-40px',
+          width: '240px',
+          height: '240px',
+          background: 'radial-gradient(circle, var(--primary-glow) 0%, transparent 70%)',
+          borderRadius: '50%',
+          pointerEvents: 'none',
+          opacity: 0.6
+        }} />
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '20px', position: 'relative', zIndex: 1 }}>
+          <div style={{ maxWidth: '640px' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '4px 12px', borderRadius: '20px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', fontSize: '0.78rem', fontWeight: '600', color: 'var(--primary)', marginBottom: '12px' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981', display: 'inline-block' }} />
+              REST API v1 & Realtime Webhooks Engine Active
+            </div>
+            <h1 style={{ margin: '0 0 8px 0', fontSize: '1.75rem', fontWeight: '800', letterSpacing: '-0.02em', color: 'var(--text-main)' }}>
+              Developer & API Integration
+            </h1>
+            <p style={{ margin: 0, fontSize: '0.92rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+              Seamlessly connect external CRM systems, dispatch real-time incoming message events, orchestrate AI Chatbots with human operator takeover, and automate WhatsApp workflows.
+            </p>
           </div>
-          <p className="text-muted" style={{ marginTop: '4px', maxWidth: '680px' }}>
-            Connect external CRMs, dispatch real-time webhooks, orchestrate AI Chatbots with human-agent takeover, and test live API endpoints.
-          </p>
+
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => {
+                setActiveSubTab('playground');
+              }}
+              className="btn btn-secondary"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 18px', fontWeight: '600', fontSize: '0.86rem' }}
+            >
+              <Play size={16} className="text-primary" />
+              API Playground
+            </button>
+            <button
+              onClick={() => setShowNewKeyModal(true)}
+              className="btn btn-primary"
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', fontWeight: '700', fontSize: '0.88rem', boxShadow: '0 4px 14px var(--primary-glow)' }}
+            >
+              <Plus size={18} />
+              Create API Key
+            </button>
+          </div>
         </div>
 
-        {/* Quick Info Badges */}
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <div style={{ padding: '8px 14px', borderRadius: '8px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', fontSize: '0.8rem' }}>
-            <span className="text-muted">Base URL: </span>
-            <code style={{ color: 'var(--primary)', fontWeight: '600' }}>{baseUrl}</code>
+        {/* Quick KPI Stat Chips */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '14px',
+          marginTop: '24px',
+          position: 'relative',
+          zIndex: 1
+        }}>
+          {/* Base URL */}
+          <div style={{ padding: '14px 16px', borderRadius: '10px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Server size={18} />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-dimmed)', fontWeight: '700' }}>API Gateway</div>
+              <div style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {baseUrl}
+              </div>
+            </div>
           </div>
-          <div style={{ padding: '8px 14px', borderRadius: '8px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', fontSize: '0.8rem' }}>
-            <span className="text-muted">Session: </span>
-            <strong style={{ color: 'var(--text-main)' }}>{activeSessionId}</strong>
+
+          {/* Active Keys */}
+          <div style={{ padding: '14px 16px', borderRadius: '10px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Key size={18} />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-dimmed)', fontWeight: '700' }}>Active Keys</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                {keys.length} <span style={{ fontSize: '0.75rem', fontWeight: '500', color: 'var(--text-muted)' }}>configured</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Webhook Status */}
+          <div style={{ padding: '14px 16px', borderRadius: '10px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Webhook size={18} />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-dimmed)', fontWeight: '700' }}>Webhook Endpoint</div>
+              <div style={{ fontSize: '0.85rem', fontWeight: '600', color: webhookConfig.webhookUrl ? '#10b981' : 'var(--text-dimmed)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {webhookConfig.webhookUrl ? 'Configured & Active' : 'Not Configured'}
+              </div>
+            </div>
+          </div>
+
+          {/* Messages Quota Tracker */}
+          <div style={{ padding: '14px 16px', borderRadius: '10px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Zap size={18} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-dimmed)' }}>
+                <span>QUOTA</span>
+                <span>{sent} / {limit}</span>
+              </div>
+              <div style={{ height: '5px', borderRadius: '3px', background: 'var(--border-color)', marginTop: '4px', overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${quotaPercent}%`, background: quotaPercent > 90 ? '#ef4444' : 'var(--primary)', borderRadius: '3px', transition: 'width 0.3s' }} />
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-
-      {/* Sub-Navigation Tabs */}
-      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '2px', marginBottom: '24px', overflowX: 'auto' }}>
-        <button
-          onClick={() => setActiveSubTab('keys')}
-          className={`btn-tab ${activeSubTab === 'keys' ? 'active' : ''}`}
-          style={{
-            padding: '10px 18px',
-            borderRadius: '8px 8px 0 0',
-            border: 'none',
-            background: activeSubTab === 'keys' ? 'var(--primary-subtle)' : 'transparent',
-            color: activeSubTab === 'keys' ? 'var(--primary)' : 'var(--text-muted)',
-            fontWeight: activeSubTab === 'keys' ? '700' : '500',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            borderBottom: activeSubTab === 'keys' ? '2px solid var(--primary)' : '2px solid transparent',
-          }}
-        >
-          <Key size={16} />
-          API Keys & Auth
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('webhook')}
-          className={`btn-tab ${activeSubTab === 'webhook' ? 'active' : ''}`}
-          style={{
-            padding: '10px 18px',
-            borderRadius: '8px 8px 0 0',
-            border: 'none',
-            background: activeSubTab === 'webhook' ? 'var(--primary-subtle)' : 'transparent',
-            color: activeSubTab === 'webhook' ? 'var(--primary)' : 'var(--text-muted)',
-            fontWeight: activeSubTab === 'webhook' ? '700' : '500',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            borderBottom: activeSubTab === 'webhook' ? '2px solid var(--primary)' : '2px solid transparent',
-          }}
-        >
-          <Webhook size={16} />
-          Realtime Webhooks
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('playground')}
-          className={`btn-tab ${activeSubTab === 'playground' ? 'active' : ''}`}
-          style={{
-            padding: '10px 18px',
-            borderRadius: '8px 8px 0 0',
-            border: 'none',
-            background: activeSubTab === 'playground' ? 'var(--primary-subtle)' : 'transparent',
-            color: activeSubTab === 'playground' ? 'var(--primary)' : 'var(--text-muted)',
-            fontWeight: activeSubTab === 'playground' ? '700' : '500',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            borderBottom: activeSubTab === 'playground' ? '2px solid var(--primary)' : '2px solid transparent',
-          }}
-        >
-          <Play size={16} />
-          API Playground
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('sdks')}
-          className={`btn-tab ${activeSubTab === 'sdks' ? 'active' : ''}`}
-          style={{
-            padding: '10px 18px',
-            borderRadius: '8px 8px 0 0',
-            border: 'none',
-            background: activeSubTab === 'sdks' ? 'var(--primary-subtle)' : 'transparent',
-            color: activeSubTab === 'sdks' ? 'var(--primary)' : 'var(--text-muted)',
-            fontWeight: activeSubTab === 'sdks' ? '700' : '500',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            borderBottom: activeSubTab === 'sdks' ? '2px solid var(--primary)' : '2px solid transparent',
-          }}
-        >
-          <FileCode size={16} />
-          Code Snippets
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('bot_handoff')}
-          className={`btn-tab ${activeSubTab === 'bot_handoff' ? 'active' : ''}`}
-          style={{
-            padding: '10px 18px',
-            borderRadius: '8px 8px 0 0',
-            border: 'none',
-            background: activeSubTab === 'bot_handoff' ? 'var(--primary-subtle)' : 'transparent',
-            color: activeSubTab === 'bot_handoff' ? 'var(--primary)' : 'var(--text-muted)',
-            fontWeight: activeSubTab === 'bot_handoff' ? '700' : '500',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            borderBottom: activeSubTab === 'bot_handoff' ? '2px solid var(--primary)' : '2px solid transparent',
-          }}
-        >
-          <Bot size={16} />
-          AI Bot & Workflow Guide
-        </button>
       </div>
 
       {/* ========================================================================= */}
-      {/* TAB 1: API KEYS & AUTH */}
+      {/* SEGMENTED NAVIGATION TABS */}
+      {/* ========================================================================= */}
+      <div style={{
+        display: 'flex',
+        gap: '6px',
+        padding: '6px',
+        borderRadius: '12px',
+        background: 'var(--card-bg)',
+        border: '1px solid var(--border-color)',
+        marginBottom: '24px',
+        overflowX: 'auto',
+        boxShadow: 'var(--shadow-card)'
+      }}>
+        {[
+          { id: 'keys', label: 'API Keys & Auth', icon: Key, badge: keys.length > 0 ? keys.length : null },
+          { id: 'webhook', label: 'Realtime Webhooks', icon: Webhook, badge: webhookLogs.length > 0 ? webhookLogs.length : null },
+          { id: 'playground', label: 'API Playground', icon: Play },
+          { id: 'sdks', label: 'Code Snippets & SDKs', icon: FileCode },
+          { id: 'bot_handoff', label: 'AI Bot & Workflows', icon: Bot },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeSubTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveSubTab(tab.id)}
+              style={{
+                flex: '1 0 auto',
+                padding: '10px 18px',
+                borderRadius: '8px',
+                border: 'none',
+                background: isActive ? 'var(--primary)' : 'transparent',
+                color: isActive ? '#ffffff' : 'var(--text-muted)',
+                fontWeight: isActive ? '700' : '600',
+                fontSize: '0.88rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                transition: 'var(--transition-smooth)',
+                boxShadow: isActive ? '0 2px 8px var(--primary-glow)' : 'none'
+              }}
+            >
+              <Icon size={16} />
+              <span>{tab.label}</span>
+              {tab.badge !== null && (
+                <span style={{
+                  padding: '2px 7px',
+                  borderRadius: '10px',
+                  fontSize: '0.72rem',
+                  fontWeight: '700',
+                  background: isActive ? 'rgba(255, 255, 255, 0.25)' : 'var(--primary-subtle)',
+                  color: isActive ? '#ffffff' : 'var(--primary)'
+                }}>
+                  {tab.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ========================================================================= */}
+      {/* TAB 1: API KEYS & AUTH (REDESIGNED) */}
       {/* ========================================================================= */}
       {activeSubTab === 'keys' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
           {/* Newly Created Key Alert (One-time Reveal) */}
           {revealedKey && (
             <div style={{
-              padding: '16px 20px',
-              borderRadius: '10px',
+              padding: '20px 24px',
+              borderRadius: '12px',
               backgroundColor: '#064e3b',
               border: '1px solid #059669',
               color: '#d1fae5',
               display: 'flex',
               flexDirection: 'column',
-              gap: '10px'
+              gap: '12px',
+              boxShadow: '0 8px 24px rgba(5, 150, 105, 0.2)',
+              animation: 'fadeIn 0.3s ease-out'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Sparkles size={18} style={{ color: '#34d399' }} />
-                  <strong style={{ fontSize: '0.95rem' }}>New API Key Created: {revealedKey.name}</strong>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Sparkles size={18} style={{ color: '#ffffff' }} />
+                  </div>
+                  <div>
+                    <strong style={{ fontSize: '1.02rem', color: '#ffffff' }}>New API Key Created: {revealedKey.name}</strong>
+                    <div style={{ fontSize: '0.8rem', color: '#a7f3d0' }}>Copy this key now. It will not be shown again!</div>
+                  </div>
                 </div>
                 <button
                   onClick={() => setRevealedKey(null)}
-                  style={{ background: 'none', border: 'none', color: '#a7f3d0', cursor: 'pointer', fontSize: '0.8rem' }}
+                  style={{ background: 'none', border: 'none', color: '#a7f3d0', cursor: 'pointer', fontSize: '0.82rem', padding: '4px 8px' }}
                 >
-                  Dismiss
+                  ✕ Dismiss
                 </button>
               </div>
-              <p style={{ margin: 0, fontSize: '0.82rem', color: '#a7f3d0' }}>
-                Please copy your API key now. For your security, you will not be able to view the full secret key again.
-              </p>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '8px 12px', borderRadius: '6px' }}>
-                <code style={{ flex: 1, fontFamily: 'monospace', color: '#6ee7b7', fontSize: '0.9rem', wordBreak: 'break-all' }}>
+
+              <div style={{
+                display: 'flex',
+                gap: '10px',
+                alignItems: 'center',
+                background: 'rgba(0,0,0,0.4)',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                border: '1px solid rgba(255, 255, 255, 0.1)'
+              }}>
+                <code style={{ flex: 1, fontFamily: 'Consolas, Monaco, monospace', color: '#34d399', fontSize: '0.95rem', wordBreak: 'break-all', fontWeight: '700' }}>
                   {revealedKey.rawKey}
                 </code>
                 <button
                   onClick={() => copyToClipboard(revealedKey.rawKey, 'revealed')}
                   className="btn btn-sm"
-                  style={{ backgroundColor: '#10b981', color: 'white', border: 'none', display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px' }}
+                  style={{
+                    backgroundColor: '#10b981',
+                    color: 'white',
+                    border: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 16px',
+                    fontWeight: '700',
+                    fontSize: '0.85rem'
+                  }}
                 >
-                  {copiedKeyId === 'revealed' ? <Check size={14} /> : <Copy size={14} />}
-                  Copy
+                  {copiedKeyId === 'revealed' ? <Check size={16} /> : <Copy size={16} />}
+                  {copiedKeyId === 'revealed' ? 'Copied!' : 'Copy Key'}
                 </button>
               </div>
             </div>
           )}
 
-          {/* Top Actions & Keys List */}
-          <div className="card glass" style={{ padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+          {/* Main API Keys Container */}
+          <div className="card glass" style={{ padding: '28px', borderRadius: '16px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-card)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '14px' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Active API Keys</h3>
-                <p className="text-muted" style={{ fontSize: '0.85rem', margin: '4px 0 0 0' }}>
-                  Authenticate server-to-server requests using Bearer tokens or <code>X-API-Key</code> headers.
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-main)' }}>Active API Keys</h3>
+                <p className="text-muted" style={{ fontSize: '0.88rem', margin: '4px 0 0 0' }}>
+                  API keys allow automated scripts, AI agents, and external servers to interact with your WhatsApp instances.
                 </p>
               </div>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button
                   onClick={loadKeys}
                   className="btn btn-secondary"
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 16px', fontWeight: '600' }}
                   disabled={loadingKeys}
                 >
                   <RefreshCw size={15} className={loadingKeys ? 'spin' : ''} />
@@ -740,7 +830,7 @@ func main() {
                 <button
                   onClick={() => setShowNewKeyModal(true)}
                   className="btn btn-primary"
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 18px', fontWeight: '700', boxShadow: '0 4px 12px var(--primary-glow)' }}
                 >
                   <Plus size={16} />
                   Create API Key
@@ -748,77 +838,201 @@ func main() {
               </div>
             </div>
 
-            {/* Keys Table */}
+            {/* Keys Table OR Rich Empty State */}
             {loadingKeys ? (
-              <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-                <RefreshCw size={24} className="spin" style={{ margin: '0 auto 10px auto', display: 'block' }} />
-                Loading API keys...
+              <div style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>
+                <RefreshCw size={28} className="spin" style={{ margin: '0 auto 12px auto', display: 'block', color: 'var(--primary)' }} />
+                <span style={{ fontWeight: '600' }}>Loading API keys...</span>
               </div>
             ) : keys.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '50px 20px', border: '1px dashed var(--border-color)', borderRadius: '8px' }}>
-                <Key size={36} style={{ color: 'var(--text-dimmed)', margin: '0 auto 12px auto', display: 'block' }} />
-                <h4 style={{ margin: 0 }}>No API Keys Created Yet</h4>
-                <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '6px', maxWidth: '400px', margin: '6px auto 16px auto' }}>
-                  Generate an API key to allow your backend, chatbot engine, or CRM to send WhatsApp messages automatically.
+              /* PREMIUM EMPTY STATE */
+              <div style={{
+                borderRadius: '16px',
+                padding: '48px 24px',
+                background: 'radial-gradient(ellipse at 50% 0%, rgba(63, 103, 216, 0.09) 0%, rgba(0, 0, 0, 0) 70%)',
+                border: '1px dashed var(--border-color)',
+                textAlign: 'center',
+                position: 'relative'
+              }}>
+                <div style={{
+                  width: '68px',
+                  height: '68px',
+                  borderRadius: '20px',
+                  background: 'var(--primary-subtle)',
+                  border: '1px solid var(--primary-border)',
+                  color: 'var(--primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 18px auto',
+                  boxShadow: '0 8px 24px var(--primary-glow)'
+                }}>
+                  <Key size={32} />
+                </div>
+
+                <h3 style={{ margin: '0 0 8px 0', fontSize: '1.35rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                  No API Keys Created Yet
+                </h3>
+                <p className="text-muted" style={{ fontSize: '0.92rem', maxWidth: '520px', margin: '0 auto 24px auto', lineHeight: '1.5' }}>
+                  Generate an API secret key to integrate your backend, CRM, chatbot engines (OpenAI/Claude), or automation workflows (n8n, Make).
                 </p>
-                <button onClick={() => setShowNewKeyModal(true)} className="btn btn-primary">
-                  <Plus size={16} style={{ marginRight: '6px' }} />
+
+                <button
+                  onClick={() => setShowNewKeyModal(true)}
+                  className="btn btn-primary"
+                  style={{
+                    padding: '12px 28px',
+                    fontSize: '0.95rem',
+                    fontWeight: '700',
+                    borderRadius: '10px',
+                    boxShadow: '0 6px 20px var(--primary-glow)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <Plus size={18} />
                   Generate First API Key
                 </button>
+
+                {/* 3 Step Quick Onboarding Cards */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                  gap: '14px',
+                  marginTop: '36px',
+                  textAlign: 'left'
+                }}>
+                  <div style={{ padding: '16px', borderRadius: '12px', background: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '800' }}>1</span>
+                      <strong style={{ fontSize: '0.88rem', color: 'var(--text-main)' }}>Create Scoped Key</strong>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                      Name your key and pick granular scopes like <code>messages:send</code> or <code>agent:hold</code>.
+                    </p>
+                  </div>
+
+                  <div style={{ padding: '16px', borderRadius: '12px', background: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '800' }}>2</span>
+                      <strong style={{ fontSize: '0.88rem', color: 'var(--text-main)' }}>Authorize Requests</strong>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                      Pass the token in <code>Authorization: Bearer &lt;key&gt;</code> or <code>X-API-Key</code> headers.
+                    </p>
+                  </div>
+
+                  <div style={{ padding: '16px', borderRadius: '12px', background: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: '800' }}>3</span>
+                      <strong style={{ fontSize: '0.88rem', color: 'var(--text-main)' }}>Automate & Scale</strong>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                      Send text, media, voice notes, and coordinate human agent takeover in real-time.
+                    </p>
+                  </div>
+                </div>
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+              /* ACTIVE KEYS TABLE */
+              <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                   <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                      <th style={{ padding: '12px 14px' }}>Name / Label</th>
-                      <th style={{ padding: '12px 14px' }}>Key Token</th>
-                      <th style={{ padding: '12px 14px' }}>Scopes</th>
-                      <th style={{ padding: '12px 14px' }}>Last Used</th>
-                      <th style={{ padding: '12px 14px' }}>Created</th>
-                      <th style={{ padding: '12px 14px', textAlign: 'right' }}>Actions</th>
+                    <tr style={{ background: 'var(--bg-main)', borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                      <th style={{ padding: '14px 18px', fontWeight: '700' }}>Name / Token</th>
+                      <th style={{ padding: '14px 18px', fontWeight: '700' }}>Key Token Prefix</th>
+                      <th style={{ padding: '14px 18px', fontWeight: '700' }}>Scopes / Permissions</th>
+                      <th style={{ padding: '14px 18px', fontWeight: '700' }}>Last Used</th>
+                      <th style={{ padding: '14px 18px', fontWeight: '700' }}>Created</th>
+                      <th style={{ padding: '14px 18px', textAlign: 'right', fontWeight: '700' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {keys.map((k) => (
-                      <tr key={k.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ padding: '14px' }}>
-                          <strong style={{ color: 'var(--text-main)' }}>{k.name}</strong>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-dimmed)' }}>ID: {k.id}</div>
-                        </td>
-                        <td style={{ padding: '14px' }}>
-                          <code style={{ background: 'var(--bg-main)', padding: '4px 8px', borderRadius: '4px', color: 'var(--primary)' }}>
-                            {k.keyPrefix}
-                          </code>
-                        </td>
-                        <td style={{ padding: '14px' }}>
-                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                            {k.scopes.slice(0, 3).map((s) => (
-                              <span key={s} style={{ fontSize: '0.72rem', background: 'var(--bg-main)', border: '1px solid var(--border-color)', padding: '2px 6px', borderRadius: '4px', color: 'var(--text-muted)' }}>
-                                {s}
-                              </span>
-                            ))}
-                            {k.scopes.length > 3 && (
-                              <span style={{ fontSize: '0.72rem', color: 'var(--text-dimmed)' }}>
-                                +{k.scopes.length - 3} more
-                              </span>
-                            )}
+                      <tr key={k.id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }}>
+                        <td style={{ padding: '16px 18px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <Key size={16} />
+                            </div>
+                            <div>
+                              <strong style={{ color: 'var(--text-main)', fontSize: '0.92rem' }}>{k.name}</strong>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-dimmed)' }}>ID: {k.id}</div>
+                            </div>
                           </div>
                         </td>
-                        <td style={{ padding: '14px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-                          {k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleDateString() : 'Never'}
+                        <td style={{ padding: '16px 18px' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'var(--bg-main)', padding: '5px 10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                            <code style={{ color: 'var(--primary)', fontWeight: '700', fontSize: '0.85rem', fontFamily: 'Consolas, Monaco, monospace' }}>
+                              {k.keyPrefix}
+                            </code>
+                            <button
+                              onClick={() => copyToClipboard(k.keyPrefix, k.id)}
+                              style={{ background: 'none', border: 'none', color: 'var(--text-dimmed)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                              title="Copy prefix"
+                            >
+                              {copiedKeyId === k.id ? <Check size={14} style={{ color: '#10b981' }} /> : <Copy size={14} />}
+                            </button>
+                          </div>
                         </td>
-                        <td style={{ padding: '14px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                        <td style={{ padding: '16px 18px' }}>
+                          <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                            {k.scopes.map((s) => {
+                              const scopeMeta = availableScopes.find(as => as.id === s);
+                              return (
+                                <span
+                                  key={s}
+                                  style={{
+                                    fontSize: '0.72rem',
+                                    fontWeight: '600',
+                                    padding: '3px 8px',
+                                    borderRadius: '6px',
+                                    background: scopeMeta ? `${scopeMeta.color}15` : 'var(--bg-main)',
+                                    color: scopeMeta ? scopeMeta.color : 'var(--text-muted)',
+                                    border: `1px solid ${scopeMeta ? `${scopeMeta.color}30` : 'var(--border-color)'}`
+                                  }}
+                                >
+                                  {s}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </td>
+                        <td style={{ padding: '16px 18px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                          {k.lastUsedAt ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                              <Clock size={14} className="text-muted" />
+                              {new Date(k.lastUsedAt).toLocaleDateString()}
+                            </div>
+                          ) : (
+                            <span style={{ color: 'var(--text-dimmed)' }}>Never used</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '16px 18px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                           {new Date(k.createdAt).toLocaleDateString()}
                         </td>
-                        <td style={{ padding: '14px', textAlign: 'right' }}>
+                        <td style={{ padding: '16px 18px', textAlign: 'right' }}>
                           <button
                             onClick={() => handleRevokeKey(k.id)}
                             className="btn btn-sm"
-                            style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)' }}
+                            style={{
+                              color: '#ef4444',
+                              background: 'rgba(239, 68, 68, 0.08)',
+                              border: '1px solid rgba(239, 68, 68, 0.25)',
+                              padding: '6px 12px',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              fontWeight: '600',
+                              fontSize: '0.78rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
                             title="Revoke Key"
                           >
                             <Trash2 size={14} />
+                            Revoke
                           </button>
                         </td>
                       </tr>
@@ -829,18 +1043,99 @@ func main() {
             )}
           </div>
 
-          {/* Quick Authentication Card */}
-          <div className="card glass" style={{ padding: '20px' }}>
-            <h4 style={{ margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Shield size={18} className="text-primary" />
-              How to Authenticate API Requests
-            </h4>
-            <p className="text-muted" style={{ fontSize: '0.85rem', margin: '0 0 14px 0' }}>
-              Pass your API key in the HTTP request header using standard Bearer authorization:
-            </p>
-            <pre style={{ margin: 0, padding: '12px 16px', borderRadius: '8px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', overflowX: 'auto', fontSize: '0.84rem' }}>
-              <code>{`Authorization: Bearer ${sampleApiKey}\n# Or via custom header:\nX-API-Key: ${sampleApiKey}`}</code>
-            </pre>
+          {/* Authentication Reference Card */}
+          <div className="card glass" style={{ padding: '24px', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Shield size={18} />
+                </div>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '800' }}>Authentication Headers Reference</h4>
+                  <p className="text-muted" style={{ margin: '2px 0 0 0', fontSize: '0.82rem' }}>
+                    Include your API key on every REST request to authenticate as your workspace.
+                  </p>
+                </div>
+              </div>
+
+              {/* Header Format Switcher */}
+              <div style={{ display: 'flex', background: 'var(--bg-main)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <button
+                  onClick={() => setAuthHeaderFormat('bearer')}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: authHeaderFormat === 'bearer' ? 'var(--primary)' : 'transparent',
+                    color: authHeaderFormat === 'bearer' ? 'white' : 'var(--text-muted)',
+                    fontSize: '0.78rem',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Bearer Token
+                </button>
+                <button
+                  onClick={() => setAuthHeaderFormat('xapikey')}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: authHeaderFormat === 'xapikey' ? 'var(--primary)' : 'transparent',
+                    color: authHeaderFormat === 'xapikey' ? 'white' : 'var(--text-muted)',
+                    fontSize: '0.78rem',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  X-API-Key Header
+                </button>
+              </div>
+            </div>
+
+            <div style={{ position: 'relative' }}>
+              <pre style={{
+                margin: 0,
+                padding: '16px 20px',
+                borderRadius: '10px',
+                background: '#0d1117',
+                color: '#e6edf3',
+                fontFamily: 'Consolas, Monaco, monospace',
+                fontSize: '0.88rem',
+                lineHeight: '1.6',
+                overflowX: 'auto',
+                border: '1px solid #30363d'
+              }}>
+                <code>
+                  {authHeaderFormat === 'bearer'
+                    ? `# HTTP Authorization Header Format\nAuthorization: Bearer ${sampleApiKey}\nContent-Type: application/json`
+                    : `# Custom Header Format\nX-API-Key: ${sampleApiKey}\nContent-Type: application/json`}
+                </code>
+              </pre>
+
+              <button
+                onClick={() => copyToClipboard(authHeaderFormat === 'bearer' ? `Authorization: Bearer ${sampleApiKey}` : `X-API-Key: ${sampleApiKey}`, 'authHeader')}
+                style={{
+                  position: 'absolute',
+                  top: '12px',
+                  right: '12px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                  color: 'white',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '6px',
+                  padding: '6px 12px',
+                  fontSize: '0.78rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  cursor: 'pointer',
+                  fontWeight: '600'
+                }}
+              >
+                {copiedKeyId === 'authHeader' ? <Check size={14} style={{ color: '#10b981' }} /> : <Copy size={14} />}
+                {copiedKeyId === 'authHeader' ? 'Copied' : 'Copy'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -849,14 +1144,14 @@ func main() {
       {/* TAB 2: REALTIME WEBHOOKS & LOGS */}
       {/* ========================================================================= */}
       {activeSubTab === 'webhook' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Webhook Settings Card */}
-          <div className="card glass" style={{ padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+          {/* Webhook Configuration Card */}
+          <div className="card glass" style={{ padding: '28px', borderRadius: '16px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-card)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Webhook Configuration</h3>
-                <p className="text-muted" style={{ fontSize: '0.85rem', margin: '4px 0 0 0' }}>
-                  Receive live HTTP POST payloads whenever new WhatsApp messages arrive or statuses update.
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800' }}>Webhook Endpoint & Subscriptions</h3>
+                <p className="text-muted" style={{ fontSize: '0.88rem', margin: '4px 0 0 0' }}>
+                  The server pushes real-time JSON payloads to your destination URL whenever events occur.
                 </p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -864,88 +1159,92 @@ func main() {
                   onClick={handleTestWebhook}
                   className="btn btn-secondary"
                   disabled={testingWebhook || !webhookConfig.webhookUrl}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 16px', fontWeight: '600' }}
                 >
-                  <Send size={14} className={testingWebhook ? 'spin' : ''} />
-                  {testingWebhook ? 'Testing...' : 'Send Test Ping'}
+                  <Send size={15} className={testingWebhook ? 'spin' : ''} />
+                  {testingWebhook ? 'Pinging...' : 'Send Test Ping'}
                 </button>
                 <button
                   onClick={handleSaveWebhook}
                   className="btn btn-primary"
                   disabled={savingWebhook}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 18px', fontWeight: '700', boxShadow: '0 4px 12px var(--primary-glow)' }}
                 >
                   <Check size={16} />
-                  {savingWebhook ? 'Saving...' : 'Save Settings'}
+                  {savingWebhook ? 'Saving...' : 'Save Configuration'}
                 </button>
               </div>
             </div>
 
-            <form onSubmit={handleSaveWebhook} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              {/* Webhook URL Input */}
-              <div className="form-group">
-                <label style={{ fontWeight: '600', fontSize: '0.88rem', marginBottom: '6px', display: 'block' }}>
-                  Webhook Destination URL
-                </label>
-                <input
-                  type="url"
-                  className="form-input"
-                  placeholder="https://your-domain.com/api/whatsapp-webhook"
-                  value={webhookConfig.webhookUrl}
-                  onChange={(e) => setWebhookConfig({ ...webhookConfig, webhookUrl: e.target.value })}
-                  style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.9rem' }}
-                  required
-                />
-                <small className="text-muted" style={{ marginTop: '4px', display: 'block' }}>
-                  Must be an accessible HTTPS endpoint ready to accept JSON POST requests.
-                </small>
-              </div>
-
-              {/* Signing Secret */}
-              <div className="form-group">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <label style={{ fontWeight: '600', fontSize: '0.88rem' }}>
-                    Webhook Signing Secret (HMAC-SHA256)
+            <form onSubmit={handleSaveWebhook} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '18px' }}>
+                {/* Webhook URL Input */}
+                <div className="form-group">
+                  <label style={{ fontWeight: '700', fontSize: '0.88rem', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Globe size={15} className="text-primary" />
+                    Webhook Destination URL
                   </label>
-                  <button
-                    type="button"
-                    onClick={handleGenerateSecret}
-                    style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600' }}
-                  >
-                    Generate Secret
-                  </button>
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
                   <input
-                    type="text"
+                    type="url"
                     className="form-input"
-                    placeholder="whsec_..."
-                    value={webhookConfig.secret}
-                    onChange={(e) => setWebhookConfig({ ...webhookConfig, secret: e.target.value })}
-                    style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.9rem' }}
+                    placeholder="https://api.yourdomain.com/webhooks/whatsapp"
+                    value={webhookConfig.webhookUrl}
+                    onChange={(e) => setWebhookConfig({ ...webhookConfig, webhookUrl: e.target.value })}
+                    style={{ width: '100%', fontFamily: 'Consolas, Monaco, monospace', fontSize: '0.88rem', padding: '10px 14px' }}
+                    required
                   />
-                  {webhookConfig.secret && (
+                  <small className="text-muted" style={{ marginTop: '5px', display: 'block', fontSize: '0.78rem' }}>
+                    Must be an accessible HTTPS endpoint ready to accept JSON POST requests.
+                  </small>
+                </div>
+
+                {/* Signing Secret */}
+                <div className="form-group">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label style={{ fontWeight: '700', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Lock size={15} className="text-primary" />
+                      Signing Secret (HMAC-SHA256)
+                    </label>
                     <button
                       type="button"
-                      onClick={() => copyToClipboard(webhookConfig.secret, 'secret')}
-                      className="btn btn-secondary"
-                      style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                      onClick={handleGenerateSecret}
+                      style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '700' }}
                     >
-                      {copiedKeyId === 'secret' ? <Check size={14} /> : <Copy size={14} />}
+                      ✨ Generate Secret
                     </button>
-                  )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="whsec_..."
+                      value={webhookConfig.secret}
+                      onChange={(e) => setWebhookConfig({ ...webhookConfig, secret: e.target.value })}
+                      style={{ flex: 1, fontFamily: 'Consolas, Monaco, monospace', fontSize: '0.88rem', padding: '10px 14px' }}
+                    />
+                    {webhookConfig.secret && (
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(webhookConfig.secret, 'secret')}
+                        className="btn btn-secondary"
+                        style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '0 14px' }}
+                      >
+                        {copiedKeyId === 'secret' ? <Check size={15} style={{ color: '#10b981' }} /> : <Copy size={15} />}
+                      </button>
+                    )}
+                  </div>
+                  <small className="text-muted" style={{ marginTop: '5px', display: 'block', fontSize: '0.78rem' }}>
+                    Signed via header <code>X-Webhook-Signature-256: sha256=&lt;hmac&gt;</code> to verify authenticity.
+                  </small>
                 </div>
-                <small className="text-muted" style={{ marginTop: '4px', display: 'block' }}>
-                  Used to sign outgoing payloads via header <code>X-Webhook-Signature-256: sha256=&lt;hmac&gt;</code> to verify authenticity.
-                </small>
               </div>
 
-              {/* Event Subscriptions Checklist */}
+              {/* Event Subscriptions Matrix */}
               <div>
-                <label style={{ fontWeight: '600', fontSize: '0.88rem', marginBottom: '8px', display: 'block' }}>
-                  Subscribed Events
+                <label style={{ fontWeight: '700', fontSize: '0.92rem', marginBottom: '10px', display: 'block' }}>
+                  Subscribe to Realtime Events
                 </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
                   {availableEvents.map((evt) => {
                     const isChecked = webhookConfig.events.includes(evt.id);
                     return (
@@ -954,12 +1253,13 @@ func main() {
                         style={{
                           display: 'flex',
                           alignItems: 'flex-start',
-                          gap: '10px',
-                          padding: '10px 14px',
-                          borderRadius: '8px',
+                          gap: '12px',
+                          padding: '12px 16px',
+                          borderRadius: '10px',
                           border: isChecked ? '1px solid var(--primary)' : '1px solid var(--border-color)',
-                          background: isChecked ? 'var(--primary-subtle)' : 'var(--bg-main)',
-                          cursor: 'pointer'
+                          background: isChecked ? 'var(--primary-subtle)' : 'var(--card-bg)',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
                         }}
                       >
                         <input
@@ -972,13 +1272,14 @@ func main() {
                               setWebhookConfig({ ...webhookConfig, events: webhookConfig.events.filter(id => id !== evt.id) });
                             }
                           }}
-                          style={{ marginTop: '3px' }}
+                          style={{ marginTop: '3px', accentColor: 'var(--primary)', transform: 'scale(1.15)' }}
                         />
                         <div>
-                          <div style={{ fontWeight: '600', fontSize: '0.85rem', color: isChecked ? 'var(--primary)' : 'var(--text-main)' }}>
-                            {evt.label}
+                          <div style={{ fontWeight: '700', fontSize: '0.88rem', color: isChecked ? 'var(--primary)' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            {evt.title}
                           </div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          <code style={{ fontSize: '0.75rem', color: 'var(--text-dimmed)', display: 'block', marginTop: '2px' }}>{evt.label}</code>
+                          <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: '1.3' }}>
                             {evt.desc}
                           </div>
                         </div>
@@ -990,32 +1291,45 @@ func main() {
             </form>
           </div>
 
-          {/* Test Result Inspector (if executed) */}
+          {/* Test Result Inspector (if triggered) */}
           {testResult && (
             <div className="card glass" style={{
-              padding: '18px 22px',
-              borderLeft: testResult.success ? '4px solid #10b981' : '4px solid #ef4444'
+              padding: '20px 24px',
+              borderRadius: '14px',
+              borderLeft: testResult.success ? '5px solid #10b981' : '5px solid #ef4444',
+              boxShadow: 'var(--shadow-card)'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {testResult.success ? <CheckCircle2 size={20} style={{ color: '#10b981' }} /> : <XCircle size={20} style={{ color: '#ef4444' }} />}
-                  <strong style={{ fontSize: '1rem' }}>
-                    Webhook Test: {testResult.status} ({testResult.responseStatus ? `HTTP ${testResult.responseStatus}` : 'Network Failure'})
-                  </strong>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {testResult.success ? <CheckCircle2 size={22} style={{ color: '#10b981' }} /> : <XCircle size={22} style={{ color: '#ef4444' }} />}
+                  <div>
+                    <strong style={{ fontSize: '1.02rem', color: 'var(--text-main)' }}>
+                      Webhook Ping: {testResult.status} ({testResult.responseStatus ? `HTTP ${testResult.responseStatus}` : 'Connection Failed'})
+                    </strong>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Target: {testResult.sentPayload?.workspaceId || 'Endpoint'}</div>
+                  </div>
                 </div>
-                <span className="badge" style={{ backgroundColor: 'var(--bg-main)', border: '1px solid var(--border-color)' }}>
-                  Latency: {testResult.latencyMs}ms
+                <span style={{
+                  padding: '4px 12px',
+                  borderRadius: '20px',
+                  background: 'var(--bg-main)',
+                  border: '1px solid var(--border-color)',
+                  fontWeight: '700',
+                  fontSize: '0.82rem',
+                  color: 'var(--text-main)'
+                }}>
+                  ⏱ {testResult.latencyMs}ms latency
                 </span>
               </div>
-              <div style={{ fontSize: '0.82rem', marginBottom: '8px' }}>
-                <span className="text-muted">Response Body: </span>
-                <code style={{ background: 'var(--bg-main)', padding: '2px 6px', borderRadius: '4px' }}>
-                  {testResult.responseBody || '(empty body)'}
+              <div style={{ fontSize: '0.84rem', marginBottom: '10px' }}>
+                <span className="text-muted" style={{ fontWeight: '600' }}>Server Response: </span>
+                <code style={{ background: 'var(--bg-main)', padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+                  {testResult.responseBody || '(empty response body)'}
                 </code>
               </div>
-              <details style={{ marginTop: '8px', fontSize: '0.82rem' }}>
-                <summary style={{ cursor: 'pointer', color: 'var(--primary)' }}>View Sent Test Payload</summary>
-                <pre style={{ marginTop: '8px', padding: '10px', background: 'var(--bg-main)', borderRadius: '6px', overflowX: 'auto' }}>
+              <details style={{ marginTop: '10px', fontSize: '0.82rem' }}>
+                <summary style={{ cursor: 'pointer', color: 'var(--primary)', fontWeight: '600' }}>View Dispatched Test Payload</summary>
+                <pre style={{ marginTop: '8px', padding: '12px', background: '#0d1117', color: '#58a6ff', borderRadius: '8px', overflowX: 'auto', border: '1px solid #30363d' }}>
                   {JSON.stringify(testResult.sentPayload, null, 2)}
                 </pre>
               </details>
@@ -1023,53 +1337,57 @@ func main() {
           )}
 
           {/* Webhook Delivery Logs */}
-          <div className="card glass" style={{ padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div className="card glass" style={{ padding: '28px', borderRadius: '16px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-card)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Recent Webhook Delivery Logs</h3>
-                <p className="text-muted" style={{ fontSize: '0.85rem', margin: '4px 0 0 0' }}>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800' }}>Recent Event Delivery Logs</h3>
+                <p className="text-muted" style={{ fontSize: '0.88rem', margin: '4px 0 0 0' }}>
                   Inspect real-time event dispatch history, status codes, and latency.
                 </p>
               </div>
-              <button onClick={loadWebhookLogs} className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button onClick={loadWebhookLogs} className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', fontWeight: '600', fontSize: '0.85rem' }}>
                 <RefreshCw size={14} className={loadingLogs ? 'spin' : ''} />
                 Refresh Logs
               </button>
             </div>
 
             {loadingLogs ? (
-              <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
-                <RefreshCw size={20} className="spin" style={{ margin: '0 auto 8px auto', display: 'block' }} />
+              <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                <RefreshCw size={24} className="spin" style={{ margin: '0 auto 10px auto', display: 'block', color: 'var(--primary)' }} />
                 Loading logs...
               </div>
             ) : webhookLogs.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '36px', border: '1px dashed var(--border-color)', borderRadius: '8px', color: 'var(--text-muted)' }}>
-                <Radio size={28} style={{ color: 'var(--text-dimmed)', margin: '0 auto 8px auto', display: 'block' }} />
-                No webhook events dispatched yet. Click "Send Test Ping" to test your endpoint.
+              <div style={{ textAlign: 'center', padding: '48px', border: '1px dashed var(--border-color)', borderRadius: '12px', color: 'var(--text-muted)' }}>
+                <Radio size={32} style={{ color: 'var(--text-dimmed)', margin: '0 auto 10px auto', display: 'block' }} />
+                <h4 style={{ margin: 0 }}>No Webhook Dispatches Yet</h4>
+                <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '6px' }}>
+                  Click "Send Test Ping" above to test your destination endpoint.
+                </p>
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.86rem' }}>
+              <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
                   <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                      <th style={{ padding: '10px 12px' }}>Event</th>
-                      <th style={{ padding: '10px 12px' }}>Status</th>
-                      <th style={{ padding: '10px 12px' }}>HTTP Code</th>
-                      <th style={{ padding: '10px 12px' }}>Latency</th>
-                      <th style={{ padding: '10px 12px' }}>Timestamp</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'right' }}>Payload</th>
+                    <tr style={{ background: 'var(--bg-main)', borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                      <th style={{ padding: '12px 16px', fontWeight: '700' }}>Event</th>
+                      <th style={{ padding: '12px 16px', fontWeight: '700' }}>Status</th>
+                      <th style={{ padding: '12px 16px', fontWeight: '700' }}>HTTP Response</th>
+                      <th style={{ padding: '12px 16px', fontWeight: '700' }}>Latency</th>
+                      <th style={{ padding: '12px 16px', fontWeight: '700' }}>Timestamp</th>
+                      <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '700' }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {webhookLogs.map((log) => (
                       <tr key={log.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ padding: '12px' }}>
-                          <code style={{ color: 'var(--primary)', fontWeight: '600' }}>{log.eventType}</code>
+                        <td style={{ padding: '14px 16px' }}>
+                          <code style={{ color: 'var(--primary)', fontWeight: '700', fontSize: '0.85rem' }}>{log.eventType}</code>
                         </td>
-                        <td style={{ padding: '12px' }}>
-                          <span className={`badge ${log.status === 'SUCCESS' ? 'badge-success' : 'badge-danger'}`} style={{
-                            fontSize: '0.72rem',
-                            padding: '2px 8px',
+                        <td style={{ padding: '14px 16px' }}>
+                          <span style={{
+                            fontSize: '0.74rem',
+                            fontWeight: '700',
+                            padding: '3px 8px',
                             borderRadius: '12px',
                             backgroundColor: log.status === 'SUCCESS' ? '#065f46' : '#991b1b',
                             color: 'white',
@@ -1077,22 +1395,22 @@ func main() {
                             {log.status}
                           </span>
                         </td>
-                        <td style={{ padding: '12px', color: 'var(--text-muted)' }}>
+                        <td style={{ padding: '14px 16px', color: 'var(--text-main)', fontWeight: '600' }}>
                           {log.responseStatus ? `HTTP ${log.responseStatus}` : 'N/A'}
                         </td>
-                        <td style={{ padding: '12px', color: 'var(--text-muted)' }}>
+                        <td style={{ padding: '14px 16px', color: 'var(--text-muted)' }}>
                           {log.latencyMs}ms
                         </td>
-                        <td style={{ padding: '12px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                        <td style={{ padding: '14px 16px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
                           {new Date(log.createdAt).toLocaleTimeString()}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'right' }}>
+                        <td style={{ padding: '14px 16px', textAlign: 'right' }}>
                           <button
                             onClick={() => setSelectedLog(log)}
                             className="btn btn-secondary btn-sm"
-                            style={{ fontSize: '0.75rem', padding: '4px 8px' }}
+                            style={{ fontSize: '0.78rem', padding: '5px 10px', fontWeight: '600' }}
                           >
-                            Inspect
+                            Inspect Payload
                           </button>
                         </td>
                       </tr>
@@ -1106,31 +1424,31 @@ func main() {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 3: LIVE API PLAYGROUND */}
+      {/* TAB 3: API PLAYGROUND */}
       {/* ========================================================================= */}
       {activeSubTab === 'playground' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 440px) 1fr', gap: '20px', alignItems: 'start' }}>
-          {/* Left: Request Form */}
-          <div className="card glass" style={{ padding: '24px' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Terminal size={18} className="text-primary" />
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(340px, 460px) 1fr', gap: '22px', alignItems: 'start' }}>
+          {/* Left: Interactive Request Builder */}
+          <div className="card glass" style={{ padding: '26px', borderRadius: '16px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-card)' }}>
+            <h3 style={{ margin: '0 0 18px 0', fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Terminal size={20} className="text-primary" />
               API Request Builder
             </h3>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {/* Endpoint Selector */}
               <div className="form-group">
-                <label style={{ fontWeight: '600', fontSize: '0.85rem', marginBottom: '6px', display: 'block' }}>
+                <label style={{ fontWeight: '700', fontSize: '0.85rem', marginBottom: '6px', display: 'block' }}>
                   Target Endpoint
                 </label>
                 <select
                   className="form-input"
                   value={playgroundEndpoint}
                   onChange={(e) => setPlaygroundEndpoint(e.target.value)}
-                  style={{ width: '100%', fontSize: '0.88rem' }}
+                  style={{ width: '100%', fontSize: '0.88rem', fontWeight: '600' }}
                 >
                   <option value="send_text">POST /api/messages/send (Send Text Message)</option>
-                  <option value="send_media">POST /api/messages/send (Send Media File)</option>
+                  <option value="send_media">POST /api/messages/send (Send Media Image/PDF)</option>
                   <option value="hold_toggle">POST /api/chats/:chatJid/settings (Hold / Resume Bot)</option>
                   <option value="list_chats">GET /api/chats (Fetch Recent Chats)</option>
                   <option value="list_contacts">GET /api/contacts (Fetch CRM Contacts)</option>
@@ -1139,7 +1457,7 @@ func main() {
 
               {/* Session ID */}
               <div className="form-group">
-                <label style={{ fontWeight: '600', fontSize: '0.85rem', marginBottom: '6px', display: 'block' }}>
+                <label style={{ fontWeight: '700', fontSize: '0.85rem', marginBottom: '6px', display: 'block' }}>
                   Session ID
                 </label>
                 <input
@@ -1148,23 +1466,23 @@ func main() {
                   value={playgroundSessionId}
                   onChange={(e) => setPlaygroundSessionId(e.target.value)}
                   placeholder="default"
-                  style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.88rem' }}
+                  style={{ width: '100%', fontFamily: 'Consolas, Monaco, monospace', fontSize: '0.88rem' }}
                 />
               </div>
 
               {/* Recipient / Chat JID */}
               {(playgroundEndpoint === 'send_text' || playgroundEndpoint === 'send_media' || playgroundEndpoint === 'hold_toggle') && (
                 <div className="form-group">
-                  <label style={{ fontWeight: '600', fontSize: '0.85rem', marginBottom: '6px', display: 'block' }}>
-                    Recipient Phone / Chat JID
+                  <label style={{ fontWeight: '700', fontSize: '0.85rem', marginBottom: '6px', display: 'block' }}>
+                    Recipient Phone Number / WhatsApp JID
                   </label>
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="e.g. 6281234567890 or 6281234567890@s.whatsapp.net"
+                    placeholder="e.g. 6281234567890"
                     value={playgroundTo}
                     onChange={(e) => setPlaygroundTo(e.target.value)}
-                    style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.88rem' }}
+                    style={{ width: '100%', fontFamily: 'Consolas, Monaco, monospace', fontSize: '0.88rem' }}
                   />
                 </div>
               )}
@@ -1172,7 +1490,7 @@ func main() {
               {/* Message Text */}
               {(playgroundEndpoint === 'send_text' || playgroundEndpoint === 'send_media') && (
                 <div className="form-group">
-                  <label style={{ fontWeight: '600', fontSize: '0.85rem', marginBottom: '6px', display: 'block' }}>
+                  <label style={{ fontWeight: '700', fontSize: '0.85rem', marginBottom: '6px', display: 'block' }}>
                     {playgroundEndpoint === 'send_media' ? 'Media Caption' : 'Message Text'}
                   </label>
                   <textarea
@@ -1180,7 +1498,7 @@ func main() {
                     rows={3}
                     value={playgroundText}
                     onChange={(e) => setPlaygroundText(e.target.value)}
-                    style={{ width: '100%', fontSize: '0.88rem' }}
+                    style={{ width: '100%', fontSize: '0.88rem', lineHeight: '1.4' }}
                   />
                 </div>
               )}
@@ -1188,7 +1506,7 @@ func main() {
               {/* Media URL */}
               {playgroundEndpoint === 'send_media' && (
                 <div className="form-group">
-                  <label style={{ fontWeight: '600', fontSize: '0.85rem', marginBottom: '6px', display: 'block' }}>
+                  <label style={{ fontWeight: '700', fontSize: '0.85rem', marginBottom: '6px', display: 'block' }}>
                     Media Public URL (Image/PDF/Audio)
                   </label>
                   <input
@@ -1196,7 +1514,7 @@ func main() {
                     className="form-input"
                     value={playgroundMediaUrl}
                     onChange={(e) => setPlaygroundMediaUrl(e.target.value)}
-                    style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.85rem' }}
+                    style={{ width: '100%', fontFamily: 'Consolas, Monaco, monospace', fontSize: '0.85rem' }}
                   />
                 </div>
               )}
@@ -1205,21 +1523,21 @@ func main() {
               {playgroundEndpoint === 'hold_toggle' && (
                 <>
                   <div className="form-group">
-                    <label style={{ fontWeight: '600', fontSize: '0.85rem', marginBottom: '6px', display: 'block' }}>
+                    <label style={{ fontWeight: '700', fontSize: '0.85rem', marginBottom: '6px', display: 'block' }}>
                       Bot Status (Hold / Resume)
                     </label>
                     <select
                       className="form-input"
                       value={playgroundHoldPaused ? 'true' : 'false'}
                       onChange={(e) => setPlaygroundHoldPaused(e.target.value === 'true')}
-                      style={{ width: '100%' }}
+                      style={{ width: '100%', fontWeight: '600' }}
                     >
                       <option value="true">Hold (Pause AI Bot replies for Human Takeover)</option>
                       <option value="false">Resume (Enable Bot automated replies)</option>
                     </select>
                   </div>
                   <div className="form-group">
-                    <label style={{ fontWeight: '600', fontSize: '0.85rem', marginBottom: '6px', display: 'block' }}>
+                    <label style={{ fontWeight: '700', fontSize: '0.85rem', marginBottom: '6px', display: 'block' }}>
                       Operator Note
                     </label>
                     <input
@@ -1239,7 +1557,17 @@ func main() {
                 onClick={handleRunPlayground}
                 className="btn btn-primary"
                 disabled={runningPlayground}
-                style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px' }}
+                style={{
+                  marginTop: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  padding: '13px',
+                  fontWeight: '700',
+                  fontSize: '0.92rem',
+                  boxShadow: '0 4px 14px var(--primary-glow)'
+                }}
               >
                 <Play size={16} className={runningPlayground ? 'spin' : ''} />
                 {runningPlayground ? 'Sending Request...' : 'Send Live Request'}
@@ -1248,15 +1576,16 @@ func main() {
           </div>
 
           {/* Right: Response Console */}
-          <div className="card glass" style={{ padding: '24px', display: 'flex', flexDirection: 'column', height: '100%', minHeight: '480px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Response Console</h3>
+          <div className="card glass" style={{ padding: '26px', borderRadius: '16px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', minHeight: '520px', boxShadow: 'var(--shadow-card)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>Response Console</h3>
                 {playgroundResponse && (
-                  <span className={`badge ${playgroundResponse.ok ? 'badge-success' : 'badge-danger'}`} style={{
+                  <span style={{
                     fontSize: '0.78rem',
-                    padding: '2px 8px',
-                    borderRadius: '6px',
+                    fontWeight: '700',
+                    padding: '3px 10px',
+                    borderRadius: '8px',
                     backgroundColor: playgroundResponse.ok ? '#065f46' : '#991b1b',
                     color: 'white',
                   }}>
@@ -1265,16 +1594,16 @@ func main() {
                 )}
               </div>
               {playgroundResponse && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span className="text-muted" style={{ fontSize: '0.8rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-muted)' }}>
                     ⏱ {playgroundResponse.latency}ms
                   </span>
                   <button
                     onClick={() => copyToClipboard(JSON.stringify(playgroundResponse.data, null, 2), 'response')}
                     className="btn btn-secondary btn-sm"
-                    style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem', padding: '5px 10px' }}
                   >
-                    {copiedKeyId === 'response' ? <Check size={13} /> : <Copy size={13} />}
+                    {copiedKeyId === 'response' ? <Check size={13} style={{ color: '#10b981' }} /> : <Copy size={13} />}
                     Copy JSON
                   </button>
                 </div>
@@ -1284,23 +1613,26 @@ func main() {
             <div style={{
               flex: 1,
               background: '#0d1117',
-              borderRadius: '8px',
-              padding: '16px',
-              fontFamily: 'monospace',
-              fontSize: '0.85rem',
+              borderRadius: '12px',
+              padding: '20px',
+              fontFamily: 'Consolas, Monaco, monospace',
+              fontSize: '0.88rem',
               overflowX: 'auto',
               border: '1px solid #30363d',
               color: '#c9d1d9',
-              minHeight: '340px'
+              minHeight: '380px'
             }}>
               {playgroundResponse ? (
-                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: playgroundResponse.ok ? '#7ee787' : '#ff7b72' }}>
                   {JSON.stringify(playgroundResponse.data, null, 2)}
                 </pre>
               ) : (
-                <div style={{ color: '#8b949e', textAlign: 'center', padding: '60px 20px' }}>
-                  <Terminal size={32} style={{ margin: '0 auto 12px auto', display: 'block', opacity: 0.5 }} />
-                  Configure parameters on the left and click "Send Live Request" to execute against your connected WhatsApp device.
+                <div style={{ color: '#8b949e', textAlign: 'center', padding: '80px 20px' }}>
+                  <Terminal size={40} style={{ margin: '0 auto 14px auto', display: 'block', opacity: 0.4 }} />
+                  <div style={{ fontWeight: '600', fontSize: '0.95rem' }}>Awaiting Request</div>
+                  <p style={{ fontSize: '0.82rem', maxWidth: '340px', margin: '6px auto 0 auto' }}>
+                    Select an endpoint, enter your recipient details on the left, and run live requests against your WhatsApp session.
+                  </p>
                 </div>
               )}
             </div>
@@ -1312,18 +1644,18 @@ func main() {
       {/* TAB 4: CODE SNIPPETS & SDKs */}
       {/* ========================================================================= */}
       {activeSubTab === 'sdks' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div className="card glass" style={{ padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+          <div className="card glass" style={{ padding: '28px', borderRadius: '16px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-card)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Multi-Language Code Snippets</h3>
-                <p className="text-muted" style={{ fontSize: '0.85rem', margin: '4px 0 0 0' }}>
-                  Copy-paste working examples with your active API key and endpoint configuration.
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800' }}>Multi-Language Code Snippets</h3>
+                <p className="text-muted" style={{ fontSize: '0.88rem', margin: '4px 0 0 0' }}>
+                  Ready-to-copy code snippets pre-filled with your workspace API token and session ID.
                 </p>
               </div>
 
               {/* Language Selector Tabs */}
-              <div style={{ display: 'flex', gap: '6px', background: 'var(--bg-main)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', gap: '5px', background: 'var(--bg-main)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
                 {[
                   { id: 'curl', label: 'cURL' },
                   { id: 'node', label: 'Node.js' },
@@ -1335,14 +1667,15 @@ func main() {
                     key={lang.id}
                     onClick={() => setSelectedSnippetLang(lang.id)}
                     style={{
-                      padding: '6px 14px',
-                      borderRadius: '6px',
+                      padding: '7px 16px',
+                      borderRadius: '8px',
                       border: 'none',
                       background: selectedSnippetLang === lang.id ? 'var(--primary)' : 'transparent',
                       color: selectedSnippetLang === lang.id ? 'white' : 'var(--text-muted)',
-                      fontSize: '0.82rem',
-                      fontWeight: '600',
-                      cursor: 'pointer'
+                      fontSize: '0.84rem',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
                     }}
                   >
                     {lang.label}
@@ -1355,13 +1688,13 @@ func main() {
             <div style={{ position: 'relative' }}>
               <pre style={{
                 margin: 0,
-                padding: '20px',
-                borderRadius: '8px',
+                padding: '24px',
+                borderRadius: '12px',
                 background: '#0d1117',
                 color: '#e6edf3',
                 fontFamily: 'Consolas, Monaco, monospace',
-                fontSize: '0.88rem',
-                lineHeight: '1.5',
+                fontSize: '0.9rem',
+                lineHeight: '1.6',
                 overflowX: 'auto',
                 border: '1px solid #30363d'
               }}>
@@ -1372,22 +1705,23 @@ func main() {
                 onClick={() => copyToClipboard(getCodeSnippet(selectedSnippetLang), 'snippet')}
                 style={{
                   position: 'absolute',
-                  top: '12px',
-                  right: '12px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                  top: '14px',
+                  right: '14px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.12)',
                   color: 'white',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  borderRadius: '6px',
-                  padding: '6px 12px',
-                  fontSize: '0.78rem',
+                  border: '1px solid rgba(255, 255, 255, 0.25)',
+                  borderRadius: '8px',
+                  padding: '7px 14px',
+                  fontSize: '0.82rem',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
                   cursor: 'pointer',
-                  backdropFilter: 'blur(4px)'
+                  fontWeight: '700',
+                  backdropFilter: 'blur(8px)'
                 }}
               >
-                {copiedSnippet ? <Check size={14} style={{ color: '#10b981' }} /> : <Copy size={14} />}
+                {copiedSnippet ? <Check size={15} style={{ color: '#10b981' }} /> : <Copy size={15} />}
                 {copiedSnippet ? 'Copied' : 'Copy Code'}
               </button>
             </div>
@@ -1399,75 +1733,75 @@ func main() {
       {/* TAB 5: AI BOT & WORKFLOWS GUIDE */}
       {/* ========================================================================= */}
       {activeSubTab === 'bot_handoff' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
           {/* Architecture Concept Card */}
-          <div className="card glass" style={{ padding: '24px' }}>
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Bot size={22} className="text-primary" />
-              AI Bot & Human Agent Takeover Workflow
+          <div className="card glass" style={{ padding: '28px', borderRadius: '16px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-card)' }}>
+            <h3 style={{ margin: '0 0 10px 0', fontSize: '1.25rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Bot size={24} className="text-primary" />
+              AI Chatbot & Human Agent Takeover Workflow
             </h3>
-            <p style={{ fontSize: '0.9rem', lineHeight: '1.5', color: 'var(--text-muted)' }}>
-              When building AI Chatbots (OpenAI, Claude, LangChain, Flowise, n8n), a seamless handoff between AI automation and human customer support agents is critical.
+            <p style={{ fontSize: '0.92rem', lineHeight: '1.6', color: 'var(--text-muted)' }}>
+              When building AI Chatbots (OpenAI GPT-4, Claude 3.5, LangChain, Flowise, n8n), a seamless handoff between AI automation and human customer support agents is critical.
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginTop: '20px' }}>
-              <div style={{ padding: '16px', borderRadius: '8px', background: 'var(--bg-main)', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '700' }}>1</span>
-                  <strong style={{ fontSize: '0.95rem' }}>Incoming Message Webhook</strong>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginTop: '24px' }}>
+              <div style={{ padding: '18px', borderRadius: '12px', background: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                  <span style={{ width: '26px', height: '26px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: '800' }}>1</span>
+                  <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>Incoming Webhook</strong>
                 </div>
-                <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
                   Customer sends a message. The platform dispatches <code>message.received</code> to your webhook URL with the customer's text or media.
                 </p>
               </div>
 
-              <div style={{ padding: '16px', borderRadius: '8px', background: 'var(--bg-main)', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '700' }}>2</span>
-                  <strong style={{ fontSize: '0.95rem' }}>AI Bot Generates Reply</strong>
+              <div style={{ padding: '18px', borderRadius: '12px', background: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                  <span style={{ width: '26px', height: '26px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: '800' }}>2</span>
+                  <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>AI Bot Reply</strong>
                 </div>
-                <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
                   Your AI server processes the prompt and sends a response via <code>POST /api/messages/send</code> with header <code>X-Agent-Source: bot</code>.
                 </p>
               </div>
 
-              <div style={{ padding: '16px', borderRadius: '8px', background: 'var(--bg-main)', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#f59e0b', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: '700' }}>3</span>
-                  <strong style={{ fontSize: '0.95rem' }}>Human Agent Hold (Takeover)</strong>
+              <div style={{ padding: '18px', borderRadius: '12px', background: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                  <span style={{ width: '26px', height: '26px', borderRadius: '50%', background: '#f59e0b', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: '800' }}>3</span>
+                  <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>Human Agent Hold</strong>
                 </div>
-                <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                  If a human operator intervenes or customer asks for a person, clicking "Hold" automatically blocks bot replies and fires an <code>agent.hold</code> event.
+                <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                  If a human operator clicks "Hold" or customer asks for a person, bot replies are automatically blocked and an <code>agent.hold</code> event is fired.
                 </p>
               </div>
             </div>
           </div>
 
           {/* Third-Party Integrations */}
-          <div className="card glass" style={{ padding: '24px' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem' }}>Connecting with No-Code & Automation Tools</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
-              <div style={{ padding: '18px', borderRadius: '8px', background: 'var(--bg-main)', border: '1px solid var(--border-color)' }}>
-                <h4 style={{ margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Layers size={18} style={{ color: '#ea580c' }} />
+          <div className="card glass" style={{ padding: '28px', borderRadius: '16px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-card)' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '1.25rem', fontWeight: '800' }}>Connecting with Automation Platforms</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '18px' }}>
+              <div style={{ padding: '20px', borderRadius: '12px', background: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+                <h4 style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
+                  <Layers size={20} style={{ color: '#ea580c' }} />
                   n8n & Make.com
                 </h4>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: '1.4', margin: '0 0 12px 0' }}>
-                  1. Create a <strong>Webhook Trigger node</strong> in n8n and copy the Webhook URL into the Webhooks tab.
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: '0 0 12px 0' }}>
+                  1. Create a <strong>Webhook Trigger node</strong> in n8n and paste the Webhook URL into the Webhooks tab.
                   <br />2. Add an <strong>HTTP Request node</strong> with method <code>POST</code> and URL <code>{baseUrl}/api/messages/send</code>.
-                  <br />3. Set header <code>Authorization: Bearer &lt;API_KEY&gt;</code>.
+                  <br />3. Add header <code>Authorization: Bearer &lt;API_KEY&gt;</code>.
                 </p>
               </div>
 
-              <div style={{ padding: '18px', borderRadius: '8px', background: 'var(--bg-main)', border: '1px solid var(--border-color)' }}>
-                <h4 style={{ margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Sparkles size={18} style={{ color: '#8b5cf6' }} />
+              <div style={{ padding: '20px', borderRadius: '12px', background: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+                <h4 style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-main)' }}>
+                  <Sparkles size={20} style={{ color: '#8b5cf6' }} />
                   Flowise AI & LangChain
                 </h4>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: '1.4', margin: '0 0 12px 0' }}>
-                  1. Point the WhatsApp Webhook to your Flowise prediction endpoint.
-                  <br />2. In Flowise custom tool, call the Send Message API with your API Key.
-                  <br />3. Pass <code>"source": "bot"</code> in the request body to respect human agent hold states.
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: '0 0 12px 0' }}>
+                  1. Route incoming message webhooks to your Flowise prediction endpoint.
+                  <br />2. In Flowise custom tool, call Send Message API with your API Key.
+                  <br />3. Pass <code>"source": "bot"</code> in the body to respect human agent hold states.
                 </p>
               </div>
             </div>
@@ -1485,25 +1819,26 @@ func main() {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.6)',
+          backgroundColor: 'rgba(0,0,0,0.65)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 1000,
-          backdropFilter: 'blur(4px)'
+          backdropFilter: 'blur(6px)',
+          padding: '20px'
         }}>
-          <div className="card glass" style={{ width: '100%', maxWidth: '500px', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <h3 style={{ margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Key size={20} className="text-primary" />
+          <div className="card glass" style={{ width: '100%', maxWidth: '520px', padding: '28px', borderRadius: '16px', boxShadow: '0 16px 40px rgba(0,0,0,0.5)' }}>
+            <h3 style={{ margin: '0 0 6px 0', fontSize: '1.25rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Key size={22} className="text-primary" />
               Create New API Key
             </h3>
-            <p className="text-muted" style={{ fontSize: '0.85rem', margin: '0 0 16px 0' }}>
-              Assign a recognizable name and grant specific permissions for this key.
+            <p className="text-muted" style={{ fontSize: '0.86rem', margin: '0 0 20px 0' }}>
+              Generate a unique secret token and configure granular access scopes.
             </p>
 
-            <form onSubmit={handleCreateKey} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <form onSubmit={handleCreateKey} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
               <div className="form-group">
-                <label style={{ fontWeight: '600', fontSize: '0.85rem', marginBottom: '6px', display: 'block' }}>
+                <label style={{ fontWeight: '700', fontSize: '0.88rem', marginBottom: '6px', display: 'block' }}>
                   Key Name / Description
                 </label>
                 <input
@@ -1512,13 +1847,13 @@ func main() {
                   placeholder="e.g. Production CRM, AI Bot Engine"
                   value={newKeyName}
                   onChange={(e) => setNewKeyName(e.target.value)}
-                  style={{ width: '100%' }}
+                  style={{ width: '100%', padding: '10px 14px' }}
                   required
                 />
               </div>
 
               <div>
-                <label style={{ fontWeight: '600', fontSize: '0.85rem', marginBottom: '8px', display: 'block' }}>
+                <label style={{ fontWeight: '700', fontSize: '0.88rem', marginBottom: '10px', display: 'block' }}>
                   Key Permissions / Scopes
                 </label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1530,11 +1865,11 @@ func main() {
                         style={{
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '10px',
-                          padding: '8px 12px',
-                          borderRadius: '6px',
-                          background: 'var(--bg-main)',
-                          border: '1px solid var(--border-color)',
+                          gap: '12px',
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          background: isChecked ? 'var(--primary-subtle)' : 'var(--bg-main)',
+                          border: isChecked ? '1px solid var(--primary)' : '1px solid var(--border-color)',
                           cursor: 'pointer'
                         }}
                       >
@@ -1548,10 +1883,11 @@ func main() {
                               setNewKeyScopes(newKeyScopes.filter(s => s !== scope.id));
                             }
                           }}
+                          style={{ accentColor: 'var(--primary)' }}
                         />
                         <div>
-                          <div style={{ fontWeight: '600', fontSize: '0.82rem' }}>{scope.label}</div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{scope.desc}</div>
+                          <div style={{ fontWeight: '700', fontSize: '0.85rem', color: isChecked ? 'var(--primary)' : 'var(--text-main)' }}>{scope.title}</div>
+                          <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{scope.desc}</div>
                         </div>
                       </label>
                     );
@@ -1559,12 +1895,13 @@ func main() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
                 <button
                   type="button"
                   onClick={() => setShowNewKeyModal(false)}
                   className="btn btn-secondary"
                   disabled={creatingKey}
+                  style={{ padding: '9px 18px', fontWeight: '600' }}
                 >
                   Cancel
                 </button>
@@ -1572,6 +1909,7 @@ func main() {
                   type="submit"
                   className="btn btn-primary"
                   disabled={creatingKey || !newKeyName.trim()}
+                  style={{ padding: '9px 22px', fontWeight: '700', boxShadow: '0 4px 12px var(--primary-glow)' }}
                 >
                   {creatingKey ? 'Creating...' : 'Create API Key'}
                 </button>
@@ -1591,44 +1929,45 @@ func main() {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.6)',
+          backgroundColor: 'rgba(0,0,0,0.65)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 1000,
-          backdropFilter: 'blur(4px)'
+          backdropFilter: 'blur(6px)',
+          padding: '20px'
         }}>
-          <div className="card glass" style={{ width: '100%', maxWidth: '640px', padding: '24px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-              <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Webhook Delivery Inspector</h3>
-              <button onClick={() => setSelectedLog(null)} className="btn btn-secondary btn-sm">Close</button>
+          <div className="card glass" style={{ width: '100%', maxWidth: '680px', padding: '28px', borderRadius: '16px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 16px 40px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>Webhook Delivery Inspector</h3>
+              <button onClick={() => setSelectedLog(null)} className="btn btn-secondary btn-sm" style={{ padding: '6px 12px' }}>✕ Close</button>
             </div>
 
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '14px', fontSize: '0.82rem' }}>
-              <span className="badge badge-success">{selectedLog.eventType}</span>
-              <span className="text-muted">HTTP {selectedLog.responseStatus || 'N/A'}</span>
-              <span className="text-muted">Latency: {selectedLog.latencyMs}ms</span>
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', fontSize: '0.84rem' }}>
+              <span className="badge badge-success" style={{ fontWeight: '700' }}>{selectedLog.eventType}</span>
+              <span style={{ fontWeight: '600', color: 'var(--text-main)' }}>HTTP {selectedLog.responseStatus || 'N/A'}</span>
+              <span style={{ color: 'var(--text-muted)' }}>⏱ {selectedLog.latencyMs}ms latency</span>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-muted)' }}>Target URL</label>
-                <div style={{ fontFamily: 'monospace', fontSize: '0.82rem', padding: '6px 10px', background: 'var(--bg-main)', borderRadius: '6px' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-muted)' }}>Destination Target URL</label>
+                <div style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: '0.85rem', padding: '8px 12px', background: 'var(--bg-main)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                   {selectedLog.url}
                 </div>
               </div>
 
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-muted)' }}>Dispatched Payload</label>
-                <pre style={{ margin: 0, padding: '12px', background: '#0d1117', color: '#58a6ff', borderRadius: '6px', fontSize: '0.8rem', overflowX: 'auto' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-muted)' }}>Dispatched JSON Payload</label>
+                <pre style={{ margin: 0, padding: '14px', background: '#0d1117', color: '#58a6ff', borderRadius: '8px', fontSize: '0.82rem', overflowX: 'auto', border: '1px solid #30363d' }}>
                   {JSON.stringify(selectedLog.payload, null, 2)}
                 </pre>
               </div>
 
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-muted)' }}>Response Body</label>
-                <pre style={{ margin: 0, padding: '12px', background: '#0d1117', color: '#c9d1d9', borderRadius: '6px', fontSize: '0.8rem', overflowX: 'auto' }}>
-                  {selectedLog.responseBody || '(empty)'}
+                <label style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-muted)' }}>Response Body Returned</label>
+                <pre style={{ margin: 0, padding: '14px', background: '#0d1117', color: '#c9d1d9', borderRadius: '8px', fontSize: '0.82rem', overflowX: 'auto', border: '1px solid #30363d' }}>
+                  {selectedLog.responseBody || '(empty body)'}
                 </pre>
               </div>
             </div>
