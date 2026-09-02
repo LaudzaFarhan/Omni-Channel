@@ -500,15 +500,20 @@ export default function Broadcast({ activeSessionId = 'default', userInfo, onOpe
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {/* Step 1: Campaign Title & Template Selection */}
             <div className="card glass" style={{ padding: '24px', borderRadius: '16px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-card)' }}>
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <FileText size={18} className="text-primary" />
-                1. Campaign Details & Template
-              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
+                <span style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--primary)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.82rem', fontWeight: '800' }}>
+                  1
+                </span>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                  Campaign Details & Template
+                </h3>
+              </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div>
-                  <label style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>
-                    Campaign Name
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">
+                    <span>Campaign Name</span>
+                    <span className="form-hint">(Internal identifier for reports)</span>
                   </label>
                   <input
                     type="text"
@@ -516,24 +521,23 @@ export default function Broadcast({ activeSessionId = 'default', userInfo, onOpe
                     placeholder="e.g. Promo Merdeka 2026 / Follow Up New Leads"
                     value={campaignTitle}
                     onChange={e => setCampaignTitle(e.target.value)}
-                    style={{ width: '100%', fontSize: '0.9rem' }}
                   />
                 </div>
 
-                <div>
-                  <label style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>
-                    Choose Message Template (Optional)
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">
+                    <span>Choose Message Template</span>
+                    <span className="form-hint">(Optional — or write custom message below)</span>
                   </label>
                   <select
-                    className="form-input"
+                    className="form-input form-select"
                     value={selectedTemplateId}
                     onChange={e => handleApplyTemplate(e.target.value)}
-                    style={{ width: '100%', fontSize: '0.88rem' }}
                   >
-                    <option value="">-- Write Custom Message or Select Template --</option>
+                    <option value="">-- Write Custom Message or Pick a Template --</option>
                     {templates.map(t => (
                       <option key={t.id} value={t.id}>
-                        {t.title} ({t.category || 'General'})
+                        {t.title} [{t.category || 'General'}]
                       </option>
                     ))}
                   </select>
@@ -543,37 +547,33 @@ export default function Broadcast({ activeSessionId = 'default', userInfo, onOpe
 
             {/* Step 2: Message Content & Dynamic Variables */}
             <div className="card glass" style={{ padding: '24px', borderRadius: '16px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-card)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <MessageSquare size={18} className="text-primary" />
-                  2. Message Content & Dynamic Placeholders
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                <span style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--primary)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.82rem', fontWeight: '800' }}>
+                  2
+                </span>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                  Message Content & Dynamic Placeholders
                 </h3>
               </div>
 
               {/* Dynamic Variables helper bar */}
-              <div style={{ padding: '10px 14px', borderRadius: '10px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', marginBottom: '12px' }}>
-                <div style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                  Click to insert personalized variable:
+              <div style={{
+                padding: '12px 14px',
+                borderRadius: '12px',
+                background: 'var(--bg-main)',
+                border: '1.5px dashed var(--primary-border)',
+                marginBottom: '14px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', fontWeight: '700', color: 'var(--primary)', marginBottom: '8px' }}>
+                  <Sparkles size={14} /> Click to insert personalized recipient variable:
                 </div>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {TEMPLATE_VARIABLES.map(v => (
                     <button
                       key={v.key}
                       type="button"
+                      className="var-pill-btn"
                       onClick={() => insertVariable(v.key)}
-                      style={{
-                        padding: '4px 10px',
-                        borderRadius: '6px',
-                        border: '1px solid var(--primary-border)',
-                        background: 'var(--primary-subtle)',
-                        color: 'var(--primary)',
-                        fontSize: '0.78rem',
-                        fontWeight: '700',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
                       title={v.desc}
                     >
                       <Plus size={12} /> {v.label}
@@ -582,18 +582,22 @@ export default function Broadcast({ activeSessionId = 'default', userInfo, onOpe
                 </div>
               </div>
 
-              <textarea
-                className="form-input"
-                rows={6}
-                value={messageText}
-                onChange={e => setMessageText(e.target.value)}
-                placeholder="Type your broadcast message here. Use {{name}} to insert the recipient's customer name automatically..."
-                style={{ width: '100%', fontSize: '0.9rem', lineHeight: '1.5' }}
-              />
+              <div className="form-group" style={{ margin: 0 }}>
+                <textarea
+                  className="form-input form-textarea"
+                  rows={6}
+                  value={messageText}
+                  onChange={e => setMessageText(e.target.value)}
+                  placeholder="Type your broadcast message here. Use {{name}} to insert the customer's name automatically..."
+                  style={{ lineHeight: '1.55', fontSize: '0.92rem' }}
+                />
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', fontSize: '0.8rem', color: 'var(--text-dimmed)' }}>
-                <span>WhatsApp formatting supported (*bold*, _italic_, ~strike~)</span>
-                <span>{messageText.length} characters</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', fontSize: '0.78rem', color: 'var(--text-dimmed)' }}>
+                  <span>WhatsApp formatting supported (*bold*, _italic_, ~strike~)</span>
+                  <span style={{ fontWeight: '600', padding: '2px 8px', borderRadius: '6px', background: 'var(--bg-main)' }}>
+                    {messageText.length} characters
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -1135,9 +1139,9 @@ export default function Broadcast({ activeSessionId = 'default', userInfo, onOpe
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-main)', display: 'block', marginBottom: '4px' }}>
-                  Template Title
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">
+                  <span>Template Title</span>
                 </label>
                 <input
                   type="text"
@@ -1145,19 +1149,17 @@ export default function Broadcast({ activeSessionId = 'default', userInfo, onOpe
                   placeholder="e.g. 👋 Promo Ramadhan / Pengingat Tagihan"
                   value={templateEditing.title}
                   onChange={e => setTemplateEditing(prev => ({ ...prev, title: e.target.value }))}
-                  style={{ width: '100%' }}
                 />
               </div>
 
-              <div>
-                <label style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-main)', display: 'block', marginBottom: '4px' }}>
-                  Category
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">
+                  <span>Category</span>
                 </label>
                 <select
-                  className="form-input"
+                  className="form-input form-select"
                   value={templateEditing.category || 'General'}
                   onChange={e => setTemplateEditing(prev => ({ ...prev, category: e.target.value }))}
-                  style={{ width: '100%' }}
                 >
                   <option value="General">General</option>
                   <option value="Marketing">Marketing & Promo</option>
@@ -1167,31 +1169,22 @@ export default function Broadcast({ activeSessionId = 'default', userInfo, onOpe
                 </select>
               </div>
 
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <label style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-main)' }}>
-                    Message Content
+              <div className="form-group" style={{ margin: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label className="form-label" style={{ margin: 0 }}>
+                    <span>Message Content</span>
                   </label>
                 </div>
 
                 {/* Variable inserter */}
-                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '6px' }}>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-dimmed)', alignSelf: 'center' }}>Insert:</span>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-dimmed)', alignSelf: 'center' }}>Insert:</span>
                   {TEMPLATE_VARIABLES.map(v => (
                     <button
                       key={v.key}
                       type="button"
+                      className="var-pill-btn"
                       onClick={() => setTemplateEditing(prev => ({ ...prev, text: (prev.text || '') + ` ${v.label} ` }))}
-                      style={{
-                        padding: '2px 7px',
-                        borderRadius: '5px',
-                        background: 'var(--primary-subtle)',
-                        color: 'var(--primary)',
-                        border: '1px solid var(--primary-border)',
-                        fontSize: '0.72rem',
-                        fontWeight: '700',
-                        cursor: 'pointer'
-                      }}
                     >
                       + {v.label}
                     </button>
@@ -1199,12 +1192,11 @@ export default function Broadcast({ activeSessionId = 'default', userInfo, onOpe
                 </div>
 
                 <textarea
-                  className="form-input"
+                  className="form-input form-textarea"
                   rows={4}
                   placeholder="Type message content... Example: Halo Kak {{name}}, terima kasih telah berbelanja..."
                   value={templateEditing.text}
                   onChange={e => setTemplateEditing(prev => ({ ...prev, text: e.target.value }))}
-                  style={{ width: '100%', fontSize: '0.88rem' }}
                 />
               </div>
 
