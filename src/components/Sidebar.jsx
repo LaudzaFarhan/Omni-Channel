@@ -8,6 +8,9 @@ export default function Sidebar({
   // Effective feature map for this account, from the server. Absent or incomplete reads as
   // everything released — see src/utils/features.js for why it fails open.
   features = {},
+  isTrialExpired = false,
+  trialDaysLeft = 0,
+  userProfile = null,
 }) {
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -17,7 +20,7 @@ export default function Sidebar({
   // renders nothing at all: the point is that the customer cannot tell it exists, so a
   // greyed-out row would defeat it. A coming-soon feature stays clickable and keeps its
   // badge, because announcing it is the point — the view it opens says it is not ready.
-  const NavItem = ({ tab, icon: Icon, label, feature, children }) => {
+  const NavItem = ({ tab, icon: Icon, label, feature, badge, children }) => {
     const key = feature || tab;
     if (!isVisible(features, key)) return null;
 
@@ -31,8 +34,13 @@ export default function Sidebar({
       >
         {children || <Icon size={22} />}
         {!collapsed && (
-          <span className="nav-label">
-            {label}
+          <span className="nav-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+            <span>{label}</span>
+            {badge && (
+              <span style={{ fontSize: '0.68rem', fontWeight: '700', color: '#f59e0b', background: 'rgba(245, 158, 11, 0.18)', padding: '1px 6px', borderRadius: '4px' }}>
+                {badge}
+              </span>
+            )}
             {soon && <span className="nav-soon">Soon</span>}
           </span>
         )}
@@ -46,6 +54,43 @@ export default function Sidebar({
         <div className="sidebar-brand">
           <BrandLockup markSize={32} showName={!collapsed} />
         </div>
+
+        {/* Trial Badge under brand */}
+        {!collapsed && !isTrialExpired && trialDaysLeft > 0 && userProfile?.role !== 'admin' && (
+          <div
+            onClick={() => isSupervisor && setActiveTab('subscription')}
+            style={{
+              margin: '0 12px 14px',
+              padding: '7px 10px',
+              borderRadius: '9px',
+              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(234, 88, 12, 0.08) 100%)',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: isSupervisor ? 'pointer' : 'default',
+              transition: 'all 0.2s ease',
+            }}
+            title={isSupervisor ? 'Free trial active. Click to view subscription plans.' : 'Free trial active'}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+              <span className="trial-badge-dot" />
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: '0.74rem', fontWeight: '800', color: '#f59e0b', lineHeight: 1.15 }}>
+                  Trial Mode
+                </span>
+                <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)' }}>
+                  {trialDaysLeft} {trialDaysLeft === 1 ? 'day' : 'days'} left
+                </span>
+              </div>
+            </div>
+            {isSupervisor && (
+              <span style={{ fontSize: '0.65rem', fontWeight: '700', color: '#f59e0b', background: 'rgba(245, 158, 11, 0.2)', padding: '2px 5px', borderRadius: '4px' }}>
+                Upgrade
+              </span>
+            )}
+          </div>
+        )}
 
         <NavItem tab="dashboard" icon={LayoutDashboard} label="Dashboard" />
 

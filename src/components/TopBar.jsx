@@ -9,7 +9,8 @@ export default function TopBar({
   waSessions = [], activeSessionId, onSwitchSession, onAddSession, onRemoveSession,
   sidebarCollapsed, onToggleSidebar, syncing, onSyncHistory,
   notifications = [], onToggleNotifications,
-  isSupervisor = true, onNavigateTab
+  isSupervisor = true, onNavigateTab,
+  isTrialExpired = false, trialDaysLeft = 0
 }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -159,6 +160,19 @@ export default function TopBar({
       </div>
 
       <div className="topbar-right">
+        {/* Trial Period Badge for Customers */}
+        {!isTrialExpired && trialDaysLeft > 0 && userProfile?.role !== 'admin' && (
+          <button
+            onClick={() => onNavigateTab?.('subscription')}
+            className="trial-period-badge"
+            title="Free trial period active. Click to view subscription plans."
+          >
+            <span className="trial-badge-dot" />
+            <span>Trial: <strong>{trialDaysLeft} {trialDaysLeft === 1 ? 'day' : 'days'} left</strong></span>
+            {isSupervisor && <span className="trial-badge-action">Upgrade</span>}
+          </button>
+        )}
+
         {/* Which commit this bundle came from; warns on a server mismatch. */}
         <VersionBadge />
 

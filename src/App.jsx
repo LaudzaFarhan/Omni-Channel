@@ -1225,6 +1225,9 @@ export default function App() {
             notifications={notifications}
             isSupervisor={isSupervisor}
             features={features}
+            isTrialExpired={isTrialExpired}
+            trialDaysLeft={trialDaysLeft}
+            userProfile={activeProfile}
           />
         </div>
         
@@ -1248,6 +1251,8 @@ export default function App() {
             onToggleNotifications={() => setShowNotificationsDrawer(prev => !prev)}
             isSupervisor={isSupervisor}
             onNavigateTab={(tab) => setActiveTab(tab)}
+            isTrialExpired={isTrialExpired}
+            trialDaysLeft={trialDaysLeft}
           />
           <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden' }}>
             {isTrialExpired && activeTab !== 'subscription' && activeTab !== 'profile' && (
