@@ -121,43 +121,81 @@ export async function persistWorkspaceSettingsToServer(settingsToSave) {
   return settingsToSave;
 }
 
-/** Play audio chime for incoming messages */
-export function playNotificationSound(tone = 'chime', volume = 80) {
+let audioCtx = null;
+
+function getAudioContext() {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!audioCtx) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) {
+        audioCtx = new AudioContextClass();
+      }
+    }
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
+    }
+    return audioCtx;
+  } catch {
+    return null;
+  }
+}
+
+function playTone(ctx, tone, volume) {
+  try {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    
-    gain.gain.value = Math.max(0, Math.min(1, (volume / 100) * 0.3));
+    const now = ctx.currentTime;
+    const gainVal = Math.max(0.01, Math.min(1, (volume / 100) * 0.6));
+
+    gain.gain.setValueAtTime(gainVal, now);
     osc.connect(gain);
     gain.connect(ctx.destination);
 
     if (tone === 'chime') {
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // A5
-      osc.start();
-      osc.stop(ctx.currentTime + 0.35);
+      osc.frequency.setValueAtTime(587.33, now); // D5
+      osc.frequency.setValueAtTime(880, now + 0.12); // A5
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+      osc.start(now);
+      osc.stop(now + 0.5);
     } else if (tone === 'pop') {
       osc.type = 'triangle';
-      osc.frequency.setValueAtTime(400, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.1);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.15);
+      osc.frequency.setValueAtTime(600, now);
+      osc.frequency.exponentialRampToValueAtTime(120, now + 0.18);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+      osc.start(now);
+      osc.stop(now + 0.18);
     } else if (tone === 'bell') {
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(1046.5, ctx.currentTime); // C6
-      osc.start();
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-      osc.stop(ctx.currentTime + 0.6);
+      osc.frequency.setValueAtTime(1046.5, now); // C6
+      gain.gain.setValueAtTime(gainVal, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+      osc.start(now);
+      osc.stop(now + 0.7);
     } else { // ping
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(1318.51, ctx.currentTime); // E6
-      osc.start();
-      osc.stop(ctx.currentTime + 0.2);
+      osc.frequency.setValueAtTime(1318.51, now); // E6
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      osc.start(now);
+      osc.stop(now + 0.3);
     }
-  } catch {
-    // AudioContext not allowed before user interaction
+  } catch (err) {
+    console.warn('[Sound] Playback error:', err);
+  }
+}
+
+/** Play audio chime for incoming messages */
+export function playNotificationSound(tone = 'chime', volume = 80) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      ctx.resume().then(() => playTone(ctx, tone, volume)).catch(() => {});
+    } else {
+      playTone(ctx, tone, volume);
+    }
+  } catch (err) {
+    console.warn('[Sound] AudioContext error:', err);
   }
 }
 

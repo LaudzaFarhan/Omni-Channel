@@ -32,6 +32,7 @@ import BlogPost from './components/BlogPost.jsx';
 import DeveloperDashboard from './components/developer/DeveloperDashboard.jsx';
 import Broadcast from './components/Broadcast.jsx';
 import { showToast } from './utils/toastBus.js';
+import { getStoredSettings, playNotificationSound } from './utils/userSettings.js';
 
 export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -626,11 +627,27 @@ export default function App() {
         });
       }
 
-      // Add real-time message notification
+      // Add real-time message notification & audio alert
       if (data.message && !data.message.key.fromMe) {
+        const userSettings = getStoredSettings();
+        if (userSettings.soundAlerts) {
+          playNotificationSound(userSettings.soundTone, userSettings.soundVolume);
+        }
+
         const msgText = data.message.message?.conversation || 
                        data.message.message?.extendedTextMessage?.text || 
                        'Received media attachment.';
+
+        if (userSettings.desktopNotifications && typeof window !== 'undefined' && 'Notification' in window) {
+          if (Notification.permission === 'granted') {
+            try {
+              new Notification('WhatsApp Message', {
+                body: `From +${data.jid.split('@')[0]}: ${msgText.substring(0, 80)}`,
+                icon: '/favicon.ico',
+              });
+            } catch {}
+          }
+        }
         
         setNotifications(prev => [
           {

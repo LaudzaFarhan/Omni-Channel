@@ -119,12 +119,26 @@ export default function Settings() {
   ];
 
   return (
-    <div className="view-container" style={{ paddingBottom: '70px', maxWidth: '1200px', margin: '0 auto' }}>
+    <div style={{
+      width: '100%',
+      minHeight: '100%',
+      padding: '24px 28px 80px',
+      maxWidth: '1140px',
+      margin: '0 auto',
+      boxSizing: 'border-box'
+    }}>
       {/* View Header */}
-      <div className="view-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        flexWrap: 'wrap',
+        gap: '16px',
+        marginBottom: '26px'
+      }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px', fontSize: '1.45rem', fontWeight: '800' }}>
               <SettingsIcon className="text-primary" size={26} />
               Settings & Workspace Preferences
             </h2>
@@ -134,7 +148,7 @@ export default function Settings() {
               </span>
             )}
           </div>
-          <p className="text-muted" style={{ marginTop: '4px', maxWidth: '640px', fontSize: '0.92rem' }}>
+          <p className="text-muted" style={{ marginTop: '6px', maxWidth: '640px', fontSize: '0.9rem', lineHeight: '1.45' }}>
             Customize your inbox experience, notification chimes, automated office hours, team routing rules, and data privacy.
           </p>
         </div>
@@ -162,14 +176,15 @@ export default function Settings() {
       {/* Settings Navigation Pills */}
       <div style={{
         display: 'flex',
-        gap: '6px',
+        flexWrap: 'wrap',
+        gap: '8px',
         padding: '6px',
-        borderRadius: '12px',
+        borderRadius: '14px',
         background: 'var(--card-bg)',
-        border: '1px solid var(--border-color)',
-        marginBottom: '24px',
-        overflowX: 'auto',
-        boxShadow: 'var(--shadow-card)'
+        border: '1.5px solid var(--border-color)',
+        marginBottom: '28px',
+        boxShadow: 'var(--shadow-card)',
+        boxSizing: 'border-box'
       }}>
         {[
           { id: 'general', label: 'General & Appearance', icon: Sun },
@@ -183,11 +198,13 @@ export default function Settings() {
           return (
             <button
               key={tab.id}
+              type="button"
               onClick={() => setActiveTab(tab.id)}
               style={{
-                flex: '1 0 auto',
-                padding: '10px 18px',
-                borderRadius: '8px',
+                flex: '1 1 180px',
+                minWidth: '160px',
+                padding: '11px 16px',
+                borderRadius: '10px',
                 border: 'none',
                 background: isActive ? 'var(--primary)' : 'transparent',
                 color: isActive ? '#ffffff' : 'var(--text-muted)',
@@ -198,11 +215,11 @@ export default function Settings() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                transition: 'var(--transition-smooth)',
-                boxShadow: isActive ? '0 2px 8px var(--primary-glow)' : 'none'
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                boxShadow: isActive ? '0 4px 12px var(--primary-glow)' : 'none'
               }}
             >
-              <Icon size={16} />
+              <Icon size={17} />
               <span>{tab.label}</span>
             </button>
           );
