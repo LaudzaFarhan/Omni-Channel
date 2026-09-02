@@ -677,6 +677,44 @@ export default function App() {
           },
           ...prev
         ]);
+      } else if (data.message && data.message.key.fromMe && data.message.agentUid !== user?.uid) {
+        // Notification & sound alert when a teammate initiates or replies to a chat
+        const userSettings = getStoredSettings();
+        if (userSettings.soundAlerts) {
+          playNotificationSound(userSettings.soundTone, userSettings.soundVolume);
+        }
+
+        const msgText = data.message.message?.conversation || 
+                       data.message.message?.extendedTextMessage?.text || 
+                       'Sent media attachment.';
+
+        const customerPhone = data.jid.split('@')[0];
+        const customerName = savedNames[data.jid] || data.message.pushName || `+${customerPhone}`;
+        const agentName = data.message.agentName || 'Teammate';
+
+        showToast({
+          type: 'info',
+          title: `📤 ${agentName} → ${customerName}`,
+          message: msgText.substring(0, 80) + (msgText.length > 80 ? '...' : ''),
+          duration: 4500,
+          onClick: () => {
+            setActiveTab('messages');
+            handleOpenChatFor(data.jid);
+          }
+        });
+
+        setNotifications(prev => [
+          {
+            id: `msg_team_${Date.now()}`,
+            title: `📤 ${agentName} mengirim pesan ke ${customerName}`,
+            message: msgText.substring(0, 70) + (msgText.length > 70 ? '...' : ''),
+            time: new Date().toISOString(),
+            type: 'team',
+            read: false,
+            chatJid: data.jid,
+          },
+          ...prev
+        ]);
       }
     });
 
