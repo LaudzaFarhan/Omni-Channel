@@ -5842,6 +5842,9 @@ input:checked + .slider:before {
 .toast-info { border-left-color: #3b82f6; }
 .toast-info .toast-icon { color: #3b82f6; }
 
+.toast-message { border-left-color: #25d366; }
+.toast-message .toast-icon { color: #25d366; }
+
 @keyframes toastSlideIn {
   from { opacity: 0; transform: translateX(110%) scale(0.96); }
   to { opacity: 1; transform: translateX(0) scale(1); }

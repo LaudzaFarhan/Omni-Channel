@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, LogOut, AlertCircle, Info, X } from 'lucide-react';
+import { CheckCircle2, LogOut, AlertCircle, Info, MessageSquare, X } from 'lucide-react';
 import { subscribeToasts } from '../utils/toastBus.js';
 
 const ICONS = {
@@ -8,13 +8,14 @@ const ICONS = {
   logout: LogOut,
   error: AlertCircle,
   info: Info,
+  message: MessageSquare,
 };
 
 // A single toast: animates in, then slides out just before it is removed so the
 // exit is visible rather than the element vanishing abruptly.
 function Toast({ toast, onDismiss }) {
   const [leaving, setLeaving] = useState(false);
-  const duration = toast.duration ?? 3200;
+  const duration = toast.duration ?? 4000;
 
   useEffect(() => {
     // Start the exit animation shortly before the toast is actually removed.
@@ -27,9 +28,17 @@ function Toast({ toast, onDismiss }) {
     };
   }, [toast.id, duration, onDismiss]);
 
-  const handleDismiss = () => {
+  const handleDismiss = (e) => {
+    e?.stopPropagation();
     setLeaving(true);
     setTimeout(() => onDismiss(toast.id), 260);
+  };
+
+  const handleClick = () => {
+    if (typeof toast.onClick === 'function') {
+      toast.onClick();
+      handleDismiss();
+    }
   };
 
   const Icon = ICONS[toast.type] || ICONS.info;
@@ -39,6 +48,8 @@ function Toast({ toast, onDismiss }) {
       className={`toast toast-${toast.type || 'info'} ${leaving ? 'toast-leaving' : ''}`}
       role="status"
       aria-live="polite"
+      onClick={handleClick}
+      style={{ cursor: typeof toast.onClick === 'function' ? 'pointer' : 'default' }}
     >
       <span className="toast-icon" aria-hidden="true">
         <Icon size={18} />

@@ -15,14 +15,29 @@ export function subscribeToasts(listener) {
   };
 }
 
-export function showToast({ type = 'info', title, message, duration } = {}) {
-  const toast = {
-    id: `toast_${Date.now()}_${nextId++}`,
-    type,
-    title,
-    message,
-    duration,
-  };
+export function showToast(arg1, arg2) {
+  let toast;
+  if (typeof arg1 === 'string') {
+    toast = {
+      id: `toast_${Date.now()}_${nextId++}`,
+      type: arg2 || 'info',
+      title: arg2 === 'error' ? 'Error' : (arg2 === 'success' ? 'Success' : null),
+      message: arg1,
+      duration: 3500,
+    };
+  } else if (arg1 && typeof arg1 === 'object') {
+    toast = {
+      id: `toast_${Date.now()}_${nextId++}`,
+      type: arg1.type || 'info',
+      title: arg1.title,
+      message: arg1.message,
+      duration: arg1.duration || 4500,
+      onClick: arg1.onClick,
+      chatJid: arg1.chatJid,
+    };
+  } else {
+    return null;
+  }
   listeners.forEach(listener => listener(toast));
   return toast.id;
 }

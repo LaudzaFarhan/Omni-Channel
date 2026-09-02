@@ -638,11 +638,27 @@ export default function App() {
                        data.message.message?.extendedTextMessage?.text || 
                        'Received media attachment.';
 
+        const senderPhone = data.jid.split('@')[0];
+        const senderName = savedNames[data.jid] || data.message.pushName || `+${senderPhone}`;
+
+        // Top-right in-app toast notification with 1-click open
+        showToast({
+          type: 'message',
+          title: `💬 ${senderName}`,
+          message: msgText.substring(0, 80) + (msgText.length > 80 ? '...' : ''),
+          duration: 5000,
+          onClick: () => {
+            setActiveTab('messages');
+            handleOpenChatFor(data.jid);
+          }
+        });
+
+        // Desktop push notification
         if (userSettings.desktopNotifications && typeof window !== 'undefined' && 'Notification' in window) {
           if (Notification.permission === 'granted') {
             try {
-              new Notification('WhatsApp Message', {
-                body: `From +${data.jid.split('@')[0]}: ${msgText.substring(0, 80)}`,
+              new Notification(`WhatsApp: ${senderName}`, {
+                body: msgText.substring(0, 90),
                 icon: '/favicon.ico',
               });
             } catch {}
@@ -652,11 +668,12 @@ export default function App() {
         setNotifications(prev => [
           {
             id: `msg_${Date.now()}`,
-            title: `New Message`,
-            message: `From +${data.jid.split('@')[0]}: ${msgText.substring(0, 60)}${msgText.length > 60 ? '...' : ''}`,
+            title: `Pesan dari ${senderName}`,
+            message: msgText.substring(0, 70) + (msgText.length > 70 ? '...' : ''),
             time: new Date().toISOString(),
             type: 'message',
-            read: false
+            read: false,
+            chatJid: data.jid,
           },
           ...prev
         ]);
