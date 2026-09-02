@@ -26,6 +26,7 @@ export const FEATURE_LABELS = {
   dashboard: 'Dashboard',
   messages: 'Messages',
   contacts: 'Contacts',
+  broadcast: 'Broadcast',
   notifications: 'Notifications',
   team: 'Team',
   activity: 'Chat History',

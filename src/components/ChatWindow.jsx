@@ -9,13 +9,7 @@ import { get24HourWindowStatus } from '../utils/timeFormat.js';
 import { jidToPhone, formatPhone } from '../utils/phone.js';
 import ContactEditor from './contacts/ContactEditor.jsx';
 import ForwardDialog from './chat/ForwardDialog.jsx';
-
-const DEFAULT_QUICK_REPLIES = [
-  { id: 'welcome', title: '👋 Welcome Message', text: 'Hello! Thank you for contacting us. How can we assist you today?' },
-  { id: 'hours', title: '🕒 Business Hours', text: 'Our operating hours are Monday to Friday, 9:00 AM to 6:00 PM. We will get back to you as soon as possible.' },
-  { id: 'payment', title: '💳 Payment Details', text: 'We accept Bank Transfer and Credit Cards. Please send your payment receipt once completed so we can process your order.' },
-  { id: 'thank_you', title: '💖 Thank You', text: 'Thank you for choosing us! If you have any further questions, feel free to reach out anytime.' },
-];
+import { loadTemplates, saveTemplates, resolveTemplateVariables, TEMPLATE_VARIABLES } from '../utils/templates.js';
 
 const QR_STORAGE_KEY = 'whatsapp_quick_replies';
 
@@ -88,24 +82,11 @@ const formatMessageText = (text) => {
 };
 
 function loadQuickReplies() {
-  try {
-    const stored = localStorage.getItem(QR_STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch (e) {
-    console.error('Failed to load quick replies:', e);
-  }
-  return DEFAULT_QUICK_REPLIES;
+  return loadTemplates();
 }
 
 function saveQuickReplies(replies) {
-  try {
-    localStorage.setItem(QR_STORAGE_KEY, JSON.stringify(replies));
-  } catch (e) {
-    console.error('Failed to save quick replies:', e);
-  }
+  return saveTemplates(replies);
 }
 
 if (!window.__mediaCache) {
@@ -751,7 +732,13 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   const templatesOpen = showTemplates || slashQuery !== null;
 
   const applyTemplate = (reply) => {
-    setInputText(reply.text);
+    const contactName = (savedContact?.name || activeChat?.name || '').trim();
+    const resolved = resolveTemplateVariables(reply.text, {
+      name: contactName || 'Kak',
+      phone: contactPhone || jidToPhone(activeChat?.id),
+      agentName: userProfile?.displayName || userProfile?.name || 'Agent',
+    });
+    setInputText(resolved);
     setShowTemplates(false);
   };
 
@@ -2541,6 +2528,29 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                 rows={3}
                 maxLength={500}
               />
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', margin: '6px 0 8px 0' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-dimmed)', alignSelf: 'center', marginRight: '2px' }}>Variabel:</span>
+                {TEMPLATE_VARIABLES.map(v => (
+                  <button
+                    key={v.key}
+                    type="button"
+                    onClick={() => setFormText(prev => prev + ` ${v.label} `)}
+                    style={{
+                      padding: '2px 7px',
+                      borderRadius: '5px',
+                      background: 'var(--primary-subtle)',
+                      color: 'var(--primary)',
+                      border: '1px solid var(--primary-border)',
+                      fontSize: '0.72rem',
+                      fontWeight: '700',
+                      cursor: 'pointer'
+                    }}
+                    title={v.desc}
+                  >
+                    + {v.label}
+                  </button>
+                ))}
+              </div>
               <div className="qr-form-actions">
                 <button className="qr-form-cancel" onClick={handleCancelForm}>Batal</button>
                 <button 
@@ -2559,7 +2569,15 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
               <div key={reply.id} className="quick-reply-card">
                 <button 
                   className="quick-reply-btn"
-                  onClick={() => handleSend(reply.text)}
+                  onClick={() => {
+                    const contactName = (savedContact?.name || activeChat?.name || '').trim();
+                    const resolved = resolveTemplateVariables(reply.text, {
+                      name: contactName || 'Kak',
+                      phone: contactPhone || jidToPhone(activeChat?.id),
+                      agentName: userProfile?.displayName || userProfile?.name || 'Agent',
+                    });
+                    handleSend(resolved);
+                  }}
                   disabled={sending}
                   title={reply.text}
                 >

@@ -76,6 +76,12 @@ export const FEATURES = [
     surface: 'Sidebar · Contacts',
   },
   {
+    key: 'broadcast',
+    label: 'Broadcast',
+    description: 'Bulk message campaigns with dynamic customer name variables and anti-ban pacing.',
+    surface: 'Sidebar · Broadcast',
+  },
+  {
     key: 'activity',
     label: 'Chat history',
     description: 'Team-wide customer conversation log: who started it and who replied.',

@@ -30,6 +30,7 @@ import ComingSoon from './components/ComingSoon.jsx';
 import AcceptInvite from './components/AcceptInvite.jsx';
 import BlogPost from './components/BlogPost.jsx';
 import DeveloperDashboard from './components/developer/DeveloperDashboard.jsx';
+import Broadcast from './components/Broadcast.jsx';
 import { showToast } from './utils/toastBus.js';
 
 export default function App() {
@@ -1261,6 +1262,14 @@ export default function App() {
               {activeTab === 'contacts' && gated('contacts',
                 <Contacts
                   activeSessionId={activeSessionId}
+                  onOpenChat={handleOpenChatFor}
+                />
+              )}
+
+              {activeTab === 'broadcast' && gated('broadcast',
+                <Broadcast
+                  activeSessionId={activeSessionId}
+                  userInfo={userInfo}
                   onOpenChat={handleOpenChatFor}
                 />
               )}
