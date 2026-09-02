@@ -18,7 +18,7 @@ import {
   getChatSettings, listHeldChats, setChatHold, clearChatHold,
   setChatStatus, listChatStatuses, CHAT_STATUSES,
   listFeatureFlags, setFeatureFlag, listFeatureAccess, setFeatureAccess,
-  clearFeatureAccess, resolveFeaturesForWorkspace,
+  clearFeatureAccess, resolveFeaturesForWorkspace, dispatchWorkspaceWebhook,
 } from './data.js';
 import {
   FEATURES, FEATURE_STATUSES, FEATURE_ACCESS, DEFAULT_STATUS,
@@ -447,6 +447,13 @@ export function mountDataRoutes(app, io) {
           console.warn('[Hold] Webhook notify failed:', err.message);
         });
       }
+
+      // Customer developer webhook dispatch
+      dispatchWorkspaceWebhook(
+        req.workspaceId,
+        botPaused ? 'agent.hold' : 'agent.resume',
+        { sessionId, chatJid: canonical, aliases, botPaused, note: req.body?.note || '' }
+      );
 
       // Keep the operator's other tabs, and every colleague in the workspace, in
       // step with the change — a hold that only one person can see defeats the

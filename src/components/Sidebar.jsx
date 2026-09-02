@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, MessageSquare, BookUser, Users, CreditCard, User, Settings, LogOut, Bell, History } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, BookUser, Users, CreditCard, User, Settings, LogOut, Bell, History, Code2 } from 'lucide-react';
 import { BrandLockup } from './BrandMark.jsx';
 import { isVisible, isComingSoon } from '../utils/features.js';
 
@@ -96,6 +96,8 @@ export default function Sidebar({
         {isSupervisor && <NavItem tab="activity" icon={History} label="Chat History" />}
 
         {isSupervisor && <NavItem tab="subscription" icon={CreditCard} label="Subscription" />}
+
+        {isSupervisor && <NavItem tab="developer" icon={Code2} label="API & Webhooks" />}
 
         <NavItem tab="profile" icon={User} label="Profile" />
 

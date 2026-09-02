@@ -111,6 +111,13 @@ export const FEATURES = [
     locked: true,
   },
   {
+    key: 'developer',
+    label: 'API & Webhooks',
+    description: 'Developer integration: API keys, realtime webhooks, interactive playground and SDK snippets.',
+    surface: 'Sidebar · API & Webhooks',
+    supervisorOnly: true,
+  },
+  {
     key: 'settings',
     label: 'Settings',
     description: 'Theme and notification preferences.',

@@ -29,6 +29,7 @@ import ConversationLog from './components/dashboard/ConversationLog.jsx';
 import ComingSoon from './components/ComingSoon.jsx';
 import AcceptInvite from './components/AcceptInvite.jsx';
 import BlogPost from './components/BlogPost.jsx';
+import DeveloperDashboard from './components/developer/DeveloperDashboard.jsx';
 import { showToast } from './utils/toastBus.js';
 
 export default function App() {
@@ -1295,6 +1296,13 @@ export default function App() {
                   userProfile={activeProfile} 
                   activeSessionCount={activeSessionCount} 
                   plans={plans}
+                />
+              )}
+
+              {activeTab === 'developer' && isSupervisor && gated('developer',
+                <DeveloperDashboard 
+                  userProfile={activeProfile}
+                  activeSessionId={activeSessionId}
                 />
               )}
 

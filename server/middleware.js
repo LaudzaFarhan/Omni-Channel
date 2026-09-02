@@ -6,16 +6,51 @@
 // admin console's authority came from client-side role checks.
 
 import { verifyAccessToken } from './auth.js';
-import { findUserById, resolveFeaturesForWorkspace } from './data.js';
+import { findUserById, resolveFeaturesForWorkspace, findApiKeyByRawKey, touchApiKeyLastUsed } from './data.js';
 import { isEnabled } from './features.js';
 
-// Attaches req.user from the Bearer token. The payload keeps the same shape the
+// Attaches req.user from the Bearer token or X-API-Key. The payload keeps the same shape the
 // Firebase verifier produced (notably req.user.uid), so existing routes are
 // unchanged.
-export function authMiddleware(req, res, next) {
+export async function authMiddleware(req, res, next) {
+  const customApiKeyHeader = req.headers['x-api-key'];
   const authHeader = req.headers.authorization;
+
+  // 1. Check for API key (via X-API-Key header or Bearer wapi_...)
+  let presentedApiKey = null;
+  if (customApiKeyHeader && typeof customApiKeyHeader === 'string' && customApiKeyHeader.startsWith('wapi_')) {
+    presentedApiKey = customApiKeyHeader.trim();
+  } else if (authHeader && authHeader.startsWith('Bearer wapi_')) {
+    presentedApiKey = authHeader.slice('Bearer '.length).trim();
+  }
+
+  if (presentedApiKey) {
+    try {
+      const keyRecord = await findApiKeyByRawKey(presentedApiKey);
+      if (!keyRecord) {
+        return res.status(401).json({ error: 'Unauthorized: Invalid or revoked API key', code: 'api_key_invalid' });
+      }
+
+      // Mark last used asynchronously
+      touchApiKeyLastUsed(keyRecord.id);
+
+      req.user = {
+        uid: keyRecord.userId,
+        role: 'customer',
+        isApiKey: true,
+        apiKeyId: keyRecord.id,
+        scopes: keyRecord.scopes,
+      };
+      return next();
+    } catch (err) {
+      console.error('[Auth] API Key lookup error:', err.message);
+      return res.status(500).json({ error: 'Internal server error during authentication' });
+    }
+  }
+
+  // 2. Standard JWT access token authentication
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized: Missing token' });
+    return res.status(401).json({ error: 'Unauthorized: Missing token or API key' });
   }
 
   const decoded = verifyAccessToken(authHeader.slice('Bearer '.length));

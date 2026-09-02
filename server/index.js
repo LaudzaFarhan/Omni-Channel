@@ -22,6 +22,7 @@ import {
   resolveSessionLimitFor, consumeMessageQuota, saveTransaction,
   markTransactionStatus, findUserById, recordAudit, isChatHeld,
   findPlanById, updateUser, setPurchasedAgents, addPurchasedAgents,
+  dispatchWorkspaceWebhook,
 } from './data.js';
 // Pricing arithmetic is shared with the browser so the customer is shown exactly
 // the figure they will be charged. The server always recomputes it; the client's
@@ -40,6 +41,7 @@ import { mountAuthRoutes } from './routes-auth.js';
 import { mountDataRoutes } from './routes-data.js';
 import { mountContactRoutes } from './routes-contacts.js';
 import { mountTeamRoutes } from './routes-team.js';
+import { mountDeveloperRoutes } from './routes-developer.js';
 import { onUserConnected, onUserDisconnected, setUserPresence } from './presence.js';
 
 const PORT = process.env.PORT || 5000;
@@ -514,6 +516,13 @@ async function getOrInitWASocket(ownerId, sessionId = 'default') {
 
           store.addMessage(jid, msg);
           io.to(ownerId).emit('new-message', { sessionId, jid, message: msg });
+
+          // Dispatch customer developer webhook for incoming/outgoing messages
+          dispatchWorkspaceWebhook(
+            ownerId,
+            msg.key.fromMe ? 'message.sent' : 'message.received',
+            { sessionId, jid, message: msg }
+          );
         }
       }
     });
@@ -540,6 +549,9 @@ async function getOrInitWASocket(ownerId, sessionId = 'default') {
 
         io.to(ownerId).emit('message-update', { sessionId, ...update });
       }
+
+      // Dispatch customer developer webhook for message status updates (delivery/read receipts)
+      dispatchWorkspaceWebhook(ownerId, 'message.status', { sessionId, updates });
     });
 
     sock.ev.on('groups.update', (updates) => {
@@ -1432,8 +1444,11 @@ mountDataRoutes(app, io);
 mountContactRoutes(app, io);
 
 // Who else may sign in to this account. Supervisor-facing, and much narrower than
-// the admin console: invite, rename, resend, remove â€” never a plan, quota or role.
+// the admin console: invite, rename, resend, remove — never a plan, quota or role.
 mountTeamRoutes(app, io);
+
+// Developer API keys and Webhooks endpoints.
+mountDeveloperRoutes(app, io);
 
 // Reports whether the payment gateway is configured. Unauthenticated by design:
 // it exposes booleans only, never the key itself.

@@ -30,6 +30,7 @@ export const FEATURE_LABELS = {
   team: 'Team',
   activity: 'Chat History',
   subscription: 'Subscription',
+  developer: 'API & Webhooks',
   profile: 'Profile',
   settings: 'Settings',
   heatmap: 'Interaction heat map',

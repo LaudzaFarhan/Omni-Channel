@@ -9,6 +9,7 @@
 // src/utils/plans.js already treats null/undefined as "no override", which is
 // exactly what a missing Firestore field used to mean.
 
+import crypto from 'crypto';
 import { query, queryOne, withTransaction } from './db.js';
 import { resolveFeatures } from './features.js';
 import { hashRefreshToken, refreshTokenExpiry } from './auth.js';
@@ -1361,3 +1362,274 @@ export async function resolveFeaturesForWorkspace(workspaceId) {
   ]);
   return resolveFeatures({ flags, overrides });
 }
+
+// ---------------------------------------------------------------------------
+// Developer: API Keys
+// ---------------------------------------------------------------------------
+
+export function hashApiKey(rawKey) {
+  return crypto.createHash('sha256').update(String(rawKey).trim()).digest('hex');
+}
+
+export function mapApiKey(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    keyPrefix: row.key_prefix,
+    scopes: Array.isArray(row.scopes) ? row.scopes : [],
+    lastUsedAt: row.last_used_at,
+    expiresAt: row.expires_at,
+    revokedAt: row.revoked_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function listApiKeys(userId) {
+  const { rows } = await query(
+    `SELECT id, user_id, name, key_prefix, scopes, last_used_at, expires_at, revoked_at, created_at, updated_at
+       FROM api_keys
+      WHERE user_id = $1
+      ORDER BY created_at DESC`,
+    [userId]
+  );
+  return rows.map(mapApiKey);
+}
+
+export async function createApiKey(userId, { name = 'Default API Key', scopes = ['messages:send', 'messages:read', 'contacts:sync', 'sessions:read', 'agent:hold'], expiresAt = null } = {}) {
+  const id = `key_${crypto.randomBytes(8).toString('hex')}`;
+  const randomSecret = crypto.randomBytes(24).toString('hex');
+  const rawKey = `wapi_live_${randomSecret}`;
+  const keyPrefix = `wapi_live_${randomSecret.slice(0, 4)}...${randomSecret.slice(-4)}`;
+  const keyHash = hashApiKey(rawKey);
+
+  const row = await queryOne(
+    `INSERT INTO api_keys (id, user_id, name, key_prefix, key_hash, scopes, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING *`,
+    [id, userId, name, keyPrefix, keyHash, JSON.stringify(scopes), expiresAt]
+  );
+
+  const mapped = mapApiKey(row);
+  return {
+    ...mapped,
+    rawKey, // Only returned once on creation!
+  };
+}
+
+export async function revokeApiKey(userId, keyId) {
+  const row = await queryOne(
+    `UPDATE api_keys
+        SET revoked_at = now()
+      WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
+      RETURNING *`,
+    [keyId, userId]
+  );
+  return mapApiKey(row);
+}
+
+export async function findApiKeyByRawKey(rawKey) {
+  if (!rawKey || typeof rawKey !== 'string') return null;
+  const hash = hashApiKey(rawKey);
+  const row = await queryOne(
+    `SELECT * FROM api_keys WHERE key_hash = $1 AND revoked_at IS NULL`,
+    [hash]
+  );
+  if (!row) return null;
+  if (row.expires_at && new Date(row.expires_at) < new Date()) {
+    return null;
+  }
+  return mapApiKey(row);
+}
+
+export async function touchApiKeyLastUsed(keyId) {
+  await query(
+    `UPDATE api_keys SET last_used_at = now() WHERE id = $1`,
+    [keyId]
+  ).catch(err => console.warn('[API Key] touch failed:', err.message));
+}
+
+// ---------------------------------------------------------------------------
+// Developer: Webhook Config & Delivery Logs
+// ---------------------------------------------------------------------------
+
+export function mapWebhookConfig(row) {
+  if (!row) return null;
+  return {
+    userId: row.user_id,
+    webhookUrl: row.webhook_url,
+    secret: row.secret,
+    events: Array.isArray(row.events) ? row.events : [],
+    isActive: Boolean(row.is_active),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function getWebhookConfig(userId) {
+  const row = await queryOne(
+    `SELECT * FROM webhook_configs WHERE user_id = $1`,
+    [userId]
+  );
+  if (!row) {
+    // Return default unconfigured placeholder
+    return {
+      userId,
+      webhookUrl: '',
+      secret: '',
+      events: ['message.received', 'message.status', 'session.status', 'agent.hold', 'agent.resume'],
+      isActive: true,
+      createdAt: null,
+      updatedAt: null,
+    };
+  }
+  return mapWebhookConfig(row);
+}
+
+export async function saveWebhookConfig(userId, { webhookUrl = '', secret = '', events = ['message.received', 'message.status', 'session.status', 'agent.hold', 'agent.resume'], isActive = true }) {
+  const row = await queryOne(
+    `INSERT INTO webhook_configs (user_id, webhook_url, secret, events, is_active)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (user_id) DO UPDATE SET
+       webhook_url = EXCLUDED.webhook_url,
+       secret      = EXCLUDED.secret,
+       events      = EXCLUDED.events,
+       is_active   = EXCLUDED.is_active,
+       updated_at  = now()
+     RETURNING *`,
+    [userId, webhookUrl.trim(), secret.trim(), JSON.stringify(events), isActive]
+  );
+  return mapWebhookConfig(row);
+}
+
+export async function logWebhookDelivery(userId, { eventType, url, payload, responseStatus, responseBody, latencyMs, status }) {
+  const row = await queryOne(
+    `INSERT INTO webhook_logs (user_id, event_type, url, payload, response_status, response_body, latency_ms, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING *`,
+    [
+      userId,
+      eventType,
+      url,
+      JSON.stringify(payload),
+      responseStatus || null,
+      responseBody ? String(responseBody).slice(0, 2000) : null,
+      Math.max(0, latencyMs || 0),
+      status || 'SUCCESS'
+    ]
+  );
+  return row;
+}
+
+export async function listWebhookLogs(userId, limit = 50) {
+  const { rows } = await query(
+    `SELECT id, user_id, event_type, url, payload, response_status, response_body, latency_ms, status, created_at
+       FROM webhook_logs
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+      LIMIT $2`,
+    [userId, Math.min(100, Math.max(1, limit))]
+  );
+  return rows.map(r => ({
+    id: r.id,
+    userId: r.user_id,
+    eventType: r.event_type,
+    url: r.url,
+    payload: r.payload,
+    responseStatus: r.response_status,
+    responseBody: r.response_body,
+    latencyMs: r.latency_ms,
+    status: r.status,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function clearWebhookLogs(userId) {
+  const { rowCount } = await query(
+    `DELETE FROM webhook_logs WHERE user_id = $1`,
+    [userId]
+  );
+  return rowCount;
+}
+
+/**
+ * Dispatches a webhook event asynchronously to the workspace's configured endpoint.
+ * Fire-and-forget: handles errors gracefully, logs the attempt, and signs payload with HMAC-SHA256.
+ */
+export async function dispatchWorkspaceWebhook(workspaceId, eventType, data = {}) {
+  try {
+    const config = await getWebhookConfig(workspaceId);
+    if (!config || !config.isActive || !config.webhookUrl) {
+      return { skipped: true, reason: 'unconfigured_or_inactive' };
+    }
+
+    if (Array.isArray(config.events) && !config.events.includes(eventType)) {
+      return { skipped: true, reason: 'event_not_subscribed' };
+    }
+
+    const payload = {
+      event: eventType,
+      timestamp: new Date().toISOString(),
+      workspaceId,
+      data,
+    };
+    const bodyStr = JSON.stringify(payload);
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'WhatsApp-UAPI-Webhook/1.0',
+    };
+
+    if (config.secret) {
+      const signature = crypto.createHmac('sha256', config.secret).update(bodyStr).digest('hex');
+      headers['X-Webhook-Signature-256'] = `sha256=${signature}`;
+    }
+
+    const start = Date.now();
+    let responseStatus = 0;
+    let responseBody = '';
+    let status = 'SUCCESS';
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+
+    try {
+      const resp = await fetch(config.webhookUrl, {
+        method: 'POST',
+        headers,
+        body: bodyStr,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      responseStatus = resp.status;
+      responseBody = await resp.text().catch(() => '');
+      if (!resp.ok) {
+        status = 'FAILED';
+      }
+    } catch (fetchErr) {
+      clearTimeout(timeout);
+      status = fetchErr.name === 'AbortError' ? 'TIMEOUT' : 'FAILED';
+      responseBody = fetchErr.message;
+    }
+
+    const latencyMs = Date.now() - start;
+
+    await logWebhookDelivery(workspaceId, {
+      eventType,
+      url: config.webhookUrl,
+      payload,
+      responseStatus,
+      responseBody,
+      latencyMs,
+      status,
+    });
+
+    return { status, latencyMs, responseStatus };
+  } catch (err) {
+    console.warn(`[Webhook Dispatcher] Error dispatching ${eventType} for ${workspaceId}:`, err.message);
+    return { skipped: true, error: err.message };
+  }
+}
+
