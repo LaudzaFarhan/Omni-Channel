@@ -545,197 +545,214 @@ func main() {
   };
 
   return (
-    <div className="view-container" style={{ paddingBottom: '60px', maxWidth: '1400px', margin: '0 auto' }}>
-      {/* ========================================================================= */}
-      {/* HERO / DEVELOPER HEADER */}
-      {/* ========================================================================= */}
+    <div className="view-container" style={{
+      flex: 1,
+      width: '100%',
+      height: '100%',
+      overflowY: 'auto',
+      WebkitOverflowScrolling: 'touch',
+      boxSizing: 'border-box'
+    }}>
       <div style={{
-        position: 'relative',
-        borderRadius: '16px',
-        padding: '28px 32px',
-        marginBottom: '24px',
-        background: 'linear-gradient(135deg, rgba(63, 103, 216, 0.08) 0%, rgba(16, 185, 129, 0.04) 100%)',
-        border: '1px solid var(--border-color)',
-        overflow: 'hidden',
-        boxShadow: 'var(--shadow-card)'
+        maxWidth: '1360px',
+        margin: '0 auto',
+        padding: '24px 28px 80px',
+        width: '100%',
+        boxSizing: 'border-box'
       }}>
+        {/* ========================================================================= */}
+        {/* HERO / DEVELOPER HEADER */}
+        {/* ========================================================================= */}
         <div style={{
-          position: 'absolute',
-          top: '-60px',
-          right: '-40px',
-          width: '240px',
-          height: '240px',
-          background: 'radial-gradient(circle, var(--primary-glow) 0%, transparent 70%)',
-          borderRadius: '50%',
-          pointerEvents: 'none',
-          opacity: 0.6
-        }} />
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '20px', position: 'relative', zIndex: 1 }}>
-          <div style={{ maxWidth: '640px' }}>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '4px 12px', borderRadius: '20px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', fontSize: '0.78rem', fontWeight: '600', color: 'var(--primary)', marginBottom: '12px' }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981', display: 'inline-block' }} />
-              REST API v1 & Realtime Webhooks Engine Active
-            </div>
-            <h1 style={{ margin: '0 0 8px 0', fontSize: '1.75rem', fontWeight: '800', letterSpacing: '-0.02em', color: 'var(--text-main)' }}>
-              Developer & API Integration
-            </h1>
-            <p style={{ margin: 0, fontSize: '0.92rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-              Seamlessly connect external CRM systems, dispatch real-time incoming message events, orchestrate AI Chatbots with human operator takeover, and automate WhatsApp workflows.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <button
-              onClick={() => {
-                setActiveSubTab('playground');
-              }}
-              className="btn btn-secondary"
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 18px', fontWeight: '600', fontSize: '0.86rem' }}
-            >
-              <Play size={16} className="text-primary" />
-              API Playground
-            </button>
-            <button
-              onClick={() => setShowNewKeyModal(true)}
-              className="btn btn-primary"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', fontWeight: '700', fontSize: '0.88rem', boxShadow: '0 4px 14px var(--primary-glow)' }}
-            >
-              <Plus size={18} />
-              Create API Key
-            </button>
-          </div>
-        </div>
-
-        {/* Quick KPI Stat Chips */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '14px',
-          marginTop: '24px',
           position: 'relative',
-          zIndex: 1
+          borderRadius: '16px',
+          padding: '28px 32px',
+          marginBottom: '24px',
+          background: 'linear-gradient(135deg, rgba(63, 103, 216, 0.08) 0%, rgba(16, 185, 129, 0.04) 100%)',
+          border: '1px solid var(--border-color)',
+          overflow: 'hidden',
+          boxShadow: 'var(--shadow-card)'
         }}>
-          {/* Base URL */}
-          <div style={{ padding: '14px 16px', borderRadius: '10px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Server size={18} />
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-dimmed)', fontWeight: '700' }}>API Gateway</div>
-              <div style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {baseUrl}
+          <div style={{
+            position: 'absolute',
+            top: '-60px',
+            right: '-40px',
+            width: '240px',
+            height: '240px',
+            background: 'radial-gradient(circle, var(--primary-glow) 0%, transparent 70%)',
+            borderRadius: '50%',
+            pointerEvents: 'none',
+            opacity: 0.6
+          }} />
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '20px', position: 'relative', zIndex: 1 }}>
+            <div style={{ maxWidth: '640px' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '4px 12px', borderRadius: '20px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', fontSize: '0.78rem', fontWeight: '600', color: 'var(--primary)', marginBottom: '12px' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981', display: 'inline-block' }} />
+                REST API v1 & Realtime Webhooks Engine Active
               </div>
+              <h1 style={{ margin: '0 0 8px 0', fontSize: '1.75rem', fontWeight: '800', letterSpacing: '-0.02em', color: 'var(--text-main)' }}>
+                Developer & API Integration
+              </h1>
+              <p style={{ margin: 0, fontSize: '0.92rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                Seamlessly connect external CRM systems, dispatch real-time incoming message events, orchestrate AI Chatbots with human operator takeover, and automate WhatsApp workflows.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => {
+                  setActiveSubTab('playground');
+                }}
+                className="btn btn-secondary"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 18px', fontWeight: '600', fontSize: '0.86rem' }}
+              >
+                <Play size={16} className="text-primary" />
+                API Playground
+              </button>
+              <button
+                onClick={() => setShowNewKeyModal(true)}
+                className="btn btn-primary"
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', fontWeight: '700', fontSize: '0.88rem', boxShadow: '0 4px 14px var(--primary-glow)' }}
+              >
+                <Plus size={18} />
+                Create API Key
+              </button>
             </div>
           </div>
 
-          {/* Active Keys */}
-          <div style={{ padding: '14px 16px', borderRadius: '10px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Key size={18} />
-            </div>
-            <div>
-              <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-dimmed)', fontWeight: '700' }}>Active Keys</div>
-              <div style={{ fontSize: '1.05rem', fontWeight: '800', color: 'var(--text-main)' }}>
-                {keys.length} <span style={{ fontSize: '0.75rem', fontWeight: '500', color: 'var(--text-muted)' }}>configured</span>
+          {/* Quick KPI Stat Chips */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '14px',
+            marginTop: '24px',
+            position: 'relative',
+            zIndex: 1
+          }}>
+            {/* Base URL */}
+            <div style={{ padding: '14px 16px', borderRadius: '10px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Server size={18} />
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-dimmed)', fontWeight: '700' }}>API Gateway</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {baseUrl}
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Webhook Status */}
-          <div style={{ padding: '14px 16px', borderRadius: '10px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Webhook size={18} />
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-dimmed)', fontWeight: '700' }}>Webhook Endpoint</div>
-              <div style={{ fontSize: '0.85rem', fontWeight: '600', color: webhookConfig.webhookUrl ? '#10b981' : 'var(--text-dimmed)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {webhookConfig.webhookUrl ? 'Configured & Active' : 'Not Configured'}
+            {/* Active Keys */}
+            <div style={{ padding: '14px 16px', borderRadius: '10px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Key size={18} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-dimmed)', fontWeight: '700' }}>Active Keys</div>
+                <div style={{ fontSize: '1.05rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                  {keys.length} <span style={{ fontSize: '0.75rem', fontWeight: '500', color: 'var(--text-muted)' }}>configured</span>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Messages Quota Tracker */}
-          <div style={{ padding: '14px 16px', borderRadius: '10px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Zap size={18} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-dimmed)' }}>
-                <span>QUOTA</span>
-                <span>{sent} / {limit}</span>
+            {/* Webhook Status */}
+            <div style={{ padding: '14px 16px', borderRadius: '10px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Webhook size={18} />
               </div>
-              <div style={{ height: '5px', borderRadius: '3px', background: 'var(--border-color)', marginTop: '4px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${quotaPercent}%`, background: quotaPercent > 90 ? '#ef4444' : 'var(--primary)', borderRadius: '3px', transition: 'width 0.3s' }} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-dimmed)', fontWeight: '700' }}>Webhook Endpoint</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: '600', color: webhookConfig.webhookUrl ? '#10b981' : 'var(--text-dimmed)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {webhookConfig.webhookUrl ? 'Configured & Active' : 'Not Configured'}
+                </div>
+              </div>
+            </div>
+
+            {/* Messages Quota Tracker */}
+            <div style={{ padding: '14px 16px', borderRadius: '10px', background: 'var(--card-bg)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Zap size={18} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-dimmed)' }}>
+                  <span>QUOTA</span>
+                  <span>{sent} / {limit}</span>
+                </div>
+                <div style={{ height: '5px', borderRadius: '3px', background: 'var(--border-color)', marginTop: '4px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${quotaPercent}%`, background: quotaPercent > 90 ? '#ef4444' : 'var(--primary)', borderRadius: '3px', transition: 'width 0.3s' }} />
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* ========================================================================= */}
-      {/* SEGMENTED NAVIGATION TABS */}
-      {/* ========================================================================= */}
-      <div style={{
-        display: 'flex',
-        gap: '6px',
-        padding: '6px',
-        borderRadius: '12px',
-        background: 'var(--card-bg)',
-        border: '1px solid var(--border-color)',
-        marginBottom: '24px',
-        overflowX: 'auto',
-        boxShadow: 'var(--shadow-card)'
-      }}>
-        {[
-          { id: 'keys', label: 'API Keys & Auth', icon: Key, badge: keys.length > 0 ? keys.length : null },
-          { id: 'webhook', label: 'Realtime Webhooks', icon: Webhook, badge: webhookLogs.length > 0 ? webhookLogs.length : null },
-          { id: 'playground', label: 'API Playground', icon: Play },
-          { id: 'sdks', label: 'Code Snippets & SDKs', icon: FileCode },
-          { id: 'bot_handoff', label: 'AI Bot & Workflows', icon: Bot },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeSubTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveSubTab(tab.id)}
-              style={{
-                flex: '1 0 auto',
-                padding: '10px 18px',
-                borderRadius: '8px',
-                border: 'none',
-                background: isActive ? 'var(--primary)' : 'transparent',
-                color: isActive ? '#ffffff' : 'var(--text-muted)',
-                fontWeight: isActive ? '700' : '600',
-                fontSize: '0.88rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                transition: 'var(--transition-smooth)',
-                boxShadow: isActive ? '0 2px 8px var(--primary-glow)' : 'none'
-              }}
-            >
-              <Icon size={16} />
-              <span>{tab.label}</span>
-              {tab.badge !== null && (
-                <span style={{
-                  padding: '2px 7px',
+        {/* ========================================================================= */}
+        {/* SEGMENTED NAVIGATION TABS */}
+        {/* ========================================================================= */}
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '8px',
+          padding: '6px',
+          borderRadius: '14px',
+          background: 'var(--card-bg)',
+          border: '1.5px solid var(--border-color)',
+          marginBottom: '28px',
+          boxShadow: 'var(--shadow-card)',
+          boxSizing: 'border-box'
+        }}>
+          {[
+            { id: 'keys', label: 'API Keys & Auth', icon: Key, badge: keys.length > 0 ? keys.length : null },
+            { id: 'webhook', label: 'Realtime Webhooks', icon: Webhook, badge: webhookLogs.length > 0 ? webhookLogs.length : null },
+            { id: 'playground', label: 'API Playground', icon: Play },
+            { id: 'sdks', label: 'Code Snippets & SDKs', icon: FileCode },
+            { id: 'bot_handoff', label: 'AI Bot & Workflows', icon: Bot },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeSubTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveSubTab(tab.id)}
+                style={{
+                  flex: '1 1 180px',
+                  minWidth: '160px',
+                  padding: '11px 16px',
                   borderRadius: '10px',
-                  fontSize: '0.72rem',
-                  fontWeight: '700',
-                  background: isActive ? 'rgba(255, 255, 255, 0.25)' : 'var(--primary-subtle)',
-                  color: isActive ? '#ffffff' : 'var(--primary)'
-                }}>
-                  {tab.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+                  border: 'none',
+                  background: isActive ? 'var(--primary)' : 'transparent',
+                  color: isActive ? '#ffffff' : 'var(--text-muted)',
+                  fontWeight: isActive ? '700' : '600',
+                  fontSize: '0.88rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  boxShadow: isActive ? '0 4px 12px var(--primary-glow)' : 'none'
+                }}
+              >
+                <Icon size={17} />
+                <span>{tab.label}</span>
+                {tab.badge !== null && tab.badge !== undefined && (
+                  <span style={{
+                    padding: '2px 7px',
+                    borderRadius: '10px',
+                    fontSize: '0.72rem',
+                    fontWeight: '700',
+                    background: isActive ? 'rgba(255, 255, 255, 0.25)' : 'var(--primary-subtle)',
+                    color: isActive ? '#ffffff' : 'var(--primary)'
+                  }}>
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
       {/* ========================================================================= */}
       {/* TAB 1: API KEYS & AUTH (REDESIGNED) */}
@@ -1974,6 +1991,7 @@ func main() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
