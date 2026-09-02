@@ -119,16 +119,23 @@ export default function Settings() {
   ];
 
   return (
-    <div style={{
+    <div className="view-container" style={{
+      flex: 1,
       width: '100%',
-      minHeight: '100%',
-      padding: '24px 28px 80px',
-      maxWidth: '1140px',
-      margin: '0 auto',
+      height: '100%',
+      overflowY: 'auto',
+      WebkitOverflowScrolling: 'touch',
       boxSizing: 'border-box'
     }}>
-      {/* View Header */}
       <div style={{
+        maxWidth: '1140px',
+        margin: '0 auto',
+        padding: '28px 32px 80px',
+        width: '100%',
+        boxSizing: 'border-box'
+      }}>
+        {/* View Header */}
+        <div style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'flex-start',
@@ -948,6 +955,7 @@ export default function Settings() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
