@@ -1633,3 +1633,44 @@ export async function dispatchWorkspaceWebhook(workspaceId, eventType, data = {}
   }
 }
 
+// ---------------------------------------------------------------------------
+// Workspace Settings (Business hours, away message, SLA, privacy)
+// ---------------------------------------------------------------------------
+
+export async function getWorkspaceSettings(userId) {
+  const row = await queryOne(
+    `SELECT settings, updated_at FROM workspace_settings WHERE user_id = $1`,
+    [userId]
+  );
+  if (!row) {
+    return {
+      userId,
+      settings: {},
+      updatedAt: null,
+    };
+  }
+  return {
+    userId,
+    settings: row.settings || {},
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function saveWorkspaceSettings(userId, settingsObj = {}) {
+  const row = await queryOne(
+    `INSERT INTO workspace_settings (user_id, settings)
+     VALUES ($1, $2)
+     ON CONFLICT (user_id) DO UPDATE SET
+       settings   = EXCLUDED.settings,
+       updated_at = now()
+     RETURNING *`,
+    [userId, JSON.stringify(settingsObj)]
+  );
+  return {
+    userId: row.user_id,
+    settings: row.settings || {},
+    updatedAt: row.updated_at,
+  };
+}
+
+

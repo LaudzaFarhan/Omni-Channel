@@ -19,6 +19,7 @@ import {
   setChatStatus, listChatStatuses, CHAT_STATUSES,
   listFeatureFlags, setFeatureFlag, listFeatureAccess, setFeatureAccess,
   clearFeatureAccess, resolveFeaturesForWorkspace, dispatchWorkspaceWebhook,
+  getWorkspaceSettings, saveWorkspaceSettings,
 } from './data.js';
 import {
   FEATURES, FEATURE_STATUSES, FEATURE_ACCESS, DEFAULT_STATUS,
@@ -793,6 +794,32 @@ export function mountDataRoutes(app, io) {
     } catch (err) {
       console.error('[Features] Access clear failed:', err);
       res.status(500).json({ error: 'Could not remove account access.' });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Workspace Settings (Business hours, away replies, SLA, privacy)
+  // ---------------------------------------------------------------------------
+  app.get('/api/workspace/settings', approved, async (req, res) => {
+    try {
+      const data = await getWorkspaceSettings(req.workspaceId);
+      res.json(data.settings || {});
+    } catch (err) {
+      console.error('[Settings] Get workspace settings failed:', err);
+      res.status(500).json({ error: 'Failed to load workspace settings' });
+    }
+  });
+
+  app.post('/api/workspace/settings', supervisor, async (req, res) => {
+    try {
+      const saved = await saveWorkspaceSettings(req.workspaceId, req.body || {});
+      if (io) {
+        io.to(req.workspaceId).emit('workspace-settings-updated', saved.settings);
+      }
+      res.json(saved.settings);
+    } catch (err) {
+      console.error('[Settings] Save workspace settings failed:', err);
+      res.status(500).json({ error: 'Failed to save workspace settings' });
     }
   });
 }
