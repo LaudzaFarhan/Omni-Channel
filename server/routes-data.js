@@ -25,7 +25,7 @@ import {
   FEATURES, FEATURE_STATUSES, FEATURE_ACCESS, DEFAULT_STATUS,
   findFeature, isLocked,
 } from './features.js';
-import { authenticated, admin, supervisor, clientIp } from './middleware.js';
+import { authenticated, approved, admin, supervisor, clientIp } from './middleware.js';
 import { getStore } from './store.js';
 import { sessionKey, userRoom } from './scope.js';
 
