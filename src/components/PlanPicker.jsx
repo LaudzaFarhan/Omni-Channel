@@ -61,6 +61,11 @@ export default function PlanPicker({ plans = [], userProfile, onCheckout, buying
           && currentPlanId === plan.id
           && (currentAgents === null ? selected === range.min : currentAgents === selected);
 
+        // The plan you are already on stays buyable when it has a period, because buying it
+        // again renews it. Without this the only way to extend a subscription was to change
+        // the agent count first, which is not what the customer wants to do.
+        const canRenew = isCurrent && plan.durationDays > 0;
+
         const setAgents = (next) =>
           setAgentsByPlan(prev => ({ ...prev, [plan.id]: clampAgents(plan, next) }));
 
@@ -208,15 +213,23 @@ export default function PlanPicker({ plans = [], userProfile, onCheckout, buying
             <button
               className="upgrade-btn"
               onClick={() => onCheckout(plan.id, selected)}
-              disabled={buying || isCurrent}
+              disabled={buying || (isCurrent && !canRenew)}
+              title={canRenew
+                ? 'Buy another period. The days are added to whatever time you have left.'
+                : undefined}
               style={{
                 marginTop: 'auto', width: '100%',
                 display: 'inline-flex', justifyContent: 'center', alignItems: 'center', gap: '8px',
-                opacity: isCurrent ? 0.6 : 1, cursor: isCurrent ? 'default' : 'pointer',
+                opacity: (isCurrent && !canRenew) ? 0.6 : 1,
+                cursor: (isCurrent && !canRenew) ? 'default' : 'pointer',
               }}
             >
               <CreditCard size={16} />
-              {isCurrent
+              {canRenew
+                // The plan you are on can still be bought, because doing so extends it.
+                // Labelled Renew so it does not read as buying something twice.
+                ? `Renew ${plan.name} — ${formatIDR(pricing.total)}`
+                : isCurrent
                 ? 'Current plan'
                 : addon
                   // Names the quantity, so the button and the stepper cannot disagree

@@ -1525,13 +1525,20 @@ app.post('/api/mayar/create-checkout', supervisor, async (req, res) => {
     // An add-on is repeatable by design: buying a second one is the point, and there
     // is no "already on it" state because it never becomes the customer's plan. Only
     // plans get the no-op guard.
-    if (!addon) {
+    // A plan with a duration is renewable, so re-buying the one you are on is a
+    // RENEWAL and has to be allowed — it extends the paid window rather than doing
+    // nothing. Blocking it here contradicted the rest of the product, which tells the
+    // customer that renewing early adds to the time they have left.
+    //
+    // Only a perpetual plan (durationDays 0) keeps the no-op guard: there is no window
+    // to extend, so paying again really would buy nothing.
+    if (!addon && !(plan.durationDays > 0)) {
       // Same plan AND same agent count is a no-op; buying more agents on the plan
       // you are already on is a legitimate upgrade.
       const currentAgents = req.profile.purchasedAgents ?? plan.includedAgents;
       if (req.profile.planId === planId && currentAgents === agents) {
         return res.status(409).json({
-          error: `You are already on the ${plan.name} plan with ${agents} ${agents === 1 ? 'agent' : 'agents'}.`,
+          error: `You are already on the ${plan.name} plan with ${agents} ${agents === 1 ? 'agent' : 'agents'}, and it does not expire.`,
           code: 'already_on_plan',
         });
       }

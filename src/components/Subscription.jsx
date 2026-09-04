@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Send, Hash, Zap, Smartphone, Layers, CreditCard, ExternalLink, X, AlertCircle, CalendarClock, Infinity as InfinityIcon } from 'lucide-react';
+import { Send, Hash, Zap, Smartphone, Layers, CreditCard, ExternalLink, X, AlertCircle, CalendarClock, Check, Infinity as InfinityIcon } from 'lucide-react';
 import { fetchWithAuth } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
 import { readSubscription, formatRenewalDate } from '../utils/subscription.js';
@@ -418,8 +418,16 @@ export default function Subscription({ userProfile, activeSessionCount, plans = 
                             {(tx.status || 'PENDING').toUpperCase()}
                           </span>
                         </td>
+                        {/* Only an unpaid row can be paid.
+                            This used to offer "Pay Now" whenever a paymentUrl existed, and
+                            a settled transaction keeps its checkout link — so every PAID
+                            row invited the customer to pay for it a second time. */}
                         <td style={{ padding: '14px', whiteSpace: 'nowrap' }}>
-                          {tx.paymentUrl ? (
+                          {isPaid ? (
+                            <span style={{ fontSize: '0.8rem', color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: '5px', fontWeight: '600' }}>
+                              <Check size={13} /> Paid
+                            </span>
+                          ) : isPending && tx.paymentUrl ? (
                             <a 
                               href={tx.paymentUrl} 
                               target="_blank" 
@@ -437,7 +445,9 @@ export default function Subscription({ userProfile, activeSessionCount, plans = 
                               Pay Now <ExternalLink size={12} />
                             </a>
                           ) : (
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-dimmed)' }}>Completed</span>
+                            // Failed, expired, or an abandoned checkout whose link has
+                            // lapsed. Nothing actionable, so nothing is offered.
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-dimmed)' }}>—</span>
                           )}
                         </td>
                       </tr>
