@@ -21,6 +21,7 @@ import {
   clearFeatureAccess, resolveFeaturesForWorkspace, dispatchWorkspaceWebhook,
   getWorkspaceSettings, saveWorkspaceSettings,
   findTransactionById, markTransactionPaidIfPending,
+  startSubscriptionPeriod, isSubscriptionExpired,
 } from './data.js';
 import { applyPaidFulfilment } from './fulfilment.js';
 import {
@@ -339,7 +340,37 @@ export function mountDataRoutes(app, io) {
         return res.status(400).json({ error: 'No supported fields to update.' });
       }
 
-      const updated = await updateUser(targetId, patch);
+      let updated = await updateUser(targetId, patch);
+
+      // Assigning a paid plan by hand now opens the subscription window, exactly as
+      // paying through Mayar does (see applyPaidFulfilment). Before this, an admin who
+      // granted a plan from the Customers tab set plan_id and nothing else, so
+      // subscription_ends_at stayed NULL and the customer never got a countdown —
+      // they held a paid plan with no period attached to it.
+      //
+      // Deliberately not keyed on "planId changed": re-assigning the same plan is how
+      // an operator repairs an account that is missing its window, and a no-op there
+      // would leave them with nothing to click.
+      //
+      // Only opens a window when there is no ACTIVE one, so repeated saves in the
+      // Customers tab cannot stack extra months onto a live subscription. Extending a
+      // running window is what the explicit "Extend Sub" control is for.
+      //
+      // A perpetual plan (durationDays 0) does not clear an existing window: that time
+      // was paid for, and silently revoking it would cut a customer off early.
+      let subscriptionStarted = false;
+      if (!Object.prototype.hasOwnProperty.call(body, 'subscriptionEndsAt')) {
+        const assignedPlan = updated.planId ? await findPlanById(updated.planId) : null;
+        const hasActiveWindow = Boolean(updated.subscriptionEndsAt)
+          && !isSubscriptionExpired(updated.subscriptionEndsAt);
+        if (assignedPlan && assignedPlan.durationDays > 0 && !hasActiveWindow) {
+          await startSubscriptionPeriod(targetId, assignedPlan.durationDays);
+          // Re-read so the socket payload and the response carry the new end date and
+          // the cleared trial_expired flag rather than the pre-window row.
+          updated = (await findUserById(targetId)) || updated;
+          subscriptionStarted = true;
+        }
+      }
 
       // Revoking access should end the session, not wait for the token to expire.
       if (patch.isApproved === false || patch.role === 'customer') {
@@ -351,7 +382,13 @@ export function mountDataRoutes(app, io) {
       await recordAudit({
         actorUserId: req.profile.uid, actorEmail: req.profile.email,
         action: 'user.update', targetUserId: targetId,
-        detail: { changed: Object.keys(patch), patch }, ip: clientIp(req),
+        detail: {
+          changed: Object.keys(patch), patch,
+          ...(subscriptionStarted
+            ? { subscriptionStarted: true, subscriptionEndsAt: updated.subscriptionEndsAt }
+            : {}),
+        },
+        ip: clientIp(req),
       });
 
       res.json({ user: updated });
