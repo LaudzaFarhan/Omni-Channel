@@ -12,15 +12,26 @@
 //                   Writing it here would silently discard a manually granted limit.
 //   messages_sent   not reset by a purchase. The new allowance comes from the new plan's
 //                   message_limit, not from zeroing the counter.
-//   trial_expired   not cleared by a purchase. A customer whose trial already expired
-//                   stays blocked until an admin clears it on the Customers tab.
 //
-// That last one is worth knowing when approving a real payment by hand: marking the
-// invoice paid does not by itself lift an expired-trial lockout.
+// What a plan purchase DOES now write, beyond the plan and the agents:
+//
+//   subscription_ends_at  the paid window, plan.duration_days long (30 by default).
+//                         Extended from whichever is later, now or the current end date,
+//                         so renewing early adds to what is left.
+//   trial_expired         cleared. Paying is what resolves an expired trial. Before
+//                         subscriptions had an end date there was nothing to express that
+//                         with, so an admin had to clear the flag by hand after every
+//                         payment — and a customer who had paid stayed locked out until
+//                         somebody noticed.
+//
+// An ADD-ON deliberately does not touch the end date. A top-up buys agent slots inside the
+// window the customer already has; extending the subscription because they bought one more
+// agent would give away a period they did not pay for.
 
 import {
   findPlanById, findUserById, updateUser,
   setPurchasedAgents, addPurchasedAgents, recordAudit,
+  startSubscriptionPeriod,
 } from './data.js';
 import { isAddon, clampAgents, agentsGranted } from '../src/utils/pricing.js';
 import { userRoom } from './scope.js';
@@ -39,10 +50,11 @@ import { userRoom } from './scope.js';
  * @param source            'webhook' | 'admin', recorded in the audit detail.
  * @param logPrefix         Bracketed tag for the console lines.
  *
- * Returns { appliedPlan, appliedAgents, unfulfilled }, where `unfulfilled` is null on
- * success or a short reason code. It RESOLVES rather than throwing on a bad reference,
- * because the payment is real either way: the caller still has to record it and decide
- * what to tell the operator.
+ * Returns { appliedPlan, appliedAgents, subscriptionEndsAt, unfulfilled }, where
+ * `unfulfilled` is null on success or a short reason code, and `subscriptionEndsAt` is set
+ * only by a plan purchase. It RESOLVES rather than throwing on a bad reference, because the
+ * payment is real either way: the caller still has to record it and decide what to tell the
+ * operator.
  */
 export async function applyPaidFulfilment({
   io,
@@ -62,6 +74,9 @@ export async function applyPaidFulfilment({
   let appliedPlan = null;
   let appliedAgents = null;
   let unfulfilled = null;
+  // Only a plan purchase sets this. Stays null for an add-on, which buys agents inside the
+  // window the customer already has.
+  let subscriptionEndsAt = null;
 
   if (uid && planId) {
     const plan = await findPlanById(planId);
@@ -117,7 +132,16 @@ export async function applyPaidFulfilment({
       await setPurchasedAgents(uid, agentsPaidFor);
       appliedAgents = agentsPaidFor;
 
-      console.log(`${logPrefix} Upgraded ${user.email} to ${plan.name} with ${agentsPaidFor} agent(s).`);
+      // Start (or extend) the paid window, and lift any expired-trial lock. Runs before
+      // the profile is re-read below, so the row pushed to the customer already carries
+      // the new end date and their countdown updates without a reload.
+      const renewed = await startSubscriptionPeriod(uid, plan.durationDays);
+      subscriptionEndsAt = renewed?.subscriptionEndsAt ?? null;
+
+      console.log(
+        `${logPrefix} Upgraded ${user.email} to ${plan.name} with ${agentsPaidFor} agent(s)` +
+        `${subscriptionEndsAt ? `, paid until ${new Date(subscriptionEndsAt).toISOString()}` : ' (no expiry)'}.`
+      );
 
       const fresh = await findUserById(uid);
       // The supervisor's own row goes to their own tabs. It must not reach the
@@ -125,7 +149,11 @@ export async function applyPaidFulfilment({
       io?.to(userRoom(uid)).emit('profile-updated', fresh);
       // The plan and the seat count just changed for everyone in the workspace,
       // so every member needs to re-resolve their limits.
-      io?.to(uid).emit('workspace-updated', { planId: plan.id, agents: appliedAgents });
+      io?.to(uid).emit('workspace-updated', {
+        planId: plan.id,
+        agents: appliedAgents,
+        subscriptionEndsAt,
+      });
     }
   } else {
     console.warn(`${logPrefix} Payment carried no uid/planId and no local record — fulfil manually from the admin console.`);
@@ -147,6 +175,7 @@ export async function applyPaidFulfilment({
       source,
       appliedPlan,
       appliedAgents,
+      subscriptionEndsAt,
     },
     ip,
   });
@@ -156,9 +185,10 @@ export async function applyPaidFulfilment({
       transactionId: localTransactionId,
       planId: appliedPlan,
       agents: appliedAgents,
+      subscriptionEndsAt,
       timestamp: new Date().toISOString(),
     });
   }
 
-  return { appliedPlan, appliedAgents, unfulfilled };
+  return { appliedPlan, appliedAgents, subscriptionEndsAt, unfulfilled };
 }

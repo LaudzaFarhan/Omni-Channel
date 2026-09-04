@@ -35,6 +35,10 @@ export function mapUser(row) {
     trialExpired: row.trial_expired,
     trialEndsAt: row.trial_ends_at,
     customTrialDays: row.custom_trial_days ?? null,
+    // When paid access ends. NULL means no subscription limit, which is what every
+    // account created before subscription periods existed carries — so absence must never
+    // be read as "expired".
+    subscriptionEndsAt: row.subscription_ends_at ?? null,
     // Agents the customer paid for. NULL means they inherit the plan's included
     // count; sessionLimit above still wins as an explicit admin override.
     purchasedAgents: row.purchased_agents ?? null,
@@ -79,6 +83,12 @@ export function mapPlan(row) {
     basePrice: Number(row.base_price ?? row.price ?? 0),
     includedAgents: Number(row.included_agents ?? 1),
     addonAgentPrice: Number(row.addon_agent_price ?? 0),
+    // How long one purchase lasts, and whether the plan caps agents at all. Defaults
+    // mirror the column defaults so a plan row written before migration 012 still reads
+    // as a 30-day, capped plan rather than as perpetual and unlimited.
+    durationDays: Number(row.duration_days ?? 30),
+    unlimitedAgents: Boolean(row.unlimited_agents),
+
     maxAgents: row.max_agents === null || row.max_agents === undefined
       ? null
       : Number(row.max_agents),
@@ -113,8 +123,8 @@ export function mapTransaction(row) {
 
 const USER_COLUMNS = `
   id, email, name, role, is_approved, plan_id, message_limit, session_limit,
-  messages_sent, trial_expired, trial_ends_at, custom_trial_days, must_reset_password,
-  purchased_agents, owner_user_id, created_at, last_login_at
+  messages_sent, trial_expired, trial_ends_at, custom_trial_days, subscription_ends_at,
+  must_reset_password, purchased_agents, owner_user_id, created_at, last_login_at
 `;
 
 // ---------------------------------------------------------------------------
@@ -126,7 +136,8 @@ export async function findUserById(id) {
   const user = mapUser(row);
   if (user && user.ownerUserId) {
     const ownerRow = await queryOne(
-      `SELECT id, email, name, plan_id, trial_expired, trial_ends_at, custom_trial_days, created_at, is_approved
+      `SELECT id, email, name, plan_id, trial_expired, trial_ends_at, custom_trial_days,
+              subscription_ends_at, created_at, is_approved
          FROM users WHERE id = $1`,
       [user.ownerUserId]
     );
@@ -138,6 +149,10 @@ export async function findUserById(id) {
       user.trialExpired = Boolean(ownerRow.trial_expired);
       user.trialEndsAt = ownerRow.trial_ends_at;
       user.customTrialDays = ownerRow.custom_trial_days;
+      // The workspace's subscription, not the member's own row — a member has no
+      // subscription of their own, so without this overlay their countdown would be blank
+      // while the owner's was running out.
+      user.subscriptionEndsAt = ownerRow.subscription_ends_at ?? null;
       user.ownerCreatedAt = ownerRow.created_at;
     }
   }
@@ -187,11 +202,13 @@ export async function createUser({
 export async function listUsers() {
   const { rows } = await query(`
     SELECT u.id, u.email, u.name, u.role, u.is_approved, u.plan_id, u.message_limit, u.session_limit,
-           u.messages_sent, u.trial_expired, u.trial_ends_at, u.custom_trial_days, u.must_reset_password,
+           u.messages_sent, u.trial_expired, u.trial_ends_at, u.custom_trial_days,
+           u.subscription_ends_at, u.must_reset_password,
            u.purchased_agents, u.owner_user_id, u.created_at, u.last_login_at,
            o.email AS owner_email, o.name AS owner_name, o.plan_id AS owner_plan_id,
            o.messages_sent AS owner_messages_sent, o.trial_expired AS owner_trial_expired,
            o.trial_ends_at AS owner_trial_ends_at, o.custom_trial_days AS owner_custom_trial_days,
+           o.subscription_ends_at AS owner_subscription_ends_at,
            o.created_at AS owner_created_at
       FROM users u
       LEFT JOIN users o ON o.id = u.owner_user_id
@@ -207,6 +224,7 @@ export async function listUsers() {
       user.trialExpired = Boolean(r.owner_trial_expired);
       user.trialEndsAt = r.owner_trial_ends_at;
       user.customTrialDays = r.owner_custom_trial_days;
+      user.subscriptionEndsAt = r.owner_subscription_ends_at ?? null;
       user.ownerCreatedAt = r.owner_created_at;
     }
     return user;
@@ -228,6 +246,7 @@ const ADMIN_WRITABLE = {
   purchasedAgents: 'purchased_agents',
   trialEndsAt: 'trial_ends_at',
   customTrialDays: 'custom_trial_days',
+  subscriptionEndsAt: 'subscription_ends_at',
 };
 
 // Builds a parameterised UPDATE from a whitelist. Passing null for
@@ -405,7 +424,7 @@ export async function checkTeamMemberWorkspaceStatus(memberUserId, ownerUserId) 
 
   const ownerRow = await queryOne(
     `SELECT u.id, u.email, u.name, u.role, u.is_approved, u.plan_id, u.trial_expired,
-            u.trial_ends_at, u.custom_trial_days, u.created_at,
+            u.trial_ends_at, u.custom_trial_days, u.subscription_ends_at, u.created_at,
             COALESCE(u.session_limit, u.purchased_agents, p.included_agents, p.session_limit, 1) AS seat_limit,
             p.trial_days AS plan_trial_days
        FROM users u
@@ -432,9 +451,24 @@ export async function checkTeamMemberWorkspaceStatus(memberUserId, ownerUserId) 
 
   // Check trial / subscription expiration of the owner
   if (ownerRow.role !== 'admin') {
-    let ownerExpired = Boolean(ownerRow.trial_expired);
+    // A live paid window settles it: the owner is paid up, so nothing below can lock the
+    // member out. Checked first because a lapsed trial is irrelevant once somebody has paid.
+    const paidUpTo = ownerRow.subscription_ends_at;
+    const paidAndActive = Boolean(paidUpTo) && new Date(paidUpTo).getTime() > Date.now();
 
-    if (!ownerExpired && ownerRow.trial_ends_at) {
+    if (paidUpTo && !paidAndActive) {
+      return {
+        allowed: false,
+        error: `You cannot sign in because the subscription for ${ownerRow.name || ownerRow.email} has ended. Please ask them to renew it.`,
+        code: 'workspace_subscription_expired',
+      };
+    }
+
+    let ownerExpired = !paidAndActive && Boolean(ownerRow.trial_expired);
+
+    if (paidAndActive) {
+      // Paid and inside the window — skip the trial arithmetic entirely.
+    } else if (!ownerExpired && ownerRow.trial_ends_at) {
       if (new Date(ownerRow.trial_ends_at).getTime() <= Date.now()) {
         ownerExpired = true;
       }
@@ -636,8 +670,9 @@ export async function upsertPlan(plan) {
     const { rows } = await client.query(
       `INSERT INTO plans (id, name, description, price, currency, message_limit,
                           session_limit, trial_days, features, is_default, archived, sort_order,
-                          base_price, included_agents, addon_agent_price, max_agents, is_addon)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17)
+                          base_price, included_agents, addon_agent_price, max_agents, is_addon,
+                          duration_days, unlimited_agents)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name,
          description = EXCLUDED.description,
@@ -654,7 +689,9 @@ export async function upsertPlan(plan) {
          included_agents = EXCLUDED.included_agents,
          addon_agent_price = EXCLUDED.addon_agent_price,
          max_agents = EXCLUDED.max_agents,
-         is_addon = EXCLUDED.is_addon
+         is_addon = EXCLUDED.is_addon,
+         duration_days = EXCLUDED.duration_days,
+         unlimited_agents = EXCLUDED.unlimited_agents
        RETURNING *`,
       [
         plan.id, plan.name, plan.description || '', plan.price || 0,
@@ -666,6 +703,12 @@ export async function upsertPlan(plan) {
         plan.addonAgentPrice ?? 0,
         plan.maxAgents === null || plan.maxAgents === undefined ? null : Math.max(1, plan.maxAgents),
         Boolean(plan.isAddon),
+        // Undefined must not become 0: 0 means "never expires", so a caller that simply
+        // omitted the field would silently sell a perpetual plan.
+        plan.durationDays === undefined || plan.durationDays === null
+          ? 30
+          : Math.max(0, Math.floor(Number(plan.durationDays) || 0)),
+        Boolean(plan.unlimitedAgents),
       ]
     );
 
@@ -1701,4 +1744,58 @@ export async function markTransactionPaidIfPending(id) {
     [id]
   );
   return mapTransaction(row);
+}
+
+// ---------------------------------------------------------------------------
+// subscription period
+// ---------------------------------------------------------------------------
+/**
+ * Start or extend an account's paid window.
+ *
+ * Extends from whichever is LATER: now, or the end date the account already has. Renewing
+ * eleven days early should add a period to what is left, not throw those days away — and
+ * renewing after a lapse has to start from today, not from the stale date, or the customer
+ * would pay for a window that had already passed.
+ *
+ * `days` of 0 means the plan never expires, which clears the date rather than setting one
+ * in the past.
+ *
+ * Also clears trial_expired. Paying is the thing that resolves an expired trial, and until
+ * subscriptions had an end date there was no way to express that, so an admin had to clear
+ * the flag by hand after every payment.
+ */
+export async function startSubscriptionPeriod(userId, days) {
+  const span = Math.max(0, Math.floor(Number(days) || 0));
+
+  if (span === 0) {
+    const row = await queryOne(
+      `UPDATE users SET subscription_ends_at = NULL, trial_expired = FALSE
+        WHERE id = $1 RETURNING ${USER_COLUMNS}`,
+      [userId]
+    );
+    return mapUser(row);
+  }
+
+  const row = await queryOne(
+    `UPDATE users
+        SET subscription_ends_at = GREATEST(now(), COALESCE(subscription_ends_at, now()))
+                                   + ($2 || ' days')::interval,
+            trial_expired = FALSE
+      WHERE id = $1
+      RETURNING ${USER_COLUMNS}`,
+    [userId, span]
+  );
+  return mapUser(row);
+}
+
+/**
+ * True when this account's paid window has closed.
+ *
+ * NULL is not expired: it means the account has no subscription limit at all, which is what
+ * every account predating migration 012 carries.
+ */
+export function isSubscriptionExpired(subscriptionEndsAt) {
+  if (!subscriptionEndsAt) return false;
+  const endsAt = new Date(subscriptionEndsAt).getTime();
+  return Number.isFinite(endsAt) && endsAt <= Date.now();
 }

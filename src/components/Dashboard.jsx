@@ -141,6 +141,7 @@ export default function Dashboard({
   const messagesSent = userProfile?.messagesSent || 0;
   const messageLimit = userProfile?.messageLimit || 0;
   const sessionLimit = userProfile?.sessionLimit || 0;
+  const unlimitedAgents = Boolean(userProfile?.unlimitedAgents);
 
   const activeNumbers = Array.isArray(waSessions)
     ? waSessions.filter(s => s.status === 'connected').length
@@ -296,7 +297,9 @@ export default function Dashboard({
     {
       label: 'Nomor Aktif',
       value: activeNumbers,
-      sub: sessionLimit > 0 ? `dari ${sessionLimit} perangkat` : null,
+      sub: unlimitedAgents
+        ? 'perangkat tanpa batas'
+        : sessionLimit > 0 ? `dari ${sessionLimit} perangkat` : null,
       icon: Phone,
       tone: 'amber',
     },
@@ -529,6 +532,7 @@ export default function Dashboard({
           planName: userProfile?.planName || null,
           messagesSent,
           messageLimit,
+          unlimitedAgents,
         }}
       />
 

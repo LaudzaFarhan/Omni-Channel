@@ -130,6 +130,18 @@ export function mountDataRoutes(app, io) {
         return res.status(400).json({ error: 'sessionLimit must be a whole number of 1 or more.' });
       }
 
+      // How long a purchase lasts. Absent means 30, NOT 0 — reading a missing field as
+      // "never expires" would silently sell perpetual access.
+      const durationDays = Object.prototype.hasOwnProperty.call(body, 'durationDays')
+        ? Number(body.durationDays)
+        : 30;
+      if (!Number.isInteger(durationDays) || durationDays < 0) {
+        return res.status(400).json({
+          error: 'durationDays must be a whole number of 0 or more (0 means the plan never expires).',
+          code: 'invalid_duration',
+        });
+      }
+
       const plan = await upsertPlan({
         id,
         name,
@@ -143,6 +155,8 @@ export function mountDataRoutes(app, io) {
         isDefault: Boolean(body.isDefault),
         archived: Boolean(body.archived),
         sortOrder: Number.isInteger(Number(body.sortOrder)) ? Number(body.sortOrder) : 100,
+        durationDays,
+        unlimitedAgents: Boolean(body.unlimitedAgents),
       });
 
       const plans = await listPlans();
@@ -304,6 +318,20 @@ export function mountDataRoutes(app, io) {
             return res.status(400).json({ error: 'customTrialDays must be a whole number of 0 or more.' });
           }
           patch.customTrialDays = days;
+        }
+      }
+
+      // The paid window, set directly. null clears it, which means "no subscription limit"
+      // rather than "expired" — the same meaning absence has everywhere else.
+      if (Object.prototype.hasOwnProperty.call(body, 'subscriptionEndsAt')) {
+        if (body.subscriptionEndsAt === null || body.subscriptionEndsAt === '') {
+          patch.subscriptionEndsAt = null;
+        } else {
+          const d = new Date(body.subscriptionEndsAt);
+          if (!Number.isFinite(d.getTime())) {
+            return res.status(400).json({ error: 'Invalid subscriptionEndsAt timestamp.' });
+          }
+          patch.subscriptionEndsAt = d;
         }
       }
 
@@ -673,8 +701,14 @@ export function mountDataRoutes(app, io) {
 
       console.log(
         `[Admin Approval] ${req.profile.email} approved ${tx.id} (${tx.amount}) for ${customer.email}: ` +
-        `plan ${applied.appliedPlan}, ${applied.appliedAgents} agent(s).`
+        `plan ${applied.appliedPlan}, ${applied.appliedAgents} agent(s)` +
+        `${applied.subscriptionEndsAt ? `, paid until ${new Date(applied.subscriptionEndsAt).toISOString()}` : ''}.`
       );
+
+      // Re-read rather than reusing the row fetched before fulfilment. A plan purchase now
+      // clears trial_expired and sets the paid window, so the pre-fulfilment copy would
+      // report a lockout that has just been lifted.
+      const after = await findUserById(tx.uid);
 
       res.json({
         success: true,
@@ -682,9 +716,10 @@ export function mountDataRoutes(app, io) {
         customerEmail: customer.email,
         appliedPlan: applied.appliedPlan,
         appliedAgents: applied.appliedAgents,
-        // Paying does not clear an expired trial — the webhook has never done that either.
-        // Surfaced so the console can tell the admin the customer is still locked out.
-        trialStillExpired: Boolean(customer.trialExpired),
+        subscriptionEndsAt: applied.subscriptionEndsAt,
+        // An add-on does not open a paid window, so an expired trial can still be in force
+        // after one. Surfaced so the console can say the customer is still locked out.
+        trialStillExpired: Boolean(after?.trialExpired),
       });
     } catch (err) {
       console.error('[Transactions] Approve failed:', err);

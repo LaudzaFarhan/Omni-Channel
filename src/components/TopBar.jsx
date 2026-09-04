@@ -10,7 +10,11 @@ export default function TopBar({
   sidebarCollapsed, onToggleSidebar, syncing, onSyncHistory,
   notifications = [], onToggleNotifications,
   isSupervisor = true, onNavigateTab,
-  isTrialExpired = false, trialDaysLeft = 0
+  isTrialExpired = false, trialDaysLeft = 0,
+  // The paid window. `hasSubscription` is already "active", so the badge does not have to
+  // re-derive whether the date has passed.
+  hasSubscription = false, subscriptionDaysLeft = 0, subscriptionEndsSoon = false,
+  subscriptionEndsAt = null
 }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -160,8 +164,28 @@ export default function TopBar({
       </div>
 
       <div className="topbar-right">
+        {/* Paid subscription countdown.
+            Takes precedence over the trial badge below: an account that has paid is not on
+            a trial, and showing both would be two competing answers to "how long do I
+            have". Turns amber in the last week, when it becomes worth acting on. */}
+        {hasSubscription && subscriptionDaysLeft > 0 && userProfile?.role !== 'admin' && (
+          <button
+            onClick={() => onNavigateTab?.('subscription')}
+            className={`trial-period-badge subscription-badge ${subscriptionEndsSoon ? 'is-ending' : ''}`}
+            title={subscriptionEndsAt
+              ? `Subscription active until ${new Date(subscriptionEndsAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}. Click to manage it.`
+              : 'Subscription active. Click to manage it.'}
+          >
+            <span className="trial-badge-dot" />
+            <span>
+              Subscription: <strong>{subscriptionDaysLeft} {subscriptionDaysLeft === 1 ? 'day' : 'days'} left</strong>
+            </span>
+            {isSupervisor && subscriptionEndsSoon && <span className="trial-badge-action">Renew</span>}
+          </button>
+        )}
+
         {/* Trial Period Badge for Customers */}
-        {!isTrialExpired && trialDaysLeft > 0 && userProfile?.role !== 'admin' && (
+        {!hasSubscription && !isTrialExpired && trialDaysLeft > 0 && userProfile?.role !== 'admin' && (
           <button
             onClick={() => onNavigateTab?.('subscription')}
             className="trial-period-badge"

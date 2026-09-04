@@ -23,6 +23,7 @@ function catalogue(metrics) {
     unreadChats = 0, conversations = 0, contacts = 0, awaitingReply = 0,
     seatsUsed = null, seatsLimit = null, unreadNotifications = 0,
     planName = null, messagesSent = 0, messageLimit = 0,
+    unlimitedAgents = false,
   } = metrics;
 
   return [
@@ -67,8 +68,10 @@ function catalogue(metrics) {
       description: 'Undang agen, kelola kursi, pantau status undangan, dan cabut akses.',
       // Seats need a request to know; until it arrives the card says so rather than
       // showing a zero that looks like "no agents".
-      value: seatsLimit === null ? '—' : `${seatsUsed}/${seatsLimit}`,
-      valueLabel: 'kursi terpakai',
+      value: unlimitedAgents
+        ? '∞'
+        : seatsLimit === null ? '—' : `${seatsUsed}/${seatsLimit}`,
+      valueLabel: unlimitedAgents ? 'kursi tanpa batas' : 'kursi terpakai',
       supervisorOnly: true,
     },
     {

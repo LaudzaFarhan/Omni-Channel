@@ -6,7 +6,10 @@
 // admin console's authority came from client-side role checks.
 
 import { verifyAccessToken } from './auth.js';
-import { findUserById, resolveFeaturesForWorkspace, findApiKeyByRawKey, touchApiKeyLastUsed } from './data.js';
+import {
+  findUserById, resolveFeaturesForWorkspace, findApiKeyByRawKey, touchApiKeyLastUsed,
+  isSubscriptionExpired,
+} from './data.js';
 import { isEnabled } from './features.js';
 
 // Attaches req.user from the Bearer token or X-API-Key. The payload keeps the same shape the
@@ -146,9 +149,25 @@ export function requireApproved(req, res, next) {
       });
     }
 
-    if (req.workspace.trialExpired) {
+    // A live paid window supersedes the trial flag, for the same reason the client does
+    // this: an owner who paid after their trial lapsed is paid up, and their team must not
+    // stay locked out waiting for somebody to clear a boolean.
+    const paidUpTo = req.workspace.subscriptionEndsAt;
+    const paidAndActive = Boolean(paidUpTo) && !isSubscriptionExpired(paidUpTo);
+
+    if (req.workspace.trialExpired && !paidAndActive) {
       return res.status(403).json({
         error: `Your workspace subscription or trial for ${req.workspace.name || req.workspace.email} has expired. Please ask your workspace owner to renew.`,
+        code: 'workspace_subscription_expired',
+      });
+    }
+
+    // The paid window itself closing. Checked as a DATE, not a flag: nothing sweeps the
+    // database to mark lapsed accounts, so a gate that only read a boolean would let an
+    // expired workspace keep working indefinitely.
+    if (isSubscriptionExpired(paidUpTo)) {
+      return res.status(403).json({
+        error: `The subscription for ${req.workspace.name || req.workspace.email} ended. Please ask your workspace owner to renew.`,
         code: 'workspace_subscription_expired',
       });
     }

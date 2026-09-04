@@ -26,6 +26,8 @@ const BLANK_FORM = {
   messageLimit: '500',
   sessionLimit: '1',
   trialDays: '0',
+  durationDays: '30',
+  unlimitedAgents: false,
   featuresText: '',
   isDefault: false,
   isAddon: false,
@@ -49,6 +51,12 @@ function formToPlan(form) {
     messageLimit: Math.max(0, parseInt(form.messageLimit, 10) || 0),
     sessionLimit: Math.max(1, parseInt(form.sessionLimit, 10) || 1),
     trialDays: Math.max(0, parseInt(form.trialDays, 10) || 0),
+    // Blank must mean 30, not 0: 0 is "never expires", so treating an empty box as 0 would
+    // quietly turn a monthly plan into a lifetime one.
+    durationDays: String(form.durationDays).trim() === ''
+      ? 30
+      : Math.max(0, parseInt(form.durationDays, 10) || 0),
+    unlimitedAgents: Boolean(form.unlimitedAgents),
     features: form.featuresText
       .split('\n')
       .map(line => line.trim())
@@ -75,6 +83,8 @@ function planToForm(plan) {
     messageLimit: String(plan.messageLimit ?? 0),
     sessionLimit: String(plan.sessionLimit ?? 1),
     trialDays: String(plan.trialDays ?? 0),
+    durationDays: String(plan.durationDays ?? 30),
+    unlimitedAgents: Boolean(plan.unlimitedAgents),
     featuresText: (plan.features || []).join('\n'),
     isDefault: Boolean(plan.isDefault),
     isAddon: Boolean(plan.isAddon),
@@ -351,6 +361,7 @@ export default function PlansTab({ plans, loading, error, users, onPlansChanged,
                     { label: 'Messages', value: formatQuota(plan.messageLimit) },
                     { label: 'Agents', value: plan.includedAgents ?? plan.sessionLimit },
                     { label: 'Trial days', value: plan.trialDays || '—' },
+                  { label: 'Period', value: plan.durationDays ? `${plan.durationDays}d` : 'No expiry' },
                   ].map(stat => (
                     <div key={stat.label} style={{ padding: '10px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                       <div style={{ fontSize: '0.68rem', color: 'var(--text-dimmed)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{stat.label}</div>
@@ -635,12 +646,68 @@ export default function PlansTab({ plans, loading, error, users, onPlansChanged,
               </div>
               <div>
                 <label style={labelStyle} htmlFor="plan-devices">Device limit</label>
-                <input id="plan-devices" type="number" min="1" style={inputStyle} value={editor.form.sessionLimit} onChange={(e) => updateForm({ sessionLimit: e.target.value })} />
+                <input
+                  id="plan-devices"
+                  type="number"
+                  min="1"
+                  style={{ ...inputStyle, opacity: editor.form.unlimitedAgents ? 0.5 : 1 }}
+                  value={editor.form.sessionLimit}
+                  disabled={editor.form.unlimitedAgents}
+                  onChange={(e) => updateForm({ sessionLimit: e.target.value })}
+                />
               </div>
               <div>
                 <label style={labelStyle} htmlFor="plan-trial">Trial days</label>
                 <input id="plan-trial" type="number" min="0" style={inputStyle} value={editor.form.trialDays} onChange={(e) => updateForm({ trialDays: e.target.value })} />
               </div>
+            </div>
+
+            {/* How long a purchase lasts, and whether agents are capped at all. Grouped
+                because together they are what the customer is actually buying: a period of
+                access, for some number of agents. */}
+            <div style={{ padding: '14px', borderRadius: '10px', background: 'var(--overlay-subtle)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-dimmed)' }}>
+                Subscription period
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', alignItems: 'end' }}>
+                <div>
+                  <label style={labelStyle} htmlFor="plan-duration">Days per purchase</label>
+                  <input
+                    id="plan-duration"
+                    type="number"
+                    min="0"
+                    style={inputStyle}
+                    value={editor.form.durationDays}
+                    placeholder="30"
+                    onChange={(e) => updateForm({ durationDays: e.target.value })}
+                  />
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-dimmed)', lineHeight: '1.5', paddingBottom: '9px' }}>
+                  {String(editor.form.durationDays).trim() === '0'
+                    ? 'This plan never expires once bought.'
+                    : `Access runs for ${String(editor.form.durationDays).trim() || '30'} days from payment. Renewing early adds to the time left.`}
+                </div>
+              </div>
+
+              <label style={{
+                display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer',
+                padding: '12px 14px', borderRadius: '8px',
+                background: editor.form.unlimitedAgents ? 'var(--primary-subtle)' : 'transparent',
+                border: `1px solid ${editor.form.unlimitedAgents ? 'var(--primary-border)' : 'var(--border-color)'}`,
+              }}>
+                <input
+                  type="checkbox"
+                  checked={editor.form.unlimitedAgents}
+                  onChange={(e) => updateForm({ unlimitedAgents: e.target.checked })}
+                />
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                  <strong style={{ color: 'var(--text-main)' }}>Unlimited agents.</strong> Customers on this
+                  plan see an infinity symbol instead of a device count, and the seat meter stops
+                  showing a ceiling. The device limit above still applies as the technical maximum,
+                  so set it high enough for what you intend to allow.
+                </span>
+              </label>
             </div>
 
             <div>
@@ -665,7 +732,8 @@ export default function PlansTab({ plans, loading, error, users, onPlansChanged,
 
             <div style={{ fontSize: '0.78rem', color: 'var(--text-dimmed)', lineHeight: '1.5' }}>
               Trial days of 0 disables the trial countdown for this plan. The device limit is enforced
-              by the backend when a browser connects.
+              by the backend when a browser connects. Changing the days per purchase affects future
+              payments only — customers already inside a paid period keep the end date they were given.
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>

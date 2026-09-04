@@ -10,6 +10,10 @@ export default function Sidebar({
   features = {},
   isTrialExpired = false,
   trialDaysLeft = 0,
+  // The paid window. `hasSubscription` already means "active".
+  hasSubscription = false,
+  subscriptionDaysLeft = 0,
+  subscriptionEndsSoon = false,
   userProfile = null,
 }) {
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -55,8 +59,56 @@ export default function Sidebar({
           <BrandLockup markSize={32} showName={!collapsed} />
         </div>
 
+        {/* Subscription countdown under the brand.
+            Replaces the trial badge rather than sitting beside it: a paid account is not on
+            a trial, and two countdowns stacked here would be asking the customer to work out
+            which one governs. Blue while there is comfortable time, amber in the last week. */}
+        {!collapsed && hasSubscription && subscriptionDaysLeft > 0 && userProfile?.role !== 'admin' && (
+          <div
+            onClick={() => isSupervisor && setActiveTab('subscription')}
+            style={{
+              margin: '0 12px 14px',
+              padding: '7px 10px',
+              borderRadius: '9px',
+              background: subscriptionEndsSoon
+                ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(234, 88, 12, 0.08) 100%)'
+                : 'var(--primary-subtle)',
+              border: `1px solid ${subscriptionEndsSoon ? 'rgba(245, 158, 11, 0.3)' : 'var(--primary-border)'}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: isSupervisor ? 'pointer' : 'default',
+              transition: 'all 0.2s ease',
+            }}
+            title={isSupervisor ? 'Subscription active. Click to manage it.' : 'Subscription active'}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+              <span
+                className="trial-badge-dot"
+                style={subscriptionEndsSoon ? undefined : { background: 'var(--primary)', boxShadow: '0 0 8px var(--primary)' }}
+              />
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{
+                  fontSize: '0.74rem', fontWeight: '800', lineHeight: 1.15,
+                  color: subscriptionEndsSoon ? '#f59e0b' : 'var(--primary)',
+                }}>
+                  Subscription
+                </span>
+                <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)' }}>
+                  {subscriptionDaysLeft} {subscriptionDaysLeft === 1 ? 'day' : 'days'} left
+                </span>
+              </div>
+            </div>
+            {isSupervisor && subscriptionEndsSoon && (
+              <span style={{ fontSize: '0.65rem', fontWeight: '700', color: '#f59e0b', background: 'rgba(245, 158, 11, 0.2)', padding: '2px 5px', borderRadius: '4px' }}>
+                Renew
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Trial Badge under brand */}
-        {!collapsed && !isTrialExpired && trialDaysLeft > 0 && userProfile?.role !== 'admin' && (
+        {!collapsed && !hasSubscription && !isTrialExpired && trialDaysLeft > 0 && userProfile?.role !== 'admin' && (
           <div
             onClick={() => isSupervisor && setActiveTab('subscription')}
             style={{

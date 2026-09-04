@@ -6,6 +6,7 @@ import {
   ToggleLeft, Lock, ShieldCheck, ShieldOff, CornerDownRight, Crown, UsersRound,
 } from 'lucide-react';
 import { showToast } from '../../utils/toastBus.js';
+import { readSubscription, formatRenewalDate } from '../../utils/subscription.js';
 import {
   assignablePlans, resolveEffectiveLimits, findPlan, formatQuota,
 } from '../../utils/plans.js';
@@ -265,6 +266,57 @@ export default function UsersTab({
     }
 
     return { label: 'No trial', isExpired: false, isCustom: false, daysLeft: null };
+  };
+
+  // --- Paid subscription window --------------------------------------------
+  // Read against the workspace owner for the same reason getTrialInfo is: a member has no
+  // subscription of their own, so evaluating their row would report "none" for somebody
+  // working inside a paid workspace.
+  const getSubscriptionInfo = (u) => {
+    if (u.ownerUserId) {
+      const owner = (users || []).find(o => o.uid === u.ownerUserId);
+      if (owner) return readSubscription(owner.subscriptionEndsAt);
+    }
+    return readSubscription(u.subscriptionEndsAt);
+  };
+
+  const openSubscriptionModal = (userObj, subInfo) => {
+    const defaultDays = subInfo.daysLeft && subInfo.daysLeft > 0 ? 30 : 30;
+    setModalInputValue(String(defaultDays));
+    setActiveModal({ type: 'editSubscription', userObj, subInfo });
+  };
+
+  const confirmSubscriptionChange = (days) => {
+    const { userObj } = activeModal;
+    const numDays = parseInt(days, 10);
+    if (!Number.isFinite(numDays) || numDays < 0) {
+      showToast({ type: 'error', title: 'Invalid days', message: 'Enter a valid number of days (0 or more).' });
+      return;
+    }
+
+    // 0 clears the window rather than expiring it. "No subscription limit" is what an empty
+    // date means everywhere else, and an admin who wants to cut access off has the trial
+    // controls and the Revoke button for that.
+    if (numDays === 0) {
+      return runMutation(userObj.uid, 'Subscription limit removed', () =>
+        adminUpdateUser(userObj.uid, { subscriptionEndsAt: null })
+      );
+    }
+
+    // Extends from what is left, matching what a renewal payment does, so granting 30 days
+    // to somebody with 5 remaining gives 35 rather than throwing their 5 away.
+    const base = activeModal.subInfo?.endsAt && !activeModal.subInfo.isExpired
+      ? activeModal.subInfo.endsAt.getTime()
+      : Date.now();
+    const endsAt = new Date(base + numDays * 24 * 60 * 60 * 1000);
+
+    return runMutation(userObj.uid, `Subscription set to ${numDays} more days`, () =>
+      adminUpdateUser(userObj.uid, {
+        subscriptionEndsAt: endsAt.toISOString(),
+        // Granting paid time resolves an expired trial, the same way a payment does.
+        trialExpired: false,
+      })
+    );
   };
 
   const openTrialModal = (userObj, trialInfo) => {
@@ -792,24 +844,67 @@ export default function UsersTab({
                                 {trialInfo.isCustom && <SourceBadge source="override" />}
                               </div>
 
+                              {/* The paid window, shown only when one exists. An account with
+                                  no end date has no subscription deadline, and printing
+                                  "no expiry" on every free account would be noise. */}
+                              {(() => {
+                                const sub = getSubscriptionInfo(u);
+                                if (!sub.hasSubscription) return null;
+                                return (
+                                  <span
+                                    title={`Paid access ${sub.isExpired ? 'ended' : 'until'} ${formatRenewalDate(sub.endsAt)}`}
+                                    style={{
+                                      display: 'inline-flex', alignItems: 'center', gap: '5px',
+                                      alignSelf: 'flex-start',
+                                      fontSize: '0.7rem', fontWeight: '700', padding: '2px 7px', borderRadius: '5px',
+                                      background: sub.isExpired
+                                        ? 'rgba(239, 68, 68, 0.12)'
+                                        : sub.isEndingSoon ? 'rgba(245,158,11,0.12)' : 'var(--primary-soft)',
+                                      color: sub.isExpired ? '#ef4444' : sub.isEndingSoon ? '#f59e0b' : 'var(--primary)',
+                                      border: `1px solid ${sub.isExpired ? 'rgba(239,68,68,0.25)' : sub.isEndingSoon ? 'rgba(245,158,11,0.3)' : 'var(--primary-border)'}`,
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    {sub.isExpired
+                                      ? `Sub ended ${formatRenewalDate(sub.endsAt)}`
+                                      : `Sub: ${sub.daysLeft}d left`}
+                                  </span>
+                                );
+                              })()}
+
                               {u.ownerUserId ? (
                                 <div style={{ fontSize: '0.7rem', color: 'var(--text-dimmed)' }}>
-                                  Inherits workspace trial
+                                  Inherits workspace access
                                 </div>
                               ) : u.role !== 'admin' ? (
-                                <button
-                                  onClick={() => openTrialModal(u, trialInfo)}
-                                  disabled={busy}
-                                  title="Change trial duration or expire trial"
-                                  style={{
-                                    alignSelf: 'flex-start', background: 'transparent', border: 'none',
-                                    color: 'var(--primary)', fontSize: '0.73rem', fontWeight: '600',
-                                    cursor: busy ? 'not-allowed' : 'pointer', padding: 0,
-                                    textDecoration: 'underline',
-                                  }}
-                                >
-                                  {trialInfo.isCustom ? 'Edit Days' : 'Set Trial'}
-                                </button>
+                                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                  <button
+                                    onClick={() => openTrialModal(u, trialInfo)}
+                                    disabled={busy}
+                                    title="Change trial duration or expire trial"
+                                    style={{
+                                      background: 'transparent', border: 'none',
+                                      color: 'var(--primary)', fontSize: '0.73rem', fontWeight: '600',
+                                      cursor: busy ? 'not-allowed' : 'pointer', padding: 0,
+                                      textDecoration: 'underline',
+                                    }}
+                                  >
+                                    {trialInfo.isCustom ? 'Edit Days' : 'Set Trial'}
+                                  </button>
+                                  <button
+                                    onClick={() => openSubscriptionModal(u, getSubscriptionInfo(u))}
+                                    disabled={busy}
+                                    title="Grant or extend paid subscription days"
+                                    style={{
+                                      background: 'transparent', border: 'none',
+                                      color: 'var(--primary)', fontSize: '0.73rem', fontWeight: '600',
+                                      cursor: busy ? 'not-allowed' : 'pointer', padding: 0,
+                                      textDecoration: 'underline',
+                                    }}
+                                  >
+                                    {getSubscriptionInfo(u).hasSubscription ? 'Extend Sub' : 'Set Sub'}
+                                  </button>
+                                </div>
                               ) : null}
                             </div>
                           );
@@ -1219,6 +1314,83 @@ export default function UsersTab({
               </div>
             )}
 
+            {activeModal.type === 'editSubscription' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                  Grant paid access to <strong>{activeModal.userObj?.name || activeModal.userObj?.email}</strong>.
+                  {activeModal.subInfo?.hasSubscription && !activeModal.subInfo?.isExpired
+                    ? ` Their current period ends ${formatRenewalDate(activeModal.subInfo.endsAt)}, and these days are added to it.`
+                    : ' The period starts today.'}
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    Quick presets (days to add):
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {[7, 30, 90, 180, 365].map(val => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setModalInputValue(String(val))}
+                        style={{
+                          background: modalInputValue === String(val) ? 'var(--primary-soft)' : 'rgba(255,255,255,0.05)',
+                          border: `1px solid ${modalInputValue === String(val) ? 'var(--primary-border)' : 'var(--border-color)'}`,
+                          color: modalInputValue === String(val) ? 'var(--primary)' : 'var(--text-muted)',
+                          padding: '5px 12px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: '600',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {val} Days
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="subscription-days-input" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>
+                    Days to add:
+                  </label>
+                  <input
+                    id="subscription-days-input"
+                    type="number"
+                    min="0"
+                    max="3650"
+                    value={modalInputValue}
+                    onChange={(e) => setModalInputValue(e.target.value)}
+                    style={{
+                      width: '100%', padding: '10px 14px', borderRadius: '8px',
+                      border: '1px solid var(--border-color)', background: 'rgba(255,255,255,0.05)',
+                      color: 'var(--text-main)', fontSize: '1rem', outline: 'none',
+                    }}
+                  />
+                  {(() => {
+                    const days = parseInt(modalInputValue, 10);
+                    if (Number.isFinite(days) && days > 0) {
+                      const base = activeModal.subInfo?.endsAt && !activeModal.subInfo.isExpired
+                        ? activeModal.subInfo.endsAt.getTime()
+                        : Date.now();
+                      const endsAt = new Date(base + days * 24 * 60 * 60 * 1000);
+                      return (
+                        <div style={{ fontSize: '0.78rem', color: 'var(--success)', marginTop: '6px' }}>
+                          ✓ Paid access until <strong>{endsAt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</strong>
+                        </div>
+                      );
+                    }
+                    if (days === 0) {
+                      return (
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-dimmed)', marginTop: '6px' }}>
+                          0 removes the expiry date entirely — the account keeps working with no
+                          subscription deadline. To cut access off, expire the trial or revoke the account.
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              </div>
+            )}
+
             {activeModal.type === 'changePlan' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <label htmlFor="admin-plan-select" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
@@ -1308,6 +1480,7 @@ export default function UsersTab({
                   if (activeModal.type === 'editLimit') confirmLimitChange();
                   if (activeModal.type === 'editSessionLimit') confirmSessionLimitChange();
                   if (activeModal.type === 'editTrial') confirmTrialChange(modalInputValue);
+                  if (activeModal.type === 'editSubscription') confirmSubscriptionChange(modalInputValue);
                   if (activeModal.type === 'confirmRole') confirmRoleChange();
                   if (activeModal.type === 'changePlan') confirmPlanChange();
                   if (activeModal.type === 'resetUsage') confirmResetUsage();
@@ -1324,7 +1497,13 @@ export default function UsersTab({
                   opacity: isPending(activeModal.userObj?.uid) ? 0.6 : 1,
                 }}
               >
-                {activeModal.type === 'deleteUser' ? 'Delete Profile' : activeModal.type === 'editTrial' ? 'Apply Trial' : 'Confirm & Save'}
+                {activeModal.type === 'deleteUser'
+                  ? 'Delete Profile'
+                  : activeModal.type === 'editTrial'
+                    ? 'Apply Trial'
+                    : activeModal.type === 'editSubscription'
+                      ? 'Apply Subscription'
+                      : 'Confirm & Save'}
               </button>
             </div>
           </div>

@@ -13,6 +13,7 @@ import {
 } from './utils/api.js';
 import { featureStatus, featureLabel, isVisible } from './utils/features.js';
 import { normalizePlan, sortPlans, loadPlansOnce, resolveEffectiveLimits } from './utils/plans.js';
+import { readSubscription, formatRenewalDate } from './utils/subscription.js';
 import { MessageSquare, Clock, AlertTriangle, Bell, X } from 'lucide-react';
 
 import Sidebar from './components/Sidebar.jsx';
@@ -1138,8 +1139,20 @@ export default function App() {
         planName: effectiveLimits.planName,
         messageLimit: effectiveLimits.messageLimit,
         sessionLimit: effectiveLimits.sessionLimit,
+        // Resolved rather than raw: unlimited only applies while the PLAN is what sets the
+        // agent limit, so an admin override or a purchased count still shows its number.
+        unlimitedAgents: effectiveLimits.unlimitedAgents,
+        planDurationDays: effectiveLimits.durationDays,
       }
     : userProfile;
+
+  // The paid window, which is separate from the trial: an account can have had a trial that
+  // lapsed and then paid, and those two dates have nothing to do with each other.
+  //
+  // For a team member this is the OWNER's date, overlaid by the server — a member has no
+  // subscription of their own.
+  const subscription = readSubscription(userProfile?.subscriptionEndsAt);
+  const subscriptionDaysLeft = subscription.daysLeft;
 
   // Calculate trial status. Supports custom trial duration and explicit expiration dates.
   let isTrialExpired = userProfile?.trialExpired || false;
@@ -1185,6 +1198,21 @@ export default function App() {
     }
   }
 
+  // A live paid window supersedes the trial.
+  //
+  // Without this a customer who paid AFTER their trial lapsed stays locked out: the trial
+  // branch above still resolves an old trialEndsAt as expired, and the overlay would hold
+  // out an account that is paid up. Paying is the thing that resolves a trial, so an active
+  // subscription wins.
+  if (subscription.hasSubscription && !subscription.isExpired) {
+    isTrialExpired = false;
+  }
+
+  // What the overlay actually gates on. Either route to being locked out: the paid window
+  // closed, or there is no paid window and the trial ran out. A null end date contributes
+  // nothing, so accounts with no subscription behave exactly as before.
+  const isAccessExpired = subscription.isExpired || isTrialExpired;
+
   // Check: is the active WA session connected?
   const activeWaSession = waSessions.find(s => s.sessionId === activeSessionId);
   const isActiveConnected = connectionStatus === 'connected';
@@ -1227,6 +1255,9 @@ export default function App() {
             features={features}
             isTrialExpired={isTrialExpired}
             trialDaysLeft={trialDaysLeft}
+            subscriptionDaysLeft={subscriptionDaysLeft}
+            hasSubscription={subscription.hasSubscription && !subscription.isExpired}
+            subscriptionEndsSoon={subscription.isEndingSoon}
             userProfile={activeProfile}
           />
         </div>
@@ -1253,21 +1284,31 @@ export default function App() {
             onNavigateTab={(tab) => setActiveTab(tab)}
             isTrialExpired={isTrialExpired}
             trialDaysLeft={trialDaysLeft}
+            subscriptionDaysLeft={subscriptionDaysLeft}
+            hasSubscription={subscription.hasSubscription && !subscription.isExpired}
+            subscriptionEndsSoon={subscription.isEndingSoon}
+            subscriptionEndsAt={subscription.endsAt}
           />
           <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden' }}>
-            {isTrialExpired && activeTab !== 'subscription' && activeTab !== 'profile' && (
+            {isAccessExpired && activeTab !== 'subscription' && activeTab !== 'profile' && (
               <div className="upgrade-overlay">
                 <div className="upgrade-card glass">
                   <div style={{ background: 'rgba(239, 68, 68, 0.1)', width: '60px', height: '60px', borderRadius: '50%', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto' }}>
                     <AlertTriangle size={32} />
                   </div>
+                  {/* Names the actual cause. "Trial expired" on an account that paid and
+                      then lapsed sends the customer looking for the wrong thing. */}
                   <h3 style={{ fontSize: '1.5rem', fontWeight: '700', marginBottom: '12px' }}>
-                    {isSupervisor ? 'Subscription or Free Trial Expired' : 'Workspace Access Paused'}
+                    {!isSupervisor
+                      ? 'Workspace Access Paused'
+                      : subscription.isExpired ? 'Subscription Expired' : 'Free Trial Expired'}
                   </h3>
                   <p style={{ color: 'var(--text-muted)', marginBottom: '24px', fontSize: '0.95rem', lineHeight: '1.5' }}>
-                    {isSupervisor
-                      ? 'Your free trial or subscription period has ended. Subscribe or renew to continue using the dashboard.'
-                      : `The subscription or trial period for this workspace has ended. Please ask your workspace owner (${userProfile?.ownerEmail || 'your supervisor'}) to renew the subscription so you can continue working.`}
+                    {!isSupervisor
+                      ? `The subscription or trial period for this workspace has ended. Please ask your workspace owner (${userProfile?.ownerEmail || 'your supervisor'}) to renew the subscription so you can continue working.`
+                      : subscription.isExpired
+                        ? `Your subscription ended on ${formatRenewalDate(subscription.endsAt)}. Renew to continue using the dashboard — your data and WhatsApp connection are untouched.`
+                        : 'Your free trial has ended. Subscribe to continue using the dashboard.'}
                   </p>
                   {isSupervisor ? (
                     <button 
@@ -1275,7 +1316,7 @@ export default function App() {
                       style={{ width: '100%', padding: '14px', borderRadius: '8px' }}
                       onClick={() => setActiveTab('subscription')}
                     >
-                      Upgrade / Renew Subscription
+                      {subscription.isExpired ? 'Renew Subscription' : 'Upgrade / Renew Subscription'}
                     </button>
                   ) : (
                     <button 
@@ -1290,7 +1331,7 @@ export default function App() {
               </div>
             )}
             
-            <div className={isTrialExpired && activeTab !== 'subscription' && activeTab !== 'profile' ? 'blurry-workspace' : ''} style={{ display: 'flex', flex: 1, position: 'relative' }}>
+            <div className={isAccessExpired && activeTab !== 'subscription' && activeTab !== 'profile' ? 'blurry-workspace' : ''} style={{ display: 'flex', flex: 1, position: 'relative' }}>
               {!isActiveConnected && (activeTab === 'dashboard' || activeTab === 'messages') ? (
                 <ConnectionPanel status={connectionStatus} qrCode={qrCode} />
               ) : (

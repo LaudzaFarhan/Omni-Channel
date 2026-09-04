@@ -333,6 +333,35 @@ body {
   50% { opacity: 0.5; transform: scale(1.25); }
 }
 
+/* The paid-subscription variant of the badge. Brand blue while there is time, and it falls
+   back to the trial badge's amber in the last week via .is-ending — so "running out" looks
+   the same whichever kind of countdown it is. */
+.subscription-badge {
+  background: var(--primary-subtle);
+  border-color: var(--primary-border);
+  color: var(--primary);
+}
+
+.subscription-badge:hover {
+  background: var(--primary-soft);
+}
+
+.subscription-badge .trial-badge-dot {
+  background: var(--primary);
+  box-shadow: 0 0 8px var(--primary);
+}
+
+.subscription-badge.is-ending {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(234, 88, 12, 0.12) 100%);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #f59e0b;
+}
+
+.subscription-badge.is-ending .trial-badge-dot {
+  background: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+}
+
 .trial-badge-action {
   font-size: 0.72rem;
   padding: 1px 6px;

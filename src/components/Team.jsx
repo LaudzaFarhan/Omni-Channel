@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Users, UserPlus, Trash2, RefreshCw, Copy, Check, AlertTriangle, X,
-  Crown, Clock, Link2, ShieldCheck,
+  Crown, Clock, Link2, ShieldCheck, Infinity as InfinityIcon,
 } from 'lucide-react';
 import {
   fetchTeam, inviteMember, resendInvite, removeMember,
@@ -106,7 +106,12 @@ function InviteLinkPanel({ invite, onDone }) {
 // Supervisor-only, both here and on the server (the `supervisor` middleware chain).
 // A member reaching these endpoints gets 403 supervisor_only, and the tab is hidden
 // from them in the sidebar.
+// How many seat blocks to draw before switching to a count. A plan can grant far more
+// agents than are worth rendering one-by-one, and an unlimited plan has no number at all.
+const SEAT_BLOCKS = 12;
+
 export default function Team({ userProfile }) {
+  const unlimitedAgents = Boolean(userProfile?.unlimitedAgents);
   const [team, setTeam] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -273,20 +278,32 @@ export default function Team({ userProfile }) {
               <div style={{ fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-dimmed)', marginBottom: '6px' }}>
                 Agent slots
               </div>
-              <div style={{ fontSize: '1.5rem', fontWeight: '700' }}>
-                {seats.used} <span style={{ color: 'var(--text-dimmed)', fontWeight: '500', fontSize: '1rem' }}>of {seats.limit} used</span>
+              <div style={{ fontSize: '1.5rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {seats.used}
+                <span style={{ color: 'var(--text-dimmed)', fontWeight: '500', fontSize: '1rem', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                  of {unlimitedAgents
+                    ? <InfinityIcon size={18} style={{ color: 'var(--primary)' }} />
+                    : seats.limit} used
+                </span>
               </div>
               <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                {full
-                  ? 'Every slot is taken. Add an agent on the Subscription page to invite more people.'
-                  : `${seats.available} ${seats.available === 1 ? 'slot' : 'slots'} free — you can invite ${seats.available} more ${seats.available === 1 ? 'person' : 'people'}.`}
+                {unlimitedAgents
+                  ? 'This plan has no agent limit — invite as many people as you need.'
+                  : full
+                    ? 'Every slot is taken. Add an agent on the Subscription page to invite more people.'
+                    : `${seats.available} ${seats.available === 1 ? 'slot' : 'slots'} free — you can invite ${seats.available} more ${seats.available === 1 ? 'person' : 'people'}.`}
               </div>
             </div>
 
             {/* One block per slot, so "why is one already used" is answerable at a
-                glance: the first is always the owner. */}
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', maxWidth: '340px' }}>
-              {Array.from({ length: Math.max(seats.limit, seats.used) }, (_, i) => (
+                glance: the first is always the owner.
+
+                Capped at SEAT_BLOCKS. The count comes from the plan, and an unlimited or
+                generously sized plan would otherwise render hundreds of nodes here — one
+                per notional seat — for no added meaning. Past the cap the blocks show what
+                is in use and a count carries the rest. */}
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', maxWidth: '340px', alignItems: 'center' }}>
+              {Array.from({ length: Math.min(Math.max(seats.limit, seats.used), SEAT_BLOCKS) }, (_, i) => (
                 <span
                   key={i}
                   title={i < seats.used ? 'In use' : 'Free'}
@@ -298,6 +315,15 @@ export default function Team({ userProfile }) {
                   }}
                 />
               ))}
+              {unlimitedAgents ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', fontWeight: '700', color: 'var(--primary)', marginLeft: '2px' }}>
+                  <InfinityIcon size={16} /> unlimited
+                </span>
+              ) : Math.max(seats.limit, seats.used) > SEAT_BLOCKS && (
+                <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-dimmed)', marginLeft: '2px' }}>
+                  +{Math.max(seats.limit, seats.used) - SEAT_BLOCKS} more
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -435,7 +461,9 @@ export default function Team({ userProfile }) {
 
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.55', padding: '12px 14px', borderRadius: '8px', background: 'var(--overlay-subtle)', border: '1px solid var(--border-color)' }}>
               You will get a link to send them. They choose their own password, so you never
-              see it. Uses one of your {seats ? seats.limit : ''} agent slots.
+              see it.{unlimitedAgents
+                ? ' Your plan has no agent limit.'
+                : ` Uses one of your ${seats ? seats.limit : ''} agent slots.`}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>

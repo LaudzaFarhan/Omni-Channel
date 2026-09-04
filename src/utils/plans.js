@@ -44,6 +44,9 @@ export const FALLBACK_PLANS = [
     messageLimit: 500,
     sessionLimit: 1,
     trialDays: 7,
+    // The free plan is the trial, and the trial has its own expiry. Giving it a paid window
+    // as well would mean two countdowns racing on the same account.
+    durationDays: 0,
     features: [
       '1 WhatsApp device',
       '500 outbound messages',
@@ -62,6 +65,7 @@ export const FALLBACK_PLANS = [
     messageLimit: 50000,
     sessionLimit: 5,
     trialDays: 0,
+    durationDays: 30,
     features: [
       '5 WhatsApp devices',
       '50,000 outbound messages',
@@ -112,6 +116,18 @@ export function normalizePlan(id, raw = {}) {
     maxAgents: raw.maxAgents === null || raw.maxAgents === undefined
       ? null
       : Math.max(1, num(raw.maxAgents, 1)),
+
+    // How many days one purchase lasts. 0 means it never expires. Defaults to 30 rather
+    // than 0 so a plan document written before subscription periods existed reads as the
+    // billing period being sold, not as perpetual access.
+    durationDays: raw.durationDays === undefined || raw.durationDays === null
+      ? 30
+      : num(raw.durationDays, 30),
+
+    // This plan does not cap concurrent agents, so the UI shows an infinity indicator.
+    // An explicit flag because there is deliberately no numeric unlimited sentinel — see
+    // the note at the top of this file.
+    unlimitedAgents: Boolean(raw.unlimitedAgents),
 
     // A per-unit top-up rather than a plan. Must survive normalisation for the same
     // reason the agent-pricing fields must: the plan editor reads its own form values
@@ -216,7 +232,32 @@ export function resolveEffectiveLimits(user = {}, plans = []) {
     trialDays: plan.trialDays,
     messageLimitSource: messageOverridden ? 'override' : 'plan',
     sessionLimitSource,
+
+    // How long a purchase of this plan lasts, for the countdown.
+    durationDays: plan.durationDays,
+
+    // Unlimited agents, but only while the plan is what decides the limit. An admin who
+    // typed an explicit device override, or a customer who bought a specific number of
+    // agents, has set a real ceiling — showing them an infinity symbol would contradict
+    // the number the server actually enforces.
+    unlimitedAgents: Boolean(plan.unlimitedAgents) && sessionLimitSource === 'plan',
   };
+}
+
+// The infinity indicator. A symbol rather than the word so it survives a narrow column, a
+// stat box and a table cell without wrapping.
+export const UNLIMITED_LABEL = '∞';
+
+/**
+ * Render an agent/device limit, showing unlimited as a symbol instead of a number.
+ *
+ * Every place that displays a seat count goes through this, so "unlimited" cannot end up
+ * reading as a number in one panel and a symbol in another.
+ */
+export function formatAgentLimit(limit, unlimited) {
+  if (unlimited) return UNLIMITED_LABEL;
+  const parsed = Number(limit);
+  return Number.isFinite(parsed) ? parsed.toLocaleString('en-US') : '1';
 }
 
 // One-shot read of the catalogue, for code paths that need a plan outside of a

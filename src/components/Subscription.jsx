@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Send, Hash, Zap, Smartphone, Layers, CreditCard, ExternalLink, X, AlertCircle } from 'lucide-react';
+import { Send, Hash, Zap, Smartphone, Layers, CreditCard, ExternalLink, X, AlertCircle, CalendarClock, Infinity as InfinityIcon } from 'lucide-react';
 import { fetchWithAuth } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
+import { readSubscription, formatRenewalDate } from '../utils/subscription.js';
 import PlanPicker from './PlanPicker.jsx';
 
 export default function Subscription({ userProfile, activeSessionCount, plans = [] }) {
@@ -14,6 +15,14 @@ export default function Subscription({ userProfile, activeSessionCount, plans = 
   const sent = userProfile?.messagesSent || 0;
   const percent = limit > 0 ? Math.min((sent / limit) * 100, 100) : 0;
   const sessionLimit = userProfile?.sessionLimit ?? 1;
+
+  // Unlimited comes from the plan, and only counts while the plan is what sets the limit —
+  // an admin override or a specific purchased agent count is a real ceiling.
+  const unlimitedAgents = Boolean(userProfile?.unlimitedAgents);
+
+  // The paid window. Absent for a free/trial account and for anything bought before
+  // subscription periods existed, in which case the card below is simply not rendered.
+  const subscription = readSubscription(userProfile?.subscriptionEndsAt);
 
   // `tier` predates the plans table and still holds 'free'/'premium' on older
   // accounts, so it doubles as the plan id until the customer is reassigned.
@@ -232,16 +241,98 @@ export default function Subscription({ userProfile, activeSessionCount, plans = 
                 <Hash size={22} style={{ color: 'var(--text-muted)' }} />
                 <div>
                   <span className="stat-label" style={{ fontSize: '0.8rem', color: 'var(--text-dimmed)' }}>Allowed</span>
-                  <div className="stat-value" style={{ fontSize: '1.2rem', fontWeight: '700' }}>{sessionLimit}</div>
+                  {/* An unlimited plan shows the symbol, not a number. Printing whatever
+                      large figure the plan happens to carry would read as a cap the
+                      customer does not actually have. */}
+                  <div className="stat-value" style={{ fontSize: '1.2rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    {unlimitedAgents ? (
+                      <>
+                        <InfinityIcon size={20} style={{ color: 'var(--primary)' }} />
+                        <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--primary)' }}>Unlimited</span>
+                      </>
+                    ) : sessionLimit}
+                  </div>
                 </div>
               </div>
             </div>
 
             <p style={{ fontSize: '0.8rem', color: 'var(--text-dimmed)', margin: '18px 0 0', lineHeight: '1.5' }}>
-              Need more? Pick a plan below and choose how many agents you want — extra
-              agents are billed on the same invoice.
+              {unlimitedAgents
+                ? 'This plan has no agent limit — sign in as many devices as you need at the same time.'
+                : 'Need more? Pick a plan below and choose how many agents you want — extra agents are billed on the same invoice.'}
             </p>
           </div>
+
+          {/* Subscription period.
+              Only rendered when a paid window exists. A free or trial account has nothing to
+              count down here, and an account that predates subscription periods carries no
+              end date — showing "expires: never" to either would invent a guarantee. */}
+          {subscription.hasSubscription && (
+            <div
+              className="card glass"
+              style={{
+                borderColor: subscription.isExpired
+                  ? 'rgba(239,68,68,0.4)'
+                  : subscription.isEndingSoon ? 'rgba(245,158,11,0.4)' : undefined,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+                <div style={{
+                  background: subscription.isExpired
+                    ? 'rgba(239,68,68,0.1)'
+                    : subscription.isEndingSoon ? 'rgba(245,158,11,0.12)' : 'var(--primary-soft)',
+                  padding: '10px',
+                  borderRadius: '10px',
+                  color: subscription.isExpired ? '#ef4444' : subscription.isEndingSoon ? '#f59e0b' : 'var(--primary)',
+                }}>
+                  <CalendarClock size={24} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.2rem' }}>Subscription Period</h3>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-dimmed)' }}>
+                    {subscription.isExpired ? 'This subscription has ended' : 'Access is active until the renewal date'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="usage-stats" style={{ display: 'flex', gap: '20px', marginBottom: '16px' }}>
+                <div className="stat-box" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <CalendarClock size={22} style={{ color: 'var(--text-muted)' }} />
+                  <div>
+                    <span className="stat-label" style={{ fontSize: '0.8rem', color: 'var(--text-dimmed)' }}>
+                      {subscription.isExpired ? 'Expired' : 'Remaining'}
+                    </span>
+                    <div className="stat-value" style={{
+                      fontSize: '1.2rem',
+                      fontWeight: '700',
+                      color: subscription.isExpired ? '#ef4444' : subscription.isEndingSoon ? '#f59e0b' : 'var(--text-main)',
+                    }}>
+                      {subscription.isExpired
+                        ? 'Ended'
+                        : `${subscription.daysLeft} ${subscription.daysLeft === 1 ? 'day' : 'days'}`}
+                    </div>
+                  </div>
+                </div>
+                <div className="stat-box" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <Hash size={22} style={{ color: 'var(--text-muted)' }} />
+                  <div>
+                    <span className="stat-label" style={{ fontSize: '0.8rem', color: 'var(--text-dimmed)' }}>
+                      {subscription.isExpired ? 'Ended on' : 'Renews on'}
+                    </span>
+                    <div className="stat-value" style={{ fontSize: '1.2rem', fontWeight: '700' }}>
+                      {formatRenewalDate(subscription.endsAt)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-dimmed)', margin: '18px 0 0', lineHeight: '1.5' }}>
+                {subscription.isExpired
+                  ? 'Buy the plan again below to restore access. Your chats, contacts and WhatsApp connection are kept.'
+                  : 'Buying the same plan again before this date adds another period to what is left, so nothing is lost by renewing early.'}
+              </p>
+            </div>
+          )}
 
         </div>
 
