@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  CreditCard, RefreshCw, Trash2, AlertTriangle, X, Filter,
+  CreditCard, RefreshCw, Trash2, AlertTriangle, X, Filter, CheckCircle2,
 } from 'lucide-react';
 import { apiFetch, apiJson } from '../../utils/api.js';
 import { showToast } from '../../utils/toastBus.js';
@@ -94,6 +94,45 @@ export default function TransactionsTab({ users }) {
     }
   };
 
+  // Mark a payment received outside the webhook as paid, and grant what it bought.
+  //
+  // The server runs the same fulfilment the webhook would, so this is not a status edit —
+  // it moves the customer onto the plan and grants the agents. The toast reports what was
+  // actually applied rather than just "saved", because that is the part worth checking.
+  const handleApprove = async (tx) => {
+    setBusyId(tx.id);
+    try {
+      const res = await apiJson(`/api/admin/transactions/${encodeURIComponent(tx.id)}/approve`, 'POST');
+      const who = res.customerEmail || tx.email || tx.uid;
+      showToast({
+        type: 'success',
+        title: 'Payment approved',
+        message: res.appliedPlan
+          ? `${who} is now on ${res.appliedPlan} with ${res.appliedAgents} agent${res.appliedAgents === 1 ? '' : 's'}.`
+          : `${tx.id} marked paid.`,
+      });
+
+      // Paying does not clear an expired trial, so the customer can still be locked out
+      // after a correct approval. Said separately and left on screen longer, because it
+      // needs a second action on the Customers tab.
+      if (res.trialStillExpired) {
+        showToast({
+          type: 'error',
+          title: 'Trial still expired',
+          message: `${who} remains blocked by the expired-trial lock. Clear it on the Customers tab.`,
+          duration: 9000,
+        });
+      }
+
+      setConfirm(null);
+      await load();
+    } catch (err) {
+      showToast({ type: 'error', title: 'Approve failed', message: err.message, duration: 5000 });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const handlePurge = async (payload, label) => {
     setBusyId('purge');
     try {
@@ -125,6 +164,8 @@ export default function TransactionsTab({ users }) {
             A <strong>PENDING</strong> row is written before the customer is sent to the payment
             gateway, so every abandoned checkout leaves one behind. Deleting those is safe.
             <strong> PAID</strong> rows are your revenue record — delete them only deliberately.
+            If money arrived but the row is still pending, <strong>Approve</strong> grants the
+            purchase exactly as the payment gateway would have.
           </p>
         </div>
 
@@ -253,24 +294,57 @@ export default function TransactionsTab({ users }) {
                     </td>
                     <td style={{ padding: '12px 14px' }}><StatusPill status={tx.status} /></td>
                     <td style={{ padding: '12px 14px' }}>
-                      <button
-                        onClick={() => setConfirm({
-                          type: 'one', tx,
-                          title: 'Delete this transaction?',
-                          body: String(tx.status).toUpperCase() === 'PAID'
-                            ? 'This is a PAID record. Deleting it removes evidence of a payment you received.'
-                            : 'An unpaid checkout attempt. Safe to remove.',
-                        })}
-                        disabled={busyId === tx.id}
-                        aria-label={`Delete ${tx.id}`}
-                        style={{
-                          background: 'transparent', border: '1px solid var(--border-color)',
-                          color: 'var(--text-muted)', padding: '5px 8px', borderRadius: '6px',
-                          cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
-                        }}
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                      <div style={{ display: 'inline-flex', gap: '6px' }}>
+                        {/* Only for rows that are not already paid. Approving twice would
+                            grant an add-on's agents twice, which the server refuses — but
+                            the button should not offer it either. */}
+                        {String(tx.status).toUpperCase() !== 'PAID' && (
+                          <button
+                            onClick={() => setConfirm({
+                              type: 'approve', tx,
+                              tone: 'primary',
+                              confirmLabel: 'Approve payment',
+                              title: 'Mark this payment as received?',
+                              body: tx.planId
+                                ? `${emailByUid[tx.uid] || tx.email || 'This customer'} will be moved onto "${tx.planId}"`
+                                  + `${tx.agents ? ` with ${tx.agents} agent${tx.agents === 1 ? '' : 's'}` : ''}`
+                                  + `, exactly as an automatic ${formatIDR(tx.amount)} payment would. Use this only when the money has actually arrived.`
+                                : 'This row does not record which plan it was for, so it cannot be fulfilled automatically. Set the plan on the Customers tab instead.',
+                            })}
+                            disabled={busyId === tx.id}
+                            aria-label={`Approve ${tx.id}`}
+                            title="Mark as paid and grant the purchase"
+                            style={{
+                              background: 'var(--success-soft)', border: '1px solid var(--success-border)',
+                              color: 'var(--success)', padding: '5px 10px', borderRadius: '6px',
+                              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px',
+                              fontSize: '0.78rem', fontWeight: '600', fontFamily: 'inherit',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <CheckCircle2 size={13} /> Approve
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => setConfirm({
+                            type: 'one', tx,
+                            title: 'Delete this transaction?',
+                            body: String(tx.status).toUpperCase() === 'PAID'
+                              ? 'This is a PAID record. Deleting it removes evidence of a payment you received.'
+                              : 'An unpaid checkout attempt. Safe to remove.',
+                          })}
+                          disabled={busyId === tx.id}
+                          aria-label={`Delete ${tx.id}`}
+                          style={{
+                            background: 'transparent', border: '1px solid var(--border-color)',
+                            color: 'var(--text-muted)', padding: '5px 8px', borderRadius: '6px',
+                            cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -293,7 +367,12 @@ export default function TransactionsTab({ users }) {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ fontSize: '1.05rem', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <AlertTriangle size={17} style={{ color: '#f59e0b' }} /> {confirm.title}
+                {/* The icon follows the action. A green tick over "approve a payment" and a
+                    warning triangle over a delete, rather than one alarm for everything. */}
+                {confirm.tone === 'primary'
+                  ? <CheckCircle2 size={17} style={{ color: 'var(--success)' }} />
+                  : <AlertTriangle size={17} style={{ color: '#f59e0b' }} />}
+                {confirm.title}
               </h3>
               <button onClick={() => setConfirm(null)} aria-label="Close"
                 style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
@@ -314,18 +393,24 @@ export default function TransactionsTab({ users }) {
                 }}>
                 Cancel
               </button>
+              {/* Approving is not destructive, so it must not wear the delete button's red.
+                  The label and colour come from `confirm` now that three actions share this
+                  dialog, instead of every one of them reading "Delete". */}
               <button
-                onClick={() => confirm.type === 'one'
-                  ? handleDeleteOne(confirm.tx)
-                  : handlePurge(confirm.payload, confirm.label)}
-                disabled={busyId !== null}
+                onClick={() => {
+                  if (confirm.type === 'approve') return handleApprove(confirm.tx);
+                  if (confirm.type === 'one') return handleDeleteOne(confirm.tx);
+                  return handlePurge(confirm.payload, confirm.label);
+                }}
+                disabled={busyId !== null || (confirm.type === 'approve' && !confirm.tx.planId)}
                 style={{
-                  background: '#ef4444', border: 'none', color: '#fff', fontWeight: '600',
+                  background: confirm.tone === 'primary' ? 'var(--success)' : '#ef4444',
+                  border: 'none', color: '#fff', fontWeight: '600',
                   padding: '8px 18px', borderRadius: '8px', fontSize: '0.85rem',
                   cursor: busyId !== null ? 'wait' : 'pointer', opacity: busyId !== null ? 0.6 : 1,
                 }}
               >
-                Delete
+                {confirm.confirmLabel || 'Delete'}
               </button>
             </div>
           </div>

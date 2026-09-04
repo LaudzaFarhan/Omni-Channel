@@ -11,6 +11,7 @@ import { execSync } from 'child_process';
 import crypto from 'crypto';
 import { getStore } from './store.js';
 import { buildConversationLog } from './conversationLog.js';
+import { applyPaidFulfilment } from './fulfilment.js';
 
 // Postgres replaces Firestore; local JWTs replace Firebase Auth.
 import {
@@ -21,8 +22,7 @@ import { assertAuthConfigured, verifyAccessToken } from './auth.js';
 import {
   resolveSessionLimitFor, consumeMessageQuota, saveTransaction,
   markTransactionStatus, findUserById, recordAudit, isChatHeld,
-  findPlanById, updateUser, setPurchasedAgents, addPurchasedAgents,
-  dispatchWorkspaceWebhook,
+  findPlanById, dispatchWorkspaceWebhook,
 } from './data.js';
 // Pricing arithmetic is shared with the browser so the customer is shown exactly
 // the figure they will be charged. The server always recomputes it; the client's
@@ -107,7 +107,7 @@ fetchLatestBaileysVersion().then(latest => {
 // =============================================
 // activeSessions keyed by compositeKey = `${ownerId}_${sessionId}`
 //
-// `ownerId` throughout this file is the WORKSPACE owner's user id â€” not
+// `ownerId` throughout this file is the WORKSPACE owner's user id — not
 // necessarily the id of the person who made the request. A supervisor and every
 // team member they invited share one workspace, so they share these WhatsApp
 // sessions, these stores, this socket room and this message quota.
@@ -613,7 +613,7 @@ function logoutSession(ownerId, sessionId = 'default') {
 // (requireAdmin), which reads the live row instead of trusting a token claim.
 
 // Socket.io authentication. Verifies this server's own access token, then
-// confirms the account still exists and is approved â€” a revoked customer must
+// confirms the account still exists and is approved — a revoked customer must
 // not keep a live socket just because their token has not expired yet.
 io.use(async (socket, next) => {
   const token = socket.handshake.auth.token || socket.handshake.headers['x-auth-token'];
@@ -639,7 +639,7 @@ io.use(async (socket, next) => {
     }
 
     // An invited member works inside their supervisor's workspace, so the
-    // supervisor's approval gates them too â€” suspending an account has to take its
+    // supervisor's approval gates them too — suspending an account has to take its
     // whole team offline, not just the owner. Mirrors requireApproved.
     if (profile.ownerUserId) {
       const owner = await findUserById(profile.ownerUserId);
@@ -668,7 +668,7 @@ io.use(async (socket, next) => {
 // Every socket joins two rooms:
 //
 //   workspaceId   shared with the whole team. WhatsApp status, new messages, quota
-//                 changes, hold changes, contact changes â€” anything about the
+//                 changes, hold changes, contact changes — anything about the
 //                 account rather than the person.
 //   user:<uid>    just this person's tabs. Their own profile row, which must not
 //                 be broadcast to colleagues. See userRoom() in ./scope.js.
@@ -703,7 +703,7 @@ io.on('connection', async (socket) => {
 
   const occupants = workspaceOccupants(workspaceId);
 
-  // Reconnecting, or opening another tab, costs nothing â€” they already hold a seat.
+  // Reconnecting, or opening another tab, costs nothing — they already hold a seat.
   if (!occupants.has(memberId) && occupants.size >= seatLimit) {
     console.warn(
       `[Socket] Rejected ${socket.profile.email} (${socket.id}): workspace ${workspaceId} ` +
@@ -814,7 +814,7 @@ async function fetchGroupMetadata(ownerId, sessionId, jid) {
 }
 
 // =============================================
-// REST API â€” all endpoints accept ?sessionId= query param
+// REST API — all endpoints accept ?sessionId= query param
 // =============================================
 
 // Get all WA sessions for the user
@@ -904,7 +904,7 @@ app.get('/api/group-metadata', approved, async (req, res) => {
 // When conversations actually happen, as a 7x24 (weekday x hour) grid.
 //
 // Aggregated here rather than in the browser because the raw material is every
-// stored message across every chat â€” on a busy account that is tens of thousands
+// stored message across every chat — on a busy account that is tens of thousands
 // of objects the client has no other reason to hold. What comes back is 336
 // integers.
 //
@@ -987,7 +987,7 @@ app.get('/api/stats/activity', approved, (req, res) => {
     incoming,
     outgoing,
     total,
-    // The window the returned numbers actually cover â€” the first and last message
+    // The window the returned numbers actually cover — the first and last message
     // counted, not the requested bounds, so an empty stretch at either end of a
     // custom range is not claimed as data.
     from: earliest,
@@ -1006,7 +1006,7 @@ app.get('/api/stats/activity', approved, (req, res) => {
 // Who produced the interactions in ONE cell of the heatmap.
 //
 // The grid endpoint above returns counts, which answers "when are we busy" but not "who
-// was that" â€” and a count with no way to reach the conversations behind it is a dead end.
+// was that" — and a count with no way to reach the conversations behind it is a dead end.
 // This returns the chats that contributed to a single (weekday, hour) bucket, so clicking
 // a cell can filter the customer list beside it.
 //
@@ -1142,7 +1142,7 @@ app.post('/api/messages/send', approved, async (req, res) => {
   // Agent hold.
   //
   // A conversation can be put "on hold" so automated replies stop while a human
-  // takes over. Only automated senders are blocked â€” a person typing in the
+  // takes over. Only automated senders are blocked — a person typing in the
   // dashboard is exactly who the hold exists to make room for.
   //
   // A request is treated as automated when it says so, via either
@@ -1169,12 +1169,12 @@ app.post('/api/messages/send', approved, async (req, res) => {
     // A hold is written under one canonical JID (preferring @lid), but a bot
     // usually addresses the conversation by phone JID. Passing the single
     // resolved JID matched only that exact value, so a chat held by the dashboard
-    // under its @lid form did not block a reply sent to 628...@s.whatsapp.net â€”
+    // under its @lid form did not block a reply sent to 628...@s.whatsapp.net —
     // enforcement silently disagreed with what the UI showed as held.
     const holdJids = getStore(key).expandHoldJids(holdJid);
 
     if (await isChatHeld(ownerId, sid, holdJids)) {
-      console.log(`[Hold] Suppressed an automated reply to ${holdJid} (${key}) â€” chat is on hold.`);
+      console.log(`[Hold] Suppressed an automated reply to ${holdJid} (${key}) — chat is on hold.`);
       return res.status(409).json({
         error: 'This conversation is on hold. A human agent has taken over, so automated replies are suppressed.',
         code: 'chat_on_hold',
@@ -1290,7 +1290,7 @@ app.post('/api/messages/send', approved, async (req, res) => {
     //
     // The point of this is team accounts: several agents share one WhatsApp number,
     // and a badge under the bubble is the only way to tell who typed what. Only human
-    // dashboard sends are stamped â€” an automated/bot send is not "someone on the team",
+    // dashboard sends are stamped — an automated/bot send is not "someone on the team",
     // and an incoming message is the customer, so neither carries a name.
     //
     // pushName is deliberately NOT used: on our own outgoing messages WhatsApp fills it
@@ -1429,7 +1429,7 @@ const PUBLIC_URL = (process.env.PUBLIC_URL || 'https://www.omnireach.my.id').tri
 // Transactions Store Helper (File-backed fallback)
 // Transactions used to live in sessions/transactions.json, which meant they were
 // invisible to the admin console and lost if the file was cleaned up. They are
-// now rows in Postgres â€” see saveTransaction in server/data.js. GET
+// now rows in Postgres — see saveTransaction in server/data.js. GET
 // /api/transactions and /api/admin/transactions are served from routes-data.js.
 
 // Authentication (register / login / refresh / logout / me) and all the
@@ -1494,7 +1494,7 @@ app.post('/api/mayar/create-checkout', supervisor, async (req, res) => {
     }
     // Units being bought. For a plan that is an absolute agent count; for an add-on
     // it is a quantity, and the range floor differs accordingly (see agentRange).
-    // Clamped and then priced here â€” the client's arithmetic is never trusted, only
+    // Clamped and then priced here — the client's arithmetic is never trusted, only
     // its choice of quantity.
     const range = agentRange(plan);
     const requestedAgents = req.body?.agents;
@@ -1517,7 +1517,7 @@ app.post('/api/mayar/create-checkout', supervisor, async (req, res) => {
 
     if (pricing.total <= 0) {
       return res.status(400).json({
-        error: `"${plan.name}" is free â€” there is nothing to pay for.`,
+        error: `"${plan.name}" is free — there is nothing to pay for.`,
         code: 'plan_is_free',
       });
     }
@@ -1557,7 +1557,7 @@ app.post('/api/mayar/create-checkout', supervisor, async (req, res) => {
     // It used to be written first, on the reasoning that a customer who pays must
     // never be left without a local record. But the gateway call is the step that
     // actually fails, so every failed attempt left a PENDING row the customer could
-    // see in their history â€” a payment they never started and cannot complete.
+    // see in their history — a payment they never started and cannot complete.
     //
     // The durability that ordering was protecting is now provided by the webhook,
     // which creates the row if it is missing (see the fulfilment path below). The id
@@ -1688,9 +1688,6 @@ app.post('/api/webhooks/mayar', async (req, res) => {
       return res.json({ success: true, ignored: event.status });
     }
 
-    let appliedPlan = null;
-    let appliedAgents = null;
-
     let localTx = null;
     if (event.localTransactionId) {
       localTx = await markTransactionStatus(event.localTransactionId, 'PAID');
@@ -1699,7 +1696,7 @@ app.post('/api/webhooks/mayar', async (req, res) => {
       // died in between. The payment is real and extraData carries everything the
       // record needs, so reconstruct it rather than losing the revenue record.
       if (!localTx) {
-        console.warn(`[Mayar Webhook] No local transaction ${event.localTransactionId} â€” recreating it from the payment.`);
+        console.warn(`[Mayar Webhook] No local transaction ${event.localTransactionId} — recreating it from the payment.`);
         localTx = await saveTransaction({
           transactionId: event.localTransactionId,
           uid: event.uid || null,
@@ -1719,7 +1716,7 @@ app.post('/api/webhooks/mayar', async (req, res) => {
 
     // What was bought. extraData is the primary source, but the row we wrote
     // before calling the gateway is the authority if extraData did not survive
-    // the round trip â€” relying on the gateway echoing it back meant a stripped
+    // the round trip — relying on the gateway echoing it back meant a stripped
     // field silently downgraded the purchase to the plan's included agents.
     //
     // Neither source is payer-controlled: both are values WE recorded at checkout.
@@ -1729,101 +1726,30 @@ app.post('/api/webhooks/mayar', async (req, res) => {
       ? event.agents
       : (Number(localTx?.agents) > 0 ? Number(localTx.agents) : null);
 
-    if (uid && planId) {
-      const plan = await findPlanById(planId);
-      const user = await findUserById(uid);
-
-      if (!plan) {
-        console.error(`[Mayar Webhook] Paid for unknown plan "${planId}" â€” needs manual review.`);
-      } else if (!user) {
-        console.error(`[Mayar Webhook] Paid for unknown user "${uid}" â€” needs manual review.`);
-      } else if (isAddon(plan)) {
-        // A top-up. The plan is left exactly as it is â€” switching it here is what made
-        // an "extra agent" product unusable, because a Premium customer who bought one
-        // would land on the add-on and lose the message quota they were paying for.
-        const units = requestedAgents === null ? 1 : clampAgents(plan, requestedAgents);
-        const granted = agentsGranted(plan, units);
-
-        const updated = await addPurchasedAgents(uid, granted);
-        appliedPlan = user.planId;
-        appliedAgents = updated?.purchasedAgents ?? null;
-
-        console.log(
-          `[Mayar Webhook] ${user.email} bought ${plan.name} x${units}: ` +
-          `+${granted} agent(s), now ${appliedAgents} total. Plan unchanged (${user.planId}).`
-        );
-
-        const fresh = await findUserById(uid);
-        io.to(userRoom(uid)).emit('profile-updated', fresh);
-        io.to(uid).emit('workspace-updated', { planId: user.planId, agents: appliedAgents });
-
-        // Skip the plan-switch branch below.
-        await recordAudit({
-          actorUserId: null,
-          actorEmail: 'mayar-webhook',
-          action: 'payment.addon_applied',
-          targetUserId: uid,
-          detail: {
-            localTransactionId: event.localTransactionId,
-            addonId: plan.id, units, grantedAgents: granted, totalAgents: appliedAgents,
-          },
-          ip: clientIp(req),
-        });
-      } else {
-        await updateUser(uid, { planId: plan.id });
-        appliedPlan = plan.id;
-
-        // Grant the agents that were paid for. Falls back to the plan's included
-        // count for a payment made before agent pricing existed.
-        const agentsPaidFor = requestedAgents === null
-          ? plan.includedAgents
-          : clampAgents(plan, requestedAgents);
-
-        await setPurchasedAgents(uid, agentsPaidFor);
-        appliedAgents = agentsPaidFor;
-
-        console.log(`[Mayar Webhook] Upgraded ${user.email} to ${plan.name} with ${agentsPaidFor} agent(s).`);
-
-        const fresh = await findUserById(uid);
-        // The supervisor's own row goes to their own tabs. It must not reach the
-        // workspace room, where a member would receive a profile that is not theirs.
-        io.to(userRoom(uid)).emit('profile-updated', fresh);
-        // The plan and the seat count just changed for everyone in the workspace,
-        // so every member needs to re-resolve their limits.
-        io.to(uid).emit('workspace-updated', { planId: plan.id, agents: appliedAgents });
-      }
-    } else {
-      console.warn('[Mayar Webhook] Payment carried no uid/planId in extraData and no local record â€” fulfil manually from the admin console.');
-    }
-
-    await recordAudit({
+    // Shared with the admin console's manual Approve button — see server/fulfilment.js.
+    // One implementation of "what does paying grant you", so a hand-approved payment
+    // cannot quietly differ from an automatically fulfilled one.
+    const applied = await applyPaidFulfilment({
+      io,
+      uid,
+      planId,
+      requestedAgents,
       actorUserId: null,
       actorEmail: 'mayar-webhook',
-      action: 'payment.received',
-      targetUserId: uid || null,
-      detail: {
-        localTransactionId: event.localTransactionId,
-        mayarTransactionId: event.mayarTransactionId,
-        planId,
-        agents: requestedAgents,
-        amount: event.amount,
-        status: event.status,
-        appliedPlan,
-        appliedAgents,
-      },
+      source: 'webhook',
+      logPrefix: '[Mayar Webhook]',
+      localTransactionId: event.localTransactionId,
+      mayarTransactionId: event.mayarTransactionId,
+      amount: event.amount,
+      status: event.status,
       ip: clientIp(req),
     });
 
-    if (uid) {
-      io.to(uid).emit('payment-success', {
-        transactionId: event.localTransactionId,
-        planId: appliedPlan,
-        agents: appliedAgents,
-        timestamp: new Date().toISOString(),
-      });
-    }
-
-    res.json({ success: true, appliedPlan, appliedAgents });
+    res.json({
+      success: true,
+      appliedPlan: applied.appliedPlan,
+      appliedAgents: applied.appliedAgents,
+    });
   } catch (err) {
     // A 500 makes Mayar retry, which is what we want for a transient failure.
     console.error('[Mayar Webhook] Processing error:', err.message);
@@ -1861,7 +1787,7 @@ app.post('/api/resolve-contacts', approved, async (req, res) => {
 });
 
 // =============================================
-// ADMIN API â€” every route requires role 'admin', checked against the live
+// ADMIN API — every route requires role 'admin', checked against the live
 // database row by requireAdmin in server/middleware.js
 // =============================================
 
@@ -2106,7 +2032,7 @@ if (fs.existsSync(distPath)) {
     res.sendFile(path.join(distPath, 'index.html'));
   });
 } else {
-  console.warn('[Config] No dist/ directory found â€” API only. Run `npm run build` to serve the frontend from this process.');
+  console.warn('[Config] No dist/ directory found — API only. Run `npm run build` to serve the frontend from this process.');
 }
 
 // Graceful shutdown so pm2/systemd restarts don't sever sockets abruptly.
@@ -2139,7 +2065,7 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 // Bring previously-paired WhatsApp devices back online at boot.
 //
 // activeSessions is in-memory, and nothing else calls getOrInitWASocket except
-// the socket's init-session event, /api/status and /api/sync â€” all of which need
+// the socket's init-session event, /api/status and /api/sync — all of which need
 // a client to act first. So after a restart WhatsApp stayed offline until someone
 // opened the dashboard, even though valid credentials were on disk. An automated
 // caller would get 503 wa_not_initialized with no way to fix it itself.
@@ -2185,7 +2111,7 @@ async function restoreSessionsOnBoot() {
     const uid = key.slice(0, separator);
     const sessionId = key.slice(separator + 1);
 
-    // Without creds.json the folder holds no usable login â€” usually a partially
+    // Without creds.json the folder holds no usable login — usually a partially
     // completed QR scan. Re-initialising it would just emit a fresh QR nobody is
     // watching.
     if (!fs.existsSync(path.join(sessionsDir, dirName, 'creds.json'))) {
@@ -2203,7 +2129,7 @@ async function restoreSessionsOnBoot() {
       }
       // Directory names are built from the WORKSPACE id, so the row they name must
       // be a supervisor. A member id appearing here would mean something built a
-      // path from the caller's id instead of req.workspaceId â€” worth failing loudly
+      // path from the caller's id instead of req.workspaceId — worth failing loudly
       // rather than reconnecting into a tenant that should not exist.
       if (owner.ownerUserId) {
         console.error(
@@ -2277,7 +2203,7 @@ async function start() {
     console.log(`Multi-Tenant Server listening on http://${HOST}:${PORT}`);
     console.log(`[Config] Sessions directory: ${path.resolve('sessions')}`);
     if (allowedOrigins === '*') {
-      console.warn('[Config] CORS_ORIGIN is not set â€” allowing all origins. Set CORS_ORIGIN to your frontend URL in production.');
+      console.warn('[Config] CORS_ORIGIN is not set — allowing all origins. Set CORS_ORIGIN to your frontend URL in production.');
     } else {
       console.log(`[Config] CORS allowed origins: ${allowedOrigins.join(', ')}`);
     }

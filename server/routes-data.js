@@ -20,7 +20,9 @@ import {
   listFeatureFlags, setFeatureFlag, listFeatureAccess, setFeatureAccess,
   clearFeatureAccess, resolveFeaturesForWorkspace, dispatchWorkspaceWebhook,
   getWorkspaceSettings, saveWorkspaceSettings,
+  findTransactionById, markTransactionPaidIfPending,
 } from './data.js';
+import { applyPaidFulfilment } from './fulfilment.js';
 import {
   FEATURES, FEATURE_STATUSES, FEATURE_ACCESS, DEFAULT_STATUS,
   findFeature, isLocked,
@@ -568,6 +570,125 @@ export function mountDataRoutes(app, io) {
     } catch (err) {
       console.error('[Transactions] Delete failed:', err);
       res.status(500).json({ error: 'Could not delete the transaction.' });
+    }
+  });
+
+  // Approve a payment by hand.
+  //
+  // The webhook fulfils automatically, but it cannot always run: a static payment link
+  // carries no extraData back to us, a webhook delivery can be lost, and the token can be
+  // misconfigured. Without this the only remedy was editing the customer's plan and agent
+  // count on the Customers tab and leaving the invoice PENDING forever — two manual steps
+  // that were easy to get wrong and left the revenue record lying.
+  //
+  // It runs the SAME fulfilment as the webhook (server/fulfilment.js), so an approved
+  // payment grants exactly what an automatic one would.
+  //
+  // Two ordering decisions matter here:
+  //
+  //   1. The plan and the customer are resolved BEFORE the row is moved to PAID. The
+  //      webhook flips first and discovers a bad reference afterwards, which can leave a
+  //      row marked paid with nothing applied. Checking first means a refusal changes
+  //      nothing at all.
+  //   2. The transition itself is guarded in SQL (markTransactionPaidIfPending), not by a
+  //      read-then-write. An add-on grant INCREMENTS the agent count, so two clicks on
+  //      Approve would otherwise buy the customer twice the agents they paid for.
+  app.post('/api/admin/transactions/:id/approve', admin, async (req, res) => {
+    try {
+      const id = String(req.params.id || '');
+      const existing = await findTransactionById(id);
+      if (!existing) return res.status(404).json({ error: 'Transaction not found.' });
+
+      if (String(existing.status || '').toUpperCase() === 'PAID') {
+        return res.status(409).json({
+          error: 'This transaction is already marked paid, so approving it again would grant the purchase twice.',
+          code: 'already_paid',
+        });
+      }
+
+      // Nothing to fulfil against. Happens for a static-payment-link checkout, which
+      // carries no plan reference. Say what to do instead of failing vaguely.
+      if (!existing.uid || !existing.planId) {
+        return res.status(400).json({
+          error: 'This row does not record which customer or plan it was for, so it cannot be fulfilled automatically. Set the plan and agent count on the Customers tab instead.',
+          code: 'cannot_fulfil',
+        });
+      }
+
+      const plan = await findPlanById(existing.planId);
+      if (!plan) {
+        return res.status(400).json({
+          error: `The plan "${existing.planId}" no longer exists, so there is nothing to grant. Recreate it on the Plans tab, or set the customer's plan directly.`,
+          code: 'unknown_plan',
+        });
+      }
+
+      const customer = await findUserById(existing.uid);
+      if (!customer) {
+        return res.status(400).json({
+          error: 'The account this payment belongs to no longer exists.',
+          code: 'unknown_user',
+        });
+      }
+
+      // Atomic: exactly one concurrent approval can win this.
+      const tx = await markTransactionPaidIfPending(id);
+      if (!tx) {
+        return res.status(409).json({
+          error: 'This transaction was marked paid a moment ago by someone else.',
+          code: 'already_paid',
+        });
+      }
+
+      const applied = await applyPaidFulfilment({
+        io,
+        uid: tx.uid,
+        planId: tx.planId,
+        requestedAgents: Number(tx.agents) > 0 ? Number(tx.agents) : null,
+        // The admin, not 'mayar-webhook' — the audit trail has to show that a human
+        // decided this, and which one.
+        actorUserId: req.profile.uid,
+        actorEmail: req.profile.email,
+        source: 'admin_approval',
+        logPrefix: '[Admin Approval]',
+        localTransactionId: tx.id,
+        amount: tx.amount,
+        status: 'PAID',
+        ip: clientIp(req),
+      });
+
+      await recordAudit({
+        actorUserId: req.profile.uid, actorEmail: req.profile.email,
+        action: 'transaction.approved', targetUserId: tx.uid,
+        detail: {
+          transactionId: tx.id,
+          amount: tx.amount,
+          planId: tx.planId,
+          agents: tx.agents,
+          appliedPlan: applied.appliedPlan,
+          appliedAgents: applied.appliedAgents,
+        },
+        ip: clientIp(req),
+      });
+
+      console.log(
+        `[Admin Approval] ${req.profile.email} approved ${tx.id} (${tx.amount}) for ${customer.email}: ` +
+        `plan ${applied.appliedPlan}, ${applied.appliedAgents} agent(s).`
+      );
+
+      res.json({
+        success: true,
+        transaction: tx,
+        customerEmail: customer.email,
+        appliedPlan: applied.appliedPlan,
+        appliedAgents: applied.appliedAgents,
+        // Paying does not clear an expired trial — the webhook has never done that either.
+        // Surfaced so the console can tell the admin the customer is still locked out.
+        trialStillExpired: Boolean(customer.trialExpired),
+      });
+    } catch (err) {
+      console.error('[Transactions] Approve failed:', err);
+      res.status(500).json({ error: 'Could not approve the transaction.' });
     }
   });
 

@@ -1674,3 +1674,31 @@ export async function saveWorkspaceSettings(userId, settingsObj = {}) {
 }
 
 
+
+/** One transaction, for inspecting a row before acting on it. */
+export async function findTransactionById(id) {
+  return mapTransaction(await queryOne('SELECT * FROM transactions WHERE id = $1', [id]));
+}
+
+/**
+ * Move a row to PAID only if it is not already PAID, and report which happened.
+ *
+ * markTransactionStatus() cannot answer "was this already fulfilled", because it updates
+ * and returns the row either way. That is survivable for the webhook, whose plan branch
+ * writes absolute values, but not for anything that can be triggered twice by hand:
+ * addPurchasedAgents() INCREMENTS, so re-fulfilling an add-on grants the agents again.
+ *
+ * The guard is in the WHERE clause rather than a read-then-write, so two concurrent
+ * approvals cannot both pass the check — Postgres lets exactly one of them match the row.
+ * A null return means "somebody else already paid this", which is the caller's cue to
+ * refuse rather than to fulfil.
+ */
+export async function markTransactionPaidIfPending(id) {
+  const row = await queryOne(
+    `UPDATE transactions SET status = 'PAID'
+      WHERE id = $1 AND upper(coalesce(status, '')) <> 'PAID'
+      RETURNING *`,
+    [id]
+  );
+  return mapTransaction(row);
+}
