@@ -380,6 +380,15 @@ export async function updateTeamPresence(status) {
   return apiJson('/api/team/presence', 'POST', { status });
 }
 
+export async function fetchTeamPresenceMetrics({ period = 'today', startDate, endDate } = {}) {
+  const params = new URLSearchParams();
+  if (period) params.append('period', period);
+  if (startDate) params.append('startDate', startDate);
+  if (endDate) params.append('endDate', endDate);
+  const q = params.toString();
+  return apiFetch(`/api/team/presence-metrics${q ? `?${q}` : ''}`);
+}
+
 // ---------------------------------------------------------------------------
 // invitations (unauthenticated — the recipient has no account yet)
 // ---------------------------------------------------------------------------

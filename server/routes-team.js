@@ -23,7 +23,7 @@ import {
 } from './auth.js';
 import { supervisor, approved, clientIp } from './middleware.js';
 import { userRoom } from './scope.js';
-import { getWorkspaceTeamPresence, setUserPresence } from './presence.js';
+import { getWorkspaceTeamPresence, setUserPresence, getWorkspacePresenceMetrics } from './presence.js';
 
 // A week is long enough for someone to get round to it, short enough that a link
 // forwarded into a group chat months ago is dead.
@@ -334,6 +334,20 @@ export function mountTeamRoutes(app, io) {
     } catch (err) {
       console.error('[Team] Set presence failed:', err);
       res.status(500).json({ error: 'Could not update presence.' });
+    }
+  });
+
+  // Get aggregated online/away/off metrics & logs for team members over a period
+  app.get('/api/team/presence-metrics', approved, async (req, res) => {
+    try {
+      const period = req.query.period || 'today';
+      const startDate = req.query.startDate;
+      const endDate = req.query.endDate;
+      const data = await getWorkspacePresenceMetrics(req.workspaceId, { period, startDate, endDate });
+      res.json(data);
+    } catch (err) {
+      console.error('[Team] Get presence metrics failed:', err);
+      res.status(500).json({ error: 'Could not load team presence metrics.' });
     }
   });
 }

@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Users, UserPlus, Trash2, RefreshCw, Copy, Check, AlertTriangle, X,
-  Crown, Clock, Link2, ShieldCheck, Infinity as InfinityIcon,
+  Crown, Clock, Link2, ShieldCheck, Infinity as InfinityIcon, Activity,
 } from 'lucide-react';
 import {
   fetchTeam, inviteMember, resendInvite, removeMember,
 } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
 import { showToast } from '../utils/toastBus.js';
+import TeamPresenceMonitor from './team/TeamPresenceMonitor.jsx';
 
 const STATUS = {
   owner: { label: 'Owner', color: 'var(--success)', bg: 'var(--success-soft)', border: 'var(--success-border)', icon: Crown },
@@ -112,6 +113,7 @@ const SEAT_BLOCKS = 12;
 
 export default function Team({ userProfile }) {
   const unlimitedAgents = Boolean(userProfile?.unlimitedAgents);
+  const [subTab, setSubTab] = useState('members'); // 'members' | 'monitor'
   const [team, setTeam] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -234,33 +236,64 @@ export default function Team({ userProfile }) {
       <div className="view-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '20px', flexWrap: 'wrap' }}>
         <div>
           <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Users size={26} style={{ color: 'var(--primary)' }} /> Team
+            <Users size={26} style={{ color: 'var(--primary)' }} /> Team & Kehadiran
           </h2>
           <p>
-            Decide who else can sign in and work on this account. Everyone here shares the
-            same WhatsApp numbers, chats, contacts and message quota — each person takes one
-            agent slot, including you.
+            {subTab === 'members'
+              ? 'Kelola anggota tim yang dapat masuk dan bekerja di akun ini. Semua anggota berbagi nomor WhatsApp, chat, kontak, dan kuota pesan yang sama.'
+              : 'Pantau jam kerja, durasi online, away, dan offline setiap anggota tim secara transparan per periode waktu.'}
           </p>
         </div>
 
-        <div style={{ paddingTop: '8px' }}>
-          <button
-            className="upgrade-btn"
-            onClick={() => { setInviting(true); setFormError(null); }}
-            disabled={full || loading}
-            title={full ? 'No agent slots left' : 'Invite someone by email'}
-            style={{
-              padding: '9px 17px', display: 'inline-flex', alignItems: 'center', gap: '7px',
-              fontSize: '0.86rem', opacity: full || loading ? 0.55 : 1,
-              cursor: full || loading ? 'not-allowed' : 'pointer',
-            }}
-          >
-            <UserPlus size={15} /> Invite someone
-          </button>
-        </div>
+        {subTab === 'members' && (
+          <div style={{ paddingTop: '8px' }}>
+            <button
+              className="upgrade-btn"
+              onClick={() => { setInviting(true); setFormError(null); }}
+              disabled={full || loading}
+              title={full ? 'No agent slots left' : 'Invite someone by email'}
+              style={{
+                padding: '9px 17px', display: 'inline-flex', alignItems: 'center', gap: '7px',
+                fontSize: '0.86rem', opacity: full || loading ? 0.55 : 1,
+                cursor: full || loading ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <UserPlus size={15} /> Invite someone
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="view-content" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+      {/* Sub Navigation Bar */}
+      <div className="team-subtabs-nav">
+        <button
+          type="button"
+          className={`team-subtab-btn ${subTab === 'members' ? 'active' : ''}`}
+          onClick={() => setSubTab('members')}
+        >
+          <Users size={16} />
+          <span>Anggota & Kursi Tim</span>
+          {team?.members && (
+            <span className="team-subtab-badge">{team.members.length}</span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          className={`team-subtab-btn ${subTab === 'monitor' ? 'active' : ''}`}
+          onClick={() => setSubTab('monitor')}
+        >
+          <Clock size={16} />
+          <span>Monitor Jam Kerja & Online/Offline</span>
+          <span className="team-monitor-live-dot" title="Live sync aktif" />
+        </button>
+      </div>
+
+      {subTab === 'monitor' ? (
+        <TeamPresenceMonitor />
+      ) : (
+        <>
+          <div className="view-content" style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
         {error && (
           <div style={{ padding: '14px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)', borderLeft: '4px solid #ef4444', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
             <strong style={{ color: '#ef4444' }}>Could not load the team.</strong> {error}
@@ -512,6 +545,8 @@ export default function Team({ userProfile }) {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );
