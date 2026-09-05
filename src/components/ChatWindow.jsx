@@ -328,6 +328,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const [showAdModal, setShowAdModal] = useState(false);
+  const [selectedModalAd, setSelectedModalAd] = useState(null);
 
   // Detect if the active conversation or any message originated from a WhatsApp Ad
   const chatAdInfo = useMemo(() => {
@@ -1263,19 +1264,6 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                   </span>
                 )}
 
-                {/* Ad Origin Pill */}
-                {chatAdInfo && (
-                  <button
-                    type="button"
-                    className="chat-header-ad-pill"
-                    onClick={() => setShowAdModal(true)}
-                    title="Klik untuk melihat detail iklan kampanye"
-                  >
-                    <Megaphone size={12} />
-                    <span>{chatAdInfo.sourceLabel || 'Iklan'}{chatAdInfo.title ? `: ${chatAdInfo.title.length > 24 ? chatAdInfo.title.substring(0, 24) + '...' : chatAdInfo.title}` : ''}</span>
-                    <Info size={11} style={{ opacity: 0.7 }} />
-                  </button>
-                )}
               </div>
               {/* The secondary line, which must not simply repeat the primary one.
                   An unsaved contact has no name, so getDisplayName returns the number —
@@ -1750,7 +1738,15 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                       }
                     }
                     if (!adInfo) return null;
-                    return <AdMessageCard adInfo={adInfo} />;
+                    return (
+                      <AdMessageCard
+                        adInfo={adInfo}
+                        onOpenDetails={(info) => {
+                          setSelectedModalAd(info || chatAdInfo);
+                          setShowAdModal(true);
+                        }}
+                      />
+                    );
                   })()}
 
                   {hasMedia(msg) ? (
@@ -2665,11 +2661,14 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
         />
       )}
 
-      {showAdModal && chatAdInfo && (
+      {showAdModal && (selectedModalAd || chatAdInfo) && (
         <AdDetailsModal
-          adInfo={chatAdInfo}
+          adInfo={selectedModalAd || chatAdInfo}
           contactName={getDisplayName(activeChat)}
-          onClose={() => setShowAdModal(false)}
+          onClose={() => {
+            setShowAdModal(false);
+            setSelectedModalAd(null);
+          }}
         />
       )}
     </div>

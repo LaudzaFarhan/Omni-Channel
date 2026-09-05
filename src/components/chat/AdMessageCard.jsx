@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { ExternalLink, Megaphone, Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { ExternalLink, Megaphone, Copy, Check, ChevronDown, ChevronUp, Info } from 'lucide-react';
 import { showToast } from '../../utils/toastBus.js';
 
-export default function AdMessageCard({ adInfo }) {
+export default function AdMessageCard({ adInfo, onOpenDetails }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -38,25 +38,41 @@ export default function AdMessageCard({ adInfo }) {
 
   return (
     <div className={`ad-card-container ad-source-${sourceApp}`}>
-      {/* Top bar: Source badge & open link */}
+      {/* Top bar: Source badge & links */}
       <div className="ad-card-top">
         <div className="ad-card-source-badge">
           <Megaphone size={12} className="ad-card-icon" />
           <span className="ad-card-source-text">{sourceLabel}</span>
         </div>
-        {sourceUrl && (
-          <a
-            href={sourceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ad-card-link-btn"
-            title="Buka tautan iklan"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <span>Buka Iklan</span>
-            <ExternalLink size={11} />
-          </a>
-        )}
+        <div className="ad-card-actions">
+          {onOpenDetails && (
+            <button
+              type="button"
+              className="ad-card-link-btn"
+              title="Lihat detail lengkap kampanye iklan"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenDetails(adInfo);
+              }}
+            >
+              <Info size={11} />
+              <span>Detail</span>
+            </button>
+          )}
+          {sourceUrl && (
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ad-card-link-btn"
+              title="Buka tautan iklan"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <span>Buka Iklan</span>
+              <ExternalLink size={11} />
+            </a>
+          )}
+        </div>
       </div>
 
       {/* Main card body with image thumbnail & details */}
