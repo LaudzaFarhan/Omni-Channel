@@ -8,7 +8,7 @@ export default function BroadcastUpdateModal({ isOpen, onClose, activeAnnounceme
     activeAnnouncement?.message ||
     'Kami baru saja merilis pembaruan sistem dengan fitur dan perbaikan terbaru. Silakan tekan Ctrl + Shift + R (Hard Refresh) di browser Anda, lalu login ulang untuk memuat versi terbaru.'
   );
-  const [version, setVersion] = useState(activeAnnouncement?.version || '');
+  const [version, setVersion] = useState(activeAnnouncement?.version || 'v3.0.0');
   const [forceRelogin, setForceRelogin] = useState(
     activeAnnouncement?.forceRelogin !== undefined ? activeAnnouncement.forceRelogin : true
   );
@@ -238,7 +238,7 @@ export default function BroadcastUpdateModal({ isOpen, onClose, activeAnnounceme
                   className="broadcast-input"
                   value={version}
                   onChange={(e) => setVersion(e.target.value)}
-                  placeholder="v2.4.0"
+                  placeholder="v3.0.0"
                 />
               </div>
             </div>

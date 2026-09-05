@@ -1984,7 +1984,12 @@ const SERVER_BUILD = (() => {
       return '';
     }
   };
+  let pkgVersion = '3.0.0';
+  try {
+    pkgVersion = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf-8')).version || '3.0.0';
+  } catch {}
   return {
+    version: pkgVersion,
     sha: run('git rev-parse --short HEAD') || 'unknown',
     branch: run('git rev-parse --abbrev-ref HEAD') || 'unknown',
     startedAt: new Date().toISOString(),

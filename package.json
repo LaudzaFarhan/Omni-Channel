@@ -1,6 +1,6 @@
 {
   "name": "omni-reach",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Omni Reach — multi-agent WhatsApp inbox for teams, built on Baileys",
   "main": "server/index.js",
   "type": "module",
