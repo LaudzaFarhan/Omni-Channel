@@ -1891,3 +1891,94 @@ export async function clearSystemAnnouncement() {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Announcement Verifications ("Sudah Verify")
+// ---------------------------------------------------------------------------
+let inMemoryVerifications = [];
+
+export async function recordAnnouncementVerification({ userId, email, name, userAgent = null, announcementId = 'current' }) {
+  const verifiedAt = new Date().toISOString();
+  const entry = {
+    announcementId,
+    userId,
+    email: String(email || '').toLowerCase(),
+    name: name || null,
+    verifiedAt,
+    userAgent: userAgent || null,
+  };
+
+  inMemoryVerifications = inMemoryVerifications.filter(v => !(v.announcementId === announcementId && v.userId === userId));
+  inMemoryVerifications.unshift(entry);
+
+  if (isConfigured()) {
+    try {
+      await queryOne(
+        `INSERT INTO system_announcement_verifications (announcement_id, user_id, email, name, verified_at, user_agent)
+         VALUES ($1, $2, $3, $4, now(), $5)
+         ON CONFLICT (announcement_id, user_id) DO UPDATE SET
+           verified_at = now(),
+           user_agent  = EXCLUDED.user_agent
+         RETURNING *`,
+        [announcementId, userId, entry.email, entry.name, entry.userAgent]
+      );
+    } catch (err) {
+      console.error('[Announcement] Error recording verification in DB:', err.message);
+    }
+  }
+
+  return entry;
+}
+
+export async function hasUserVerifiedAnnouncement(userId, announcementId = 'current') {
+  if (isConfigured()) {
+    try {
+      const row = await queryOne(
+        `SELECT id, verified_at FROM system_announcement_verifications WHERE announcement_id = $1 AND user_id = $2`,
+        [announcementId, userId]
+      );
+      return Boolean(row);
+    } catch (err) {
+      console.warn('[Announcement] Error checking user verification in DB:', err.message);
+    }
+  }
+
+  return inMemoryVerifications.some(v => v.announcementId === announcementId && v.userId === userId);
+}
+
+export async function listAnnouncementVerifications(announcementId = 'current') {
+  if (isConfigured()) {
+    try {
+      const { rows } = await query(
+        `SELECT user_id, email, name, verified_at, user_agent 
+         FROM system_announcement_verifications 
+         WHERE announcement_id = $1 
+         ORDER BY verified_at DESC`,
+        [announcementId]
+      );
+      return rows.map(r => ({
+        userId: r.user_id,
+        email: r.email,
+        name: r.name,
+        verifiedAt: r.verified_at,
+        userAgent: r.user_agent,
+      }));
+    } catch (err) {
+      console.warn('[Announcement] Error listing verifications from DB:', err.message);
+    }
+  }
+
+  return inMemoryVerifications.filter(v => v.announcementId === announcementId);
+}
+
+export async function resetAnnouncementVerifications(announcementId = 'current') {
+  inMemoryVerifications = inMemoryVerifications.filter(v => v.announcementId !== announcementId);
+  if (isConfigured()) {
+    try {
+      await query(`DELETE FROM system_announcement_verifications WHERE announcement_id = $1`, [announcementId]);
+    } catch (err) {
+      console.error('[Announcement] Error resetting verifications in DB:', err.message);
+    }
+  }
+}
+
+

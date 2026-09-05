@@ -628,3 +628,22 @@ export async function adminClearBroadcastUpdate() {
   return apiJson('/api/admin/broadcast-update', 'DELETE');
 }
 
+export async function verifySystemAnnouncement() {
+  return apiJson('/api/system-announcement/verify', 'POST');
+}
+
+export async function checkUserAnnouncementVerified() {
+  try {
+    const data = await apiFetch('/api/system-announcement/verified');
+    return Boolean(data?.hasVerified);
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchAnnouncementVerifications() {
+  const data = await apiFetch('/api/admin/broadcast-update/verifications');
+  return data.verifications || [];
+}
+
+

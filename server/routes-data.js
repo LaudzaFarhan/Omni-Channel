@@ -23,6 +23,8 @@ import {
   findTransactionById, markTransactionPaidIfPending,
   startSubscriptionPeriod, isSubscriptionExpired,
   getSystemAnnouncement, setSystemAnnouncement, clearSystemAnnouncement,
+  recordAnnouncementVerification, hasUserVerifiedAnnouncement,
+  listAnnouncementVerifications, resetAnnouncementVerifications,
 } from './data.js';
 import { applyPaidFulfilment } from './fulfilment.js';
 import {
@@ -1048,6 +1050,9 @@ export function mountDataRoutes(app, io) {
         createdBy: req.profile?.uid,
       });
 
+      // Reset previous verifications for the new broadcast
+      await resetAnnouncementVerifications('current');
+
       if (io) {
         io.emit('system-update', announcement);
       }
@@ -1072,6 +1077,7 @@ export function mountDataRoutes(app, io) {
   app.delete('/api/admin/broadcast-update', admin, async (req, res) => {
     try {
       await clearSystemAnnouncement();
+      await resetAnnouncementVerifications('current');
 
       if (io) {
         io.emit('system-update', null);
@@ -1092,5 +1098,59 @@ export function mountDataRoutes(app, io) {
       res.status(500).json({ error: 'Failed to clear system announcement.' });
     }
   });
+
+  // User endpoint: mark current announcement as verified ("Sudah Verify")
+  app.post('/api/system-announcement/verify', authenticated, async (req, res) => {
+    try {
+      const entry = await recordAnnouncementVerification({
+        userId: req.profile.uid,
+        email: req.profile.email,
+        name: req.profile.name,
+        userAgent: req.headers['user-agent'] || null,
+        announcementId: 'current',
+      });
+
+      if (io) {
+        io.emit('system-update-verified', entry);
+      }
+
+      await recordAudit({
+        actorUserId: req.profile.uid,
+        actorEmail: req.profile.email,
+        action: 'system.verify_update',
+        targetUserId: req.profile.uid,
+        detail: { verifiedAt: entry.verifiedAt },
+        ip: clientIp(req),
+      });
+
+      res.json({ success: true, verification: entry });
+    } catch (err) {
+      console.error('[Announcement] Verify failed:', err);
+      res.status(500).json({ error: 'Failed to record verification.' });
+    }
+  });
+
+  // User endpoint: check if current user has verified active announcement
+  app.get('/api/system-announcement/verified', authenticated, async (req, res) => {
+    try {
+      const hasVerified = await hasUserVerifiedAnnouncement(req.profile.uid, 'current');
+      res.json({ hasVerified });
+    } catch (err) {
+      console.error('[Announcement] Check verified failed:', err);
+      res.status(500).json({ error: 'Failed to check verification status.' });
+    }
+  });
+
+  // Admin endpoint: get all users who clicked "Sudah Verify"
+  app.get('/api/admin/broadcast-update/verifications', admin, async (req, res) => {
+    try {
+      const verifications = await listAnnouncementVerifications('current');
+      res.json({ verifications });
+    } catch (err) {
+      console.error('[Announcement] List verifications failed:', err);
+      res.status(500).json({ error: 'Failed to list verified users.' });
+    }
+  });
 }
+
 

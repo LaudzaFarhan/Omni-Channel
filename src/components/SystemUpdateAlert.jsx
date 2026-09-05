@@ -1,17 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, X, Sparkles } from 'lucide-react';
-import { logout as apiLogout } from '../utils/api.js';
+import { RefreshCw, X, Sparkles, CheckCircle2 } from 'lucide-react';
+import { logout as apiLogout, verifySystemAnnouncement, checkUserAnnouncementVerified } from '../utils/api.js';
 
 export default function SystemUpdateAlert({ announcement, onDismiss }) {
   const [dismissed, setDismissed] = useState(false);
+  const [verified, setVerified] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
-  // If announcement changed or re-broadcasted, reset dismissal
+  // Check if current user already verified this announcement
   useEffect(() => {
+    let cancelled = false;
     setDismissed(false);
+    setVerified(false);
+
+    checkUserAnnouncementVerified().then((hasVerified) => {
+      if (!cancelled && hasVerified) {
+        setVerified(true);
+      }
+    });
+
+    return () => { cancelled = true; };
   }, [announcement?.updatedAt, announcement?.createdAt]);
 
-  if (!announcement || !announcement.active || dismissed) {
+  if (!announcement || !announcement.active || dismissed || verified) {
     return null;
   }
 
@@ -45,6 +57,21 @@ export default function SystemUpdateAlert({ announcement, onDismiss }) {
   const handleDismiss = () => {
     setDismissed(true);
     if (onDismiss) onDismiss();
+  };
+
+  const handleVerify = async () => {
+    setVerifying(true);
+    try {
+      await verifySystemAnnouncement();
+      setVerified(true);
+      setDismissed(true);
+      if (onDismiss) onDismiss();
+    } catch (err) {
+      console.error('[SystemUpdate] Verification error:', err);
+      setDismissed(true);
+    } finally {
+      setVerifying(false);
+    }
   };
 
   return (
@@ -149,20 +176,44 @@ export default function SystemUpdateAlert({ announcement, onDismiss }) {
       </div>
 
       {/* Actions */}
-      <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px' }}>
+      <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', flexWrap: 'wrap' }}>
         <button
           type="button"
           onClick={handleDismiss}
           className="broadcast-btn-cancel"
-          style={{ padding: '8px 14px', fontSize: '0.82rem' }}
+          style={{ padding: '8px 12px', fontSize: '0.82rem' }}
         >
           Nanti Saja
         </button>
 
         <button
           type="button"
+          onClick={handleVerify}
+          disabled={verifying || loggingOut}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '8px',
+            background: 'linear-gradient(135deg, #10b981, #059669)',
+            color: '#ffffff',
+            border: 'none',
+            fontSize: '0.82rem',
+            fontWeight: '700',
+            cursor: verifying ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
+            transition: 'all 0.15s',
+          }}
+        >
+          <CheckCircle2 size={15} />
+          {verifying ? 'Menyimpan...' : 'Sudah Verify'}
+        </button>
+
+        <button
+          type="button"
           onClick={handleHardRefreshAndRelogin}
-          disabled={loggingOut}
+          disabled={loggingOut || verifying}
           style={{
             padding: '8px 16px',
             borderRadius: '8px',
