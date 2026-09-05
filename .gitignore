@@ -17,3 +17,4 @@ yarn-error.log*
 
 # pm2 runtime logs
 logs/
+scratch/

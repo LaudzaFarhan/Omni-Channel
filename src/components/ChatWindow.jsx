@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, AlertTriangle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown, ChevronRight, Pause, Play, UserPlus, UserCheck, MoreVertical, Search, Trophy, UserMinus, RotateCcw, Maximize2, Minimize2, Reply, Forward, Copy, Zap, Users, MessageSquare } from 'lucide-react';
+import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, AlertTriangle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown, ChevronRight, Pause, Play, UserPlus, UserCheck, MoreVertical, Search, Trophy, UserMinus, RotateCcw, Maximize2, Minimize2, Reply, Forward, Copy, Zap, Users, MessageSquare, Megaphone, ExternalLink, Info } from 'lucide-react';
 import { fetchWithAuth, saveContact, updateContact, setChatStatus as apiSetChatStatus } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
 import { showToast } from '../utils/toastBus.js';
@@ -10,6 +10,9 @@ import { jidToPhone, formatPhone } from '../utils/phone.js';
 import ContactEditor from './contacts/ContactEditor.jsx';
 import ForwardDialog from './chat/ForwardDialog.jsx';
 import { loadTemplates, saveTemplates, resolveTemplateVariables, TEMPLATE_VARIABLES } from '../utils/templates.js';
+import { extractAdInfo, extractMessageText } from '../utils/adDetection.js';
+import AdMessageCard from './chat/AdMessageCard.jsx';
+import AdDetailsModal from './chat/AdDetailsModal.jsx';
 
 const QR_STORAGE_KEY = 'whatsapp_quick_replies';
 
@@ -324,6 +327,17 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const [showAdModal, setShowAdModal] = useState(false);
+
+  // Detect if the active conversation or any message originated from a WhatsApp Ad
+  const chatAdInfo = useMemo(() => {
+    if (activeChat?.adInfo) return activeChat.adInfo;
+    for (const m of (messages || [])) {
+      const info = extractAdInfo(m);
+      if (info) return info;
+    }
+    return null;
+  }, [activeChat, messages]);
 
   // Fetch group metadata whenever active group chat changes
   useEffect(() => {
@@ -688,19 +702,8 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
     scrollToBottom();
   }, [messages]);
 
-  // Extract text body from Baileys message structure
-  const getMessageText = (msg) => {
-    const content = msg.message;
-    if (!content) return '';
-    if (typeof content === 'string') return content;
-    if (content.conversation) return content.conversation;
-    if (content.extendedTextMessage) return content.extendedTextMessage.text;
-    if (content.imageMessage) return '📷 Photo';
-    if (content.videoMessage) return '🎥 Video';
-    if (content.audioMessage) return '🎵 Audio';
-    if (content.documentMessage) return '📄 Document';
-    return '[Media or Unsupported Message]';
-  };
+  // Extract text body from Baileys message structure with deep unwrapping and ad fallback
+  const getMessageText = (msg) => extractMessageText(msg);
 
   // Messages actually rendered. Declared HERE rather than with the other state because
   // it calls getMessageText above — a `const` arrow is not hoisted, so referencing it
@@ -1259,6 +1262,20 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                     </span>
                   </span>
                 )}
+
+                {/* Ad Origin Pill */}
+                {chatAdInfo && (
+                  <button
+                    type="button"
+                    className="chat-header-ad-pill"
+                    onClick={() => setShowAdModal(true)}
+                    title="Klik untuk melihat detail iklan kampanye"
+                  >
+                    <Megaphone size={12} />
+                    <span>{chatAdInfo.sourceLabel || 'Iklan'}{chatAdInfo.title ? `: ${chatAdInfo.title.length > 24 ? chatAdInfo.title.substring(0, 24) + '...' : chatAdInfo.title}` : ''}</span>
+                    <Info size={11} style={{ opacity: 0.7 }} />
+                  </button>
+                )}
               </div>
               {/* The secondary line, which must not simply repeat the primary one.
                   An unsaved contact has no name, so getDisplayName returns the number —
@@ -1719,6 +1736,13 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                         <div className="msg-quote-text">{quoted.text}</div>
                       </div>
                     );
+                  })()}
+
+                  {/* WhatsApp Ad Card if message originated from an ad */}
+                  {(() => {
+                    const adInfo = extractAdInfo(msg);
+                    if (!adInfo) return null;
+                    return <AdMessageCard adInfo={adInfo} />;
                   })()}
 
                   {hasMedia(msg) ? (
@@ -2630,6 +2654,14 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
           previewText={getMessageText(forwardMsg)}
           onForward={handleForward}
           onClose={() => setForwardMsg(null)}
+        />
+      )}
+
+      {showAdModal && chatAdInfo && (
+        <AdDetailsModal
+          adInfo={chatAdInfo}
+          contactName={getDisplayName(activeChat)}
+          onClose={() => setShowAdModal(false)}
         />
       )}
     </div>

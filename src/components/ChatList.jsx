@@ -1,10 +1,10 @@
 import React from 'react';
-import { Search, Plus, Check, CheckCheck, Clock } from 'lucide-react';
+import { Search, Plus, Check, CheckCheck, Clock, Megaphone } from 'lucide-react';
 import { loadAllTags } from '../utils/contactTags.js';
 import { getChatDisplayName, getInitials } from '../utils/displayName.js';
 import { get24HourWindowStatus } from '../utils/timeFormat.js';
 
-export default function ChatList({ chats, setChats, searchQuery, setSearchQuery, activeChatJid, setActiveChatJid, userInfo, selectedTagFilter, savedNames = {}, statusFilter = null, windowFilter = null, unreadFilter = false, chatStatuses = {} }) {
+export default function ChatList({ chats, setChats, searchQuery, setSearchQuery, activeChatJid, setActiveChatJid, userInfo, selectedTagFilter, savedNames = {}, statusFilter = null, windowFilter = null, unreadFilter = false, adFilter = false, chatStatuses = {} }) {
   // Load contact tags (reactively updated via custom event)
   const [contactTags, setContactTags] = React.useState(loadAllTags);
 
@@ -64,6 +64,11 @@ export default function ChatList({ chats, setChats, searchQuery, setSearchQuery,
     // Filter unread chats
     if (unreadFilter || windowFilter === 'unread') {
       return (chat.unreadCount || 0) > 0;
+    }
+
+    // Filter ad chats
+    if (adFilter || windowFilter === 'ad') {
+      return !!(chat.isFromAd || chat.adInfo);
     }
 
     if (selectedTagFilter) {
@@ -195,6 +200,15 @@ export default function ChatList({ chats, setChats, searchQuery, setSearchQuery,
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {getDisplayName(chat)}
                       </span>
+                      {(chat.isFromAd || chat.adInfo) && (
+                        <span
+                          className="chat-item-ad-badge"
+                          title={chat.adInfo?.title ? `Dari Iklan: ${chat.adInfo.title}` : 'Percakapan dari Iklan'}
+                        >
+                          <Megaphone size={9} />
+                          <span>{chat.adInfo?.sourceApp === 'instagram' ? 'IG Ad' : chat.adInfo?.sourceApp === 'facebook' ? 'FB Ad' : 'Iklan'}</span>
+                        </span>
+                      )}
                       {contactTags[chat.id] && (
                         <span style={{ display: 'inline-flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' }}>
                           {Array.isArray(contactTags[chat.id]) ? (

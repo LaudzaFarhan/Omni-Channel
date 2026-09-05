@@ -515,13 +515,13 @@ async function getOrInitWASocket(ownerId, sessionId = 'default') {
           }
 
           store.addMessage(jid, msg);
-          io.to(ownerId).emit('new-message', { sessionId, jid, message: msg });
+          io.to(ownerId).emit('new-message', { sessionId, jid, message: msg, adInfo: msg.adInfo });
 
           // Dispatch customer developer webhook for incoming/outgoing messages
           dispatchWorkspaceWebhook(
             ownerId,
             msg.key.fromMe ? 'message.sent' : 'message.received',
-            { sessionId, jid, message: msg }
+            { sessionId, jid, message: msg, adInfo: msg.adInfo }
           );
         }
       }
@@ -1122,7 +1122,7 @@ app.get('/api/chats/:jid/messages', approved, (req, res) => {
     fetchGroupMetadata(ownerId, sid, jid);
   }
 
-  res.json(store.messages[jid] || []);
+  res.json(store.getMessages(jid));
 });
 
 app.post('/api/messages/send', approved, async (req, res) => {

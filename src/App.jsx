@@ -34,6 +34,7 @@ import DeveloperDashboard from './components/developer/DeveloperDashboard.jsx';
 import Broadcast from './components/Broadcast.jsx';
 import { showToast } from './utils/toastBus.js';
 import { getStoredSettings, playNotificationSound } from './utils/userSettings.js';
+import { extractAdInfo, extractMessageText } from './utils/adDetection.js';
 
 export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -612,7 +613,14 @@ export default function App() {
       
       fetchChats(sessionId);
       const currentActiveJid = activeChatJidRef.current;
-      if (currentActiveJid && data.jid === currentActiveJid) {
+      const currentChat = chats.find(c => c.id === currentActiveJid);
+      const currentDigits = currentActiveJid ? currentActiveJid.replace(/\D/g, '') : '';
+      const incomingDigits = data.jid ? data.jid.replace(/\D/g, '') : '';
+      const phoneMatch = currentDigits && incomingDigits && currentDigits === incomingDigits;
+      const chatPhoneMatch = currentChat?.phoneNumber && currentChat.phoneNumber.replace(/\D/g, '') === incomingDigits;
+      const jidMatch = currentActiveJid && (data.jid === currentActiveJid || phoneMatch || chatPhoneMatch);
+
+      if (jidMatch) {
         setMessages(prev => {
           const idx = prev.findIndex(m => m.key.id === data.message.key.id);
           if (idx === -1) return [...prev, data.message];
@@ -635,17 +643,16 @@ export default function App() {
           playNotificationSound(userSettings.soundTone, userSettings.soundVolume);
         }
 
-        const msgText = data.message.message?.conversation || 
-                       data.message.message?.extendedTextMessage?.text || 
-                       'Received media attachment.';
+        const adInfo = data.adInfo || extractAdInfo(data.message);
+        const msgText = extractMessageText(data.message) || 'Received message.';
 
         const senderPhone = data.jid.split('@')[0];
         const senderName = savedNames[data.jid] || data.message.pushName || `+${senderPhone}`;
 
         // Top-right in-app toast notification with 1-click open
         showToast({
-          type: 'message',
-          title: `💬 ${senderName}`,
+          type: adInfo ? 'warning' : 'message',
+          title: adInfo ? `📢 ${adInfo.sourceLabel || 'Iklan'}: ${senderName}` : `💬 ${senderName}`,
           message: msgText.substring(0, 80) + (msgText.length > 80 ? '...' : ''),
           duration: 5000,
           onClick: () => {

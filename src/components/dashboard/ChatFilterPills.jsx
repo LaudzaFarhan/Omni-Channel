@@ -3,12 +3,13 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 
 // Filter pills above the chat list with compact view optimization.
 export default function ChatFilterPills({
-  filter,          // { kind: 'all' | 'status' | 'tag' | 'window' | 'unread', value }
+  filter,          // { kind: 'all' | 'status' | 'tag' | 'window' | 'unread' | 'ad', value }
   onChange,
   totalCount,
   statusCounts = {},    // { prospect, closed_won, dropped }
   over24hCount = 0,
   unreadCount = 0,
+  adCount = 0,
   tags = [],            // [{ label, color, bg }]
   tagCounts = {},
 }) {
@@ -99,6 +100,17 @@ export default function ChatFilterPills({
           label="Belum Dibaca"
           count={unreadCount}
           color="#3b82f6"
+        />
+      )}
+
+      {/* 3.7. Ad Chats */}
+      {adCount > 0 && (
+        <Pill
+          kind="ad"
+          value="ad"
+          label="📢 Iklan"
+          count={adCount}
+          color="#8b5cf6"
         />
       )}
 

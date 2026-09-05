@@ -141,7 +141,33 @@ class UserStore {
       }
     });
 
-    console.log(`[Store - ${this.uid}] Rebuilt LID map: ${Object.keys(this.lidMap).length} mappings (${learned} from contacts); healed ${healedTs} chat timestamps.`);
+    // 6) Detect Ads across historical messages and backfill chat.adInfo & chat.isFromAd
+    let backfilledAds = 0;
+    Object.entries(this.messages).forEach(([jid, msgs]) => {
+      for (const m of msgs) {
+        const adInfo = this.extractAdInfo(m);
+        if (adInfo) {
+          m.adInfo = adInfo;
+          if (!this.chats[jid]) {
+            this.chats[jid] = { id: jid, name: jid.split('@')[0] };
+          }
+          this.chats[jid].adInfo = adInfo;
+          this.chats[jid].isFromAd = true;
+          backfilledAds++;
+
+          // Propagate to counterpart JIDs (phone <-> lid)
+          for (const cand of this.expandHoldJids(jid)) {
+            if (this.chats[cand]) {
+              this.chats[cand].adInfo = adInfo;
+              this.chats[cand].isFromAd = true;
+            }
+          }
+          break;
+        }
+      }
+    });
+
+    console.log(`[Store - ${this.uid}] Rebuilt LID map: ${Object.keys(this.lidMap).length} mappings (${learned} from contacts); healed ${healedTs} chat timestamps; backfilled ${backfilledAds} ad chats.`);
     this.save();
   }
 
@@ -584,6 +610,12 @@ class UserStore {
 
     // Extract LID-to-phone mapping from message key
     this._extractLidMapping(message, false);
+
+    // Detect and extract ad metadata from message contextInfo / externalAdReply
+    const adInfo = this.extractAdInfo(message);
+    if (adInfo) {
+      message.adInfo = adInfo;
+    }
     
     // Avoid duplicates
     const msgId = message.key.id;
@@ -602,14 +634,19 @@ class UserStore {
       if (this.messages[jid].length > MESSAGES_PER_CHAT) {
         this.messages[jid] = this.messages[jid].slice(-MESSAGES_PER_CHAT);
       }
-    } else if (message.agentName && !existingMsg.agentName) {
-      // The send path stamps the sending agent, but WhatsApp also echoes our own
-      // message back through messages.upsert with no such field, and the two can
-      // arrive in either order. Copy the attribution onto the stored copy when we have
-      // it, and never clear an existing one — so a later history re-sync (also
-      // unstamped) cannot wipe it. Name and uid are stamped together.
-      existingMsg.agentName = message.agentName;
-      if (message.agentUid) existingMsg.agentUid = message.agentUid;
+    } else {
+      if (adInfo && !existingMsg.adInfo) {
+        existingMsg.adInfo = adInfo;
+      }
+      if (message.agentName && !existingMsg.agentName) {
+        // The send path stamps the sending agent, but WhatsApp also echoes our own
+        // message back through messages.upsert with no such field, and the two can
+        // arrive in either order. Copy the attribution onto the stored copy when we have
+        // it, and never clear an existing one — so a later history re-sync (also
+        // unstamped) cannot wipe it. Name and uid are stamped together.
+        existingMsg.agentName = message.agentName;
+        if (message.agentUid) existingMsg.agentUid = message.agentUid;
+      }
     }
     
     // Update chat last message info
@@ -645,10 +682,11 @@ class UserStore {
     const existingTs = this.chats[jid]?.lastMessageTimestamp;
     const isNewest = !existingTs || timestamp >= existingTs;
 
-    this.addChat({
+    const chatUpdate = {
       id: jid,
       name: chatName || jid.split('@')[0],
       ...(phoneNumber ? { phoneNumber } : {}),
+      ...(adInfo ? { adInfo, isFromAd: true } : (this.chats[jid]?.adInfo ? { adInfo: this.chats[jid].adInfo, isFromAd: true } : {})),
       ...(isNewest ? {
         lastMessage: text,
         lastMessageTimestamp: timestamp,
@@ -656,9 +694,53 @@ class UserStore {
         lastMessageStatus: message.status || 1, // Default to 1 (SERVER_ACK/sent)
       } : {}),
       unreadCount: message.key.fromMe ? 0 : (this.chats[jid]?.unreadCount || 0) + unreadIncrement
-    });
+    };
+
+    this.addChat(chatUpdate);
+
+    // Propagate ad info to counterpart JIDs if known (LID <-> phone)
+    if (adInfo) {
+      for (const cand of this.expandHoldJids(jid)) {
+        if (cand !== jid && this.chats[cand]) {
+          this.chats[cand].adInfo = adInfo;
+          this.chats[cand].isFromAd = true;
+        }
+      }
+    }
 
     this.save();
+  }
+
+  // Retrieve unified messages for a JID, merging all candidate JIDs (LID + phone).
+  // Deduplicates by message id and sorts chronologically.
+  getMessages(jid) {
+    if (!jid) return [];
+    const candidates = this.expandHoldJids(jid);
+    const seenIds = new Set();
+    const result = [];
+
+    for (const cand of candidates) {
+      const list = this.messages[cand] || [];
+      for (const m of list) {
+        const id = m?.key?.id;
+        if (id) {
+          if (!seenIds.has(id)) {
+            seenIds.add(id);
+            result.push(m);
+          }
+        } else {
+          result.push(m);
+        }
+      }
+    }
+
+    result.sort((a, b) => {
+      const tA = toSeconds(a.messageTimestamp) || 0;
+      const tB = toSeconds(b.messageTimestamp) || 0;
+      return tA - tB;
+    });
+
+    return result;
   }
 
   // The full raw message, which is what Baileys needs to quote or forward — a reply
@@ -690,15 +772,182 @@ class UserStore {
     }
   }
 
+  // Recursively unwrap wrapped container messages (ephemeral, viewOnce, etc.)
+  unwrapMessage(msg) {
+    if (!msg) return null;
+    let content = msg.message || msg;
+    let depth = 0;
+    while (content && typeof content === 'object' && depth < 6) {
+      depth++;
+      if (content.ephemeralMessage?.message) {
+        content = content.ephemeralMessage.message;
+        continue;
+      }
+      if (content.viewOnceMessage?.message) {
+        content = content.viewOnceMessage.message;
+        continue;
+      }
+      if (content.viewOnceMessageV2?.message) {
+        content = content.viewOnceMessageV2.message;
+        continue;
+      }
+      if (content.viewOnceMessageV2Extension?.message) {
+        content = content.viewOnceMessageV2Extension.message;
+        continue;
+      }
+      if (content.documentWithCaptionMessage?.message) {
+        content = content.documentWithCaptionMessage.message;
+        continue;
+      }
+      break;
+    }
+    return content;
+  }
+
+  // Extract Ad information from a message's contextInfo / externalAdReply
+  extractAdInfo(message) {
+    if (!message) return null;
+    if (message.adInfo && message.adInfo.isAd) return message.adInfo;
+
+    const content = this.unwrapMessage(message);
+    if (!content || typeof content !== 'object') return null;
+
+    const contextInfo =
+      content.extendedTextMessage?.contextInfo ||
+      content.imageMessage?.contextInfo ||
+      content.videoMessage?.contextInfo ||
+      content.documentMessage?.contextInfo ||
+      content.interactiveMessage?.contextInfo ||
+      content.buttonsResponseMessage?.contextInfo ||
+      content.templateButtonReplyMessage?.contextInfo ||
+      content.listResponseMessage?.contextInfo ||
+      content.contextInfo;
+
+    if (!contextInfo) return null;
+
+    const externalAdReply = contextInfo.externalAdReply;
+    const quotedAd = contextInfo.quotedAd;
+    const statusAttribution = contextInfo.statusAttributionType;
+    const entrySource = contextInfo.entryPointConversionSource || contextInfo.entryPointConversionExternalSource;
+    const entryApp = contextInfo.entryPointConversionApp;
+
+    if (externalAdReply && (externalAdReply.title || externalAdReply.body || externalAdReply.sourceUrl || externalAdReply.sourceId || externalAdReply.sourceType === 'ad')) {
+      const rawApp = (externalAdReply.sourceApp || entryApp || '').toLowerCase();
+      const sourceUrl = externalAdReply.sourceUrl || '';
+
+      let source = 'Meta Ad';
+      let app = 'meta';
+      if (rawApp.includes('fb') || rawApp.includes('facebook') || sourceUrl.includes('fb.me') || sourceUrl.includes('facebook.com')) {
+        source = 'Facebook Ad';
+        app = 'facebook';
+      } else if (rawApp.includes('ig') || rawApp.includes('instagram') || sourceUrl.includes('instagram.com') || sourceUrl.includes('instagr.am')) {
+        source = 'Instagram Ad';
+        app = 'instagram';
+      } else if (rawApp) {
+        source = `${rawApp.charAt(0).toUpperCase() + rawApp.slice(1)} Ad`;
+        app = rawApp;
+      }
+
+      // Extract thumbnail
+      let thumb = externalAdReply.thumbnailUrl || externalAdReply.originalImageUrl || null;
+      if (!thumb && externalAdReply.thumbnail) {
+        if (typeof externalAdReply.thumbnail === 'string') {
+          thumb = externalAdReply.thumbnail.startsWith('http') || externalAdReply.thumbnail.startsWith('data:')
+            ? externalAdReply.thumbnail
+            : `data:image/jpeg;base64,${externalAdReply.thumbnail}`;
+        } else if (externalAdReply.thumbnail instanceof Uint8Array || Array.isArray(externalAdReply.thumbnail) || externalAdReply.thumbnail?.data) {
+          try {
+            const bytes = externalAdReply.thumbnail.data || externalAdReply.thumbnail;
+            thumb = `data:image/jpeg;base64,${Buffer.from(bytes).toString('base64')}`;
+          } catch {
+            thumb = null;
+          }
+        }
+      }
+
+      return {
+        isAd: true,
+        kind: 'external_ad',
+        sourceApp: app,
+        sourceLabel: source,
+        sourceType: externalAdReply.sourceType || 'ad',
+        sourceId: externalAdReply.sourceId || null,
+        sourceUrl: externalAdReply.sourceUrl || null,
+        title: externalAdReply.title || 'Iklan Bersponsor',
+        body: externalAdReply.body || '',
+        thumbnailUrl: thumb,
+        mediaType: externalAdReply.mediaType || 'IMAGE',
+        ctwaClid: externalAdReply.ctwaClid || null,
+        ref: externalAdReply.ref || null,
+        greetingMessage: externalAdReply.greetingMessageBody || null,
+      };
+    }
+
+    if (quotedAd && (quotedAd.advertiserName || quotedAd.caption)) {
+      return {
+        isAd: true,
+        kind: 'quoted_ad',
+        sourceApp: 'whatsapp',
+        sourceLabel: 'WhatsApp Status Ad',
+        sourceType: 'status_ad',
+        title: quotedAd.advertiserName || 'Status Ad',
+        body: quotedAd.caption || '',
+      };
+    }
+
+    if (statusAttribution && statusAttribution !== 0 && statusAttribution !== 'NONE') {
+      return {
+        isAd: true,
+        kind: 'status_attribution',
+        sourceApp: 'whatsapp',
+        sourceLabel: 'WhatsApp Status Ad',
+        sourceType: 'status_ad',
+        title: 'Status Ad',
+        body: 'Pesan dari WhatsApp Status',
+      };
+    }
+
+    if (entrySource && (entrySource.toLowerCase().includes('ad') || entrySource.toLowerCase().includes('fb') || entrySource.toLowerCase().includes('ig'))) {
+      const isIg = entrySource.toLowerCase().includes('ig') || entryApp?.toLowerCase().includes('ig');
+      return {
+        isAd: true,
+        kind: 'entry_point',
+        sourceApp: isIg ? 'instagram' : 'facebook',
+        sourceLabel: isIg ? 'Instagram Ad' : 'Facebook Ad',
+        sourceType: 'ad',
+        title: isIg ? 'Instagram Sponsored Ad' : 'Facebook Sponsored Ad',
+      };
+    }
+
+    return null;
+  }
+
   getMessageText(message) {
-    const msg = message.message;
-    if (!msg) return '';
-    if (msg.conversation) return msg.conversation;
-    if (msg.extendedTextMessage) return msg.extendedTextMessage.text;
-    if (msg.imageMessage) return '📷 Photo';
-    if (msg.videoMessage) return '🎥 Video';
-    if (msg.audioMessage) return '🎵 Audio';
-    if (msg.documentMessage) return '📄 Document';
+    if (!message) return '';
+    const content = this.unwrapMessage(message);
+    if (!content) return '';
+    if (typeof content === 'string') return content;
+    if (content.conversation) return content.conversation;
+    if (content.extendedTextMessage?.text) return content.extendedTextMessage.text;
+    if (content.imageMessage?.caption) return `📷 ${content.imageMessage.caption}`;
+    if (content.imageMessage) return '📷 Photo';
+    if (content.videoMessage?.caption) return `🎥 ${content.videoMessage.caption}`;
+    if (content.videoMessage) return '🎥 Video';
+    if (content.audioMessage) return content.audioMessage.ptt ? '🎙️ Voice Note' : '🎵 Audio';
+    if (content.documentMessage?.fileName) return `📄 ${content.documentMessage.fileName}`;
+    if (content.documentMessage) return '📄 Document';
+    if (content.stickerMessage) return '🎨 Sticker';
+    if (content.contactMessage?.displayName) return `👤 ${content.contactMessage.displayName}`;
+    if (content.locationMessage) return '📍 Location';
+    if (content.pollCreationMessage || content.pollCreationMessageV3) return '📊 Poll';
+    if (content.buttonsResponseMessage?.selectedDisplayText) return content.buttonsResponseMessage.selectedDisplayText;
+    if (content.templateButtonReplyMessage?.selectedDisplayText) return content.templateButtonReplyMessage.selectedDisplayText;
+    if (content.listResponseMessage?.title) return content.listResponseMessage.title;
+    if (content.interactiveMessage?.body?.text) return content.interactiveMessage.body.text;
+
+    const adInfo = this.extractAdInfo(message);
+    if (adInfo) return `📢 Iklan: ${adInfo.title || adInfo.sourceLabel || 'Meta Ad'}`;
+
     return '📝 Media/Message';
   }
 }

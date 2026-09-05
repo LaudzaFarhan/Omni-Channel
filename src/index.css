@@ -6076,3 +6076,442 @@ textarea.form-input {
 .var-pill-btn:active {
   transform: translateY(0);
 }
+
+/* ==========================================================================
+   WhatsApp Ads (CTWA / Meta / Status Ads) Detection Styles
+   ========================================================================== */
+
+/* 1. Chat List Item Ad Badge */
+.chat-item-ad-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: rgba(139, 92, 246, 0.14);
+  color: #7c3aed;
+  border: 1px solid rgba(139, 92, 246, 0.28);
+  white-space: nowrap;
+  line-height: 1.4;
+  vertical-align: middle;
+}
+
+[data-theme='dark'] .chat-item-ad-badge {
+  background: rgba(167, 139, 250, 0.18);
+  color: #c4b5fd;
+  border-color: rgba(167, 139, 250, 0.32);
+}
+
+/* 2. Conversation Header Ad Origin Pill */
+.chat-header-ad-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.12), rgba(59, 130, 246, 0.12));
+  color: #6d28d9;
+  border: 1px solid rgba(139, 92, 246, 0.32);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.chat-header-ad-pill:hover {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(59, 130, 246, 0.2));
+  border-color: rgba(139, 92, 246, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(139, 92, 246, 0.15);
+}
+
+[data-theme='dark'] .chat-header-ad-pill {
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.18), rgba(96, 165, 250, 0.18));
+  color: #ddd6fe;
+  border-color: rgba(167, 139, 250, 0.35);
+}
+
+[data-theme='dark'] .chat-header-ad-pill:hover {
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.28), rgba(96, 165, 250, 0.28));
+  border-color: rgba(167, 139, 250, 0.6);
+}
+
+/* 3. Ad Message Card inside Message Bubble */
+.ad-card-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px 11px;
+  margin-bottom: 7px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.035);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+  min-width: 200px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+[data-theme='dark'] .ad-card-container {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Platform specific border accents */
+.ad-card-container.ad-source-facebook {
+  border-left: 3px solid #1877f2;
+}
+
+.ad-card-container.ad-source-instagram {
+  border-left: 3px solid #e1306c;
+}
+
+.ad-card-container.ad-source-whatsapp {
+  border-left: 3px solid #25d366;
+}
+
+.ad-card-container.ad-source-meta {
+  border-left: 3px solid #8b5cf6;
+}
+
+/* Top row: badge & link */
+.ad-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ad-card-source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--primary);
+}
+
+.ad-source-facebook .ad-card-source-badge {
+  color: #1877f2;
+}
+
+.ad-source-instagram .ad-card-source-badge {
+  color: #e1306c;
+}
+
+.ad-source-whatsapp .ad-card-source-badge {
+  color: #16a34a;
+}
+
+.ad-card-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.04);
+  transition: all 0.15s ease;
+}
+
+.ad-card-link-btn:hover {
+  color: var(--primary);
+  background: var(--primary-subtle);
+}
+
+[data-theme='dark'] .ad-card-link-btn {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Main card content */
+.ad-card-main {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.ad-card-thumb-wrapper {
+  flex-shrink: 0;
+  width: 72px;
+  height: 72px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.ad-card-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ad-card-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ad-card-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.ad-card-body-text {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.ad-card-expand-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 4px;
+}
+
+.ad-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.07);
+}
+
+[data-theme='dark'] .ad-card-footer {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+.ad-card-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.64rem;
+  font-family: var(--font-mono, monospace);
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-muted);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.ad-card-meta-chip:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--text-main);
+}
+
+[data-theme='dark'] .ad-card-meta-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 4. Ad Details Modal */
+.ad-details-modal {
+  max-width: 520px;
+  width: 92%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.ad-details-body {
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ad-modal-icon-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.16), rgba(59, 130, 246, 0.16));
+  color: #7c3aed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ad-platform-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+}
+
+.ad-platform-banner.platform-facebook {
+  background: rgba(24, 119, 242, 0.08);
+  border-color: rgba(24, 119, 242, 0.25);
+  color: #1877f2;
+}
+
+.ad-platform-banner.platform-instagram {
+  background: rgba(225, 48, 108, 0.08);
+  border-color: rgba(225, 48, 108, 0.25);
+  color: #e1306c;
+}
+
+.ad-view-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--primary);
+  color: #ffffff;
+  text-decoration: none;
+  transition: opacity 0.15s ease;
+}
+
+.ad-view-link-btn:hover {
+  opacity: 0.9;
+}
+
+.ad-modal-creative {
+  width: 100%;
+  max-height: 220px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ad-modal-img {
+  width: 100%;
+  height: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  display: block;
+}
+
+.ad-modal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ad-modal-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dimmed);
+}
+
+.ad-modal-headline {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.35;
+}
+
+.ad-modal-copy-box {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--text-main);
+  white-space: pre-wrap;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.ad-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.ad-modal-field {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ad-modal-field-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-dimmed);
+}
+
+.ad-modal-field-value-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.ad-modal-field-value-row code {
+  font-size: 0.78rem;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ad-field-copy-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s ease;
+}
+
+.ad-field-copy-btn:hover {
+  color: var(--primary);
+}
+
+.ad-modal-greeting-box {
+  font-size: 0.8rem;
+  font-style: italic;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
