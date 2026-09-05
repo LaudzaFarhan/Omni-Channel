@@ -1740,7 +1740,15 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
 
                   {/* WhatsApp Ad Card if message originated from an ad */}
                   {(() => {
-                    const adInfo = extractAdInfo(msg);
+                    let adInfo = extractAdInfo(msg);
+                    // Fallback: If this message is the first incoming customer message in an Ad conversation,
+                    // ensure the Ad Card is displayed even if individual message context was stripped.
+                    if (!adInfo && !isMe && chatAdInfo) {
+                      const firstIncomingIdx = messages.findIndex(m => !m.key?.fromMe);
+                      if (firstIncomingIdx === idx) {
+                        adInfo = chatAdInfo;
+                      }
+                    }
                     if (!adInfo) return null;
                     return <AdMessageCard adInfo={adInfo} />;
                   })()}
