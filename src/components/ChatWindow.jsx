@@ -1744,8 +1744,8 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                     // Fallback: If this message is the first incoming customer message in an Ad conversation,
                     // ensure the Ad Card is displayed even if individual message context was stripped.
                     if (!adInfo && !isMe && chatAdInfo) {
-                      const firstIncomingIdx = messages.findIndex(m => !m.key?.fromMe);
-                      if (firstIncomingIdx === idx) {
+                      const firstIncoming = visibleMessages.find(m => !m.key?.fromMe);
+                      if (firstIncoming && (firstIncoming.key?.id === msg.key?.id || firstIncoming === msg)) {
                         adInfo = chatAdInfo;
                       }
                     }
