@@ -10,7 +10,7 @@
 // exactly what a missing Firestore field used to mean.
 
 import crypto from 'crypto';
-import { query, queryOne, withTransaction } from './db.js';
+import { query, queryOne, withTransaction, isConfigured } from './db.js';
 import { resolveFeatures } from './features.js';
 import { hashRefreshToken, refreshTokenExpiry } from './auth.js';
 
@@ -1799,3 +1799,95 @@ export function isSubscriptionExpired(subscriptionEndsAt) {
   const endsAt = new Date(subscriptionEndsAt).getTime();
   return Number.isFinite(endsAt) && endsAt <= Date.now();
 }
+
+// ---------------------------------------------------------------------------
+// System Announcements / Broadcasts
+// ---------------------------------------------------------------------------
+let inMemoryAnnouncement = null;
+
+function mapAnnouncement(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    active: row.active,
+    title: row.title,
+    message: row.message,
+    forceRelogin: row.force_relogin,
+    version: row.version || null,
+    createdBy: row.created_by || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function getSystemAnnouncement() {
+  if (isConfigured()) {
+    try {
+      const row = await queryOne(
+        `SELECT * FROM system_announcements WHERE id = 'current' AND active = TRUE`
+      );
+      if (row) {
+        return mapAnnouncement(row);
+      }
+      return null;
+    } catch (err) {
+      console.warn('[Announcement] Error querying DB, falling back to memory:', err.message);
+    }
+  }
+  return inMemoryAnnouncement && inMemoryAnnouncement.active ? inMemoryAnnouncement : null;
+}
+
+export async function setSystemAnnouncement({ title, message, forceRelogin = true, version = null, createdBy = null }) {
+  const payload = {
+    id: 'current',
+    active: true,
+    title: title || 'Pembaruan Sistem Tersedia',
+    message: message || 'Sistem telah diperbarui. Silakan tekan Ctrl + Shift + R lalu login ulang.',
+    forceRelogin: Boolean(forceRelogin),
+    version: version || null,
+    createdBy: createdBy || null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  inMemoryAnnouncement = payload;
+
+  if (isConfigured()) {
+    try {
+      const row = await queryOne(
+        `INSERT INTO system_announcements (id, active, title, message, force_relogin, version, created_by)
+         VALUES ('current', TRUE, $1, $2, $3, $4, $5)
+         ON CONFLICT (id) DO UPDATE SET
+           active        = TRUE,
+           title         = EXCLUDED.title,
+           message       = EXCLUDED.message,
+           force_relogin = EXCLUDED.force_relogin,
+           version       = EXCLUDED.version,
+           created_by    = EXCLUDED.created_by,
+           updated_at    = now()
+         RETURNING *`,
+        [payload.title, payload.message, payload.forceRelogin, payload.version, payload.createdBy]
+      );
+      return mapAnnouncement(row);
+    } catch (err) {
+      console.error('[Announcement] Error saving to DB:', err.message);
+    }
+  }
+
+  return payload;
+}
+
+export async function clearSystemAnnouncement() {
+  inMemoryAnnouncement = null;
+  if (isConfigured()) {
+    try {
+      await queryOne(
+        `UPDATE system_announcements SET active = FALSE, updated_at = now() WHERE id = 'current'`
+      );
+    } catch (err) {
+      console.error('[Announcement] Error clearing in DB:', err.message);
+    }
+  }
+  return true;
+}
+

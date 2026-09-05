@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { adminListUsers, fetchPlans, adminListFeatures } from '../utils/api.js';
+import { adminListUsers, fetchPlans, adminListFeatures, fetchSystemAnnouncement } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
-import { LogOut, Users, Layers, Activity, CreditCard, ToggleLeft } from 'lucide-react';
+import { LogOut, Users, Layers, Activity, CreditCard, ToggleLeft, Megaphone } from 'lucide-react';
 import { BrandLockup } from './BrandMark.jsx';
 import { normalizePlan, sortPlans } from '../utils/plans.js';
 import VersionBadge from './VersionBadge.jsx';
@@ -11,6 +11,7 @@ import PlansTab from './admin/PlansTab.jsx';
 import SessionsTab from './admin/SessionsTab.jsx';
 import TransactionsTab from './admin/TransactionsTab.jsx';
 import FeaturesTab from './admin/FeaturesTab.jsx';
+import BroadcastUpdateModal from './admin/BroadcastUpdateModal.jsx';
 
 const TABS = [
   { id: 'users', label: 'Customers', icon: Users },
@@ -45,6 +46,18 @@ export default function AdminDashboard({ user, onLogout }) {
   const [features, setFeatures] = useState([]);
   const [loadingFeatures, setLoadingFeatures] = useState(true);
   const [featuresError, setFeaturesError] = useState(null);
+
+  const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+  const [systemAnnouncement, setSystemAnnouncement] = useState(null);
+
+  const refreshAnnouncement = useCallback(async () => {
+    try {
+      const ann = await fetchSystemAnnouncement();
+      setSystemAnnouncement(ann);
+    } catch (err) {
+      console.error('[Admin] Error fetching announcement:', err);
+    }
+  }, []);
 
   // The registry is fetched rather than subscribed to. The tabs call
   // refreshUsers() after a mutation, and the socket events below cover changes
@@ -96,7 +109,8 @@ export default function AdminDashboard({ user, onLogout }) {
     refreshUsers();
     refreshPlans();
     refreshFeatures();
-  }, [refreshUsers, refreshPlans, refreshFeatures]);
+    refreshAnnouncement();
+  }, [refreshUsers, refreshPlans, refreshFeatures, refreshAnnouncement]);
 
   // Keep the console live without polling: the server broadcasts plan changes and
   // pushes a profile update to the affected user, and an admin watching this
@@ -115,18 +129,24 @@ export default function AdminDashboard({ user, onLogout }) {
     // admin catalogue, so a second admin's change lands on this screen too.
     const handleFeatures = () => { refreshFeatures(); };
 
+    const handleSystemUpdate = (ann) => {
+      setSystemAnnouncement(ann);
+    };
+
     let attached = null;
     const unsubscribe = subscribeSocket((socket) => {
       if (attached) {
         attached.off('plans-updated', handlePlans);
         attached.off('profile-updated', handleProfile);
         attached.off('features-updated', handleFeatures);
+        attached.off('system-update', handleSystemUpdate);
         attached = null;
       }
       if (socket) {
         socket.on('plans-updated', handlePlans);
         socket.on('profile-updated', handleProfile);
         socket.on('features-updated', handleFeatures);
+        socket.on('system-update', handleSystemUpdate);
         attached = socket;
       }
     });
@@ -137,6 +157,7 @@ export default function AdminDashboard({ user, onLogout }) {
         attached.off('plans-updated', handlePlans);
         attached.off('profile-updated', handleProfile);
         attached.off('features-updated', handleFeatures);
+        attached.off('system-update', handleSystemUpdate);
       }
     };
   }, [refreshFeatures]);
@@ -150,6 +171,41 @@ export default function AdminDashboard({ user, onLogout }) {
           <span className="admin-console-badge">Admin Console</span>
         </div>
         <div className="admin-navbar-actions">
+          <button
+            type="button"
+            className="admin-broadcast-btn"
+            onClick={() => setShowBroadcastModal(true)}
+            title="Kirim pengumuman pembaruan sistem ke semua pengguna"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 13px',
+              borderRadius: '8px',
+              border: systemAnnouncement?.active ? '1px solid rgba(245, 158, 11, 0.45)' : '1px solid var(--border-color)',
+              background: systemAnnouncement?.active ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255,255,255,0.05)',
+              color: systemAnnouncement?.active ? '#fbbf24' : 'var(--text-main)',
+              fontSize: '0.82rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <Megaphone size={14} style={{ color: systemAnnouncement?.active ? '#f59e0b' : 'var(--primary)' }} />
+            <span>Broadcast Update</span>
+            {systemAnnouncement?.active && (
+              <span
+                style={{
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  background: '#22c55e',
+                  boxShadow: '0 0 6px #22c55e',
+                  display: 'inline-block',
+                }}
+              />
+            )}
+          </button>
           <VersionBadge />
           <ThemeToggle />
           <span className="admin-navbar-user">
@@ -240,6 +296,14 @@ export default function AdminDashboard({ user, onLogout }) {
 
         {activeTab === 'transactions' && <TransactionsTab users={users} />}
       </div>
+
+      <BroadcastUpdateModal
+        isOpen={showBroadcastModal}
+        onClose={() => setShowBroadcastModal(false)}
+        activeAnnouncement={systemAnnouncement}
+        onAnnouncementChanged={setSystemAnnouncement}
+      />
     </div>
   );
 }
+

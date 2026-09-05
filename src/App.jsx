@@ -10,6 +10,7 @@ import AdminDashboard from './components/AdminDashboard.jsx';
 import {
   fetchWithAuth, subscribeAuth, restoreSession, logout as apiLogout,
   getAccessToken, applyProfileUpdate, fetchContacts, fetchProfile, fetchFeatures,
+  fetchSystemAnnouncement,
 } from './utils/api.js';
 import { featureStatus, featureLabel, isVisible } from './utils/features.js';
 import { normalizePlan, sortPlans, loadPlansOnce, resolveEffectiveLimits } from './utils/plans.js';
@@ -32,6 +33,7 @@ import AcceptInvite from './components/AcceptInvite.jsx';
 import BlogPost from './components/BlogPost.jsx';
 import DeveloperDashboard from './components/developer/DeveloperDashboard.jsx';
 import Broadcast from './components/Broadcast.jsx';
+import SystemUpdateAlert from './components/SystemUpdateAlert.jsx';
 import { showToast } from './utils/toastBus.js';
 import { getStoredSettings, playNotificationSound } from './utils/userSettings.js';
 import { extractAdInfo, extractMessageText } from './utils/adDetection.js';
@@ -40,6 +42,7 @@ export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
+  const [systemAnnouncement, setSystemAnnouncement] = useState(null);
   // Plan catalogue, used to resolve the quota and device limit that actually
   // apply to this customer. Readable only once signed in.
   const [plans, setPlans] = useState([]);
@@ -352,6 +355,32 @@ export default function App() {
 
     return () => { cancelled = true; };
   }, [user?.uid]);
+
+  // System-wide update announcement (broadcasted by admin)
+  useEffect(() => {
+    fetchSystemAnnouncement().then((ann) => {
+      setSystemAnnouncement(ann);
+    });
+
+    const handleSystemUpdate = (ann) => {
+      setSystemAnnouncement(ann);
+    };
+
+    let attached = null;
+    const unsubscribe = subscribeSocket((socket) => {
+      if (attached) attached.off('system-update', handleSystemUpdate);
+      attached = null;
+      if (socket) {
+        socket.on('system-update', handleSystemUpdate);
+        attached = socket;
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      if (attached) attached.off('system-update', handleSystemUpdate);
+    };
+  }, []);
 
   // Saved contacts, reloaded when the account or the active WhatsApp session
   // changes. The session matters because the server resolves each contact to the
@@ -1047,6 +1076,7 @@ export default function App() {
       return (
         <AuthScreens 
           type="login" 
+          systemAnnouncement={systemAnnouncement}
           onSwitchType={() => navigateTo('/register')} 
           onBackToHome={() => navigateTo('/')}
           onAuthSuccess={(signedInUser) => {
@@ -1066,6 +1096,7 @@ export default function App() {
       return (
         <AuthScreens 
           type="register" 
+          systemAnnouncement={systemAnnouncement}
           onSwitchType={() => navigateTo('/login')} 
           onBackToHome={() => navigateTo('/')}
           onAuthSuccess={(newUser) => {
@@ -1130,6 +1161,7 @@ export default function App() {
             Sign Out
           </button>
         </div>
+        <SystemUpdateAlert announcement={systemAnnouncement} />
       </div>
     );
   }
@@ -1563,6 +1595,10 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Global System Update Notification */}
+      <SystemUpdateAlert announcement={systemAnnouncement} />
     </div>
   );
 }
+

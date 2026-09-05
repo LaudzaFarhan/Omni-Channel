@@ -6515,3 +6515,39 @@ textarea.form-input {
   line-height: 1.35;
 }
 
+/* =========================================================================
+   System Update Broadcast & Alert Styles
+   ========================================================================= */
+@keyframes slideUpBounce {
+  0% {
+    opacity: 0;
+    transform: translateY(24px) scale(0.96);
+  }
+  70% {
+    transform: translateY(-4px) scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.admin-broadcast-btn:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  transform: translateY(-1px);
+}
+
+.admin-broadcast-btn:active {
+  transform: translateY(0);
+}
+
+

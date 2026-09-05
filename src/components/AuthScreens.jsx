@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { login as apiLogin, register as apiRegister } from '../utils/api.js';
-import { Mail, Lock, User, ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, User, ArrowLeft, Eye, EyeOff, Sparkles } from 'lucide-react';
 import BrandMark from './BrandMark.jsx';
 
-export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSuccess }) {
+export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSuccess, systemAnnouncement }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -79,11 +79,46 @@ export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSu
         <h2 className="connection-title" style={{ marginBottom: '8px' }}>
           {type === 'login' ? 'Welcome Back' : 'Create Account'}
         </h2>
-        <p className="connection-subtitle" style={{ marginBottom: '24px' }}>
-          {type === 'login' 
-            ? 'Sign in to access your multi-agent inbox.' 
-            : 'Register to connect and share your WhatsApp Business number.'}
-        </p>
+        {type === 'login' && (systemAnnouncement?.active || (typeof window !== 'undefined' && window.location.search.includes('updated=true'))) && (
+          <div
+            style={{
+              width: '100%',
+              padding: '12px 14px',
+              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(234, 88, 12, 0.1))',
+              border: '1.5px solid rgba(245, 158, 11, 0.45)',
+              borderRadius: '10px',
+              fontSize: '0.82rem',
+              color: '#fef3c7',
+              marginBottom: '18px',
+              textAlign: 'left',
+              lineHeight: '1.45',
+              boxShadow: '0 4px 14px rgba(245, 158, 11, 0.15)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', color: '#fbbf24', marginBottom: '4px' }}>
+              <Sparkles size={16} />
+              <span>Pembaruan Sistem Baru Tersedia!</span>
+            </div>
+            <div style={{ color: '#e2e8f0', fontSize: '0.8rem', marginBottom: '8px' }}>
+              {systemAnnouncement?.message || 'Sistem baru saja diperbarui. Mohon tekan tombol Hard Refresh di browser sebelum Anda login.'}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#cbd5e1', flexWrap: 'wrap' }}>
+              <span>Tekan:</span>
+              <kbd style={{ padding: '2px 6px', borderRadius: '4px', background: '#334155', color: '#fff', fontSize: '0.74rem', fontWeight: '700', border: '1px solid #64748b' }}>
+                {typeof window !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0 ? '⌘ Cmd' : 'Ctrl'}
+              </kbd>
+              <span>+</span>
+              <kbd style={{ padding: '2px 6px', borderRadius: '4px', background: '#334155', color: '#fff', fontSize: '0.74rem', fontWeight: '700', border: '1px solid #64748b' }}>
+                Shift
+              </kbd>
+              <span>+</span>
+              <kbd style={{ padding: '2px 6px', borderRadius: '4px', background: '#334155', color: '#fff', fontSize: '0.74rem', fontWeight: '700', border: '1px solid #64748b' }}>
+                R
+              </kbd>
+              <span style={{ fontSize: '0.75rem', color: '#fbbf24', fontWeight: '600' }}>sebelum login</span>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div style={{ 

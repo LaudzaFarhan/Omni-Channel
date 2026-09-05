@@ -22,6 +22,7 @@ import {
   getWorkspaceSettings, saveWorkspaceSettings,
   findTransactionById, markTransactionPaidIfPending,
   startSubscriptionPeriod, isSubscriptionExpired,
+  getSystemAnnouncement, setSystemAnnouncement, clearSystemAnnouncement,
 } from './data.js';
 import { applyPaidFulfilment } from './fulfilment.js';
 import {
@@ -1015,4 +1016,81 @@ export function mountDataRoutes(app, io) {
       res.status(500).json({ error: 'Failed to save workspace settings' });
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // System Announcements & Broadcast Updates
+  // ---------------------------------------------------------------------------
+  // Public endpoint: any user (authenticated or on login screen) can check if
+  // an active system update/maintenance announcement is currently running.
+  app.get('/api/system-announcement', async (req, res) => {
+    try {
+      const announcement = await getSystemAnnouncement();
+      res.json({ announcement });
+    } catch (err) {
+      console.error('[Announcement] Get failed:', err);
+      res.status(500).json({ error: 'Failed to load system announcement' });
+    }
+  });
+
+  // Admin endpoint: broadcast a system update announcement to all connected users
+  app.post('/api/admin/broadcast-update', admin, async (req, res) => {
+    try {
+      const { title, message, forceRelogin = true, version } = req.body || {};
+      if (!title || !message) {
+        return res.status(400).json({ error: 'Title and message are required.' });
+      }
+
+      const announcement = await setSystemAnnouncement({
+        title: String(title).trim(),
+        message: String(message).trim(),
+        forceRelogin: Boolean(forceRelogin),
+        version: version ? String(version).trim() : null,
+        createdBy: req.profile?.uid,
+      });
+
+      if (io) {
+        io.emit('system-update', announcement);
+      }
+
+      await recordAudit({
+        actorUserId: req.profile.uid,
+        actorEmail: req.profile.email,
+        action: 'system.broadcast_update',
+        targetUserId: null,
+        detail: { title: announcement.title, version: announcement.version, forceRelogin: announcement.forceRelogin },
+        ip: clientIp(req),
+      });
+
+      res.json({ success: true, announcement });
+    } catch (err) {
+      console.error('[Announcement] Broadcast failed:', err);
+      res.status(500).json({ error: 'Failed to broadcast system update announcement.' });
+    }
+  });
+
+  // Admin endpoint: clear/withdraw the broadcast
+  app.delete('/api/admin/broadcast-update', admin, async (req, res) => {
+    try {
+      await clearSystemAnnouncement();
+
+      if (io) {
+        io.emit('system-update', null);
+      }
+
+      await recordAudit({
+        actorUserId: req.profile.uid,
+        actorEmail: req.profile.email,
+        action: 'system.clear_broadcast',
+        targetUserId: null,
+        detail: {},
+        ip: clientIp(req),
+      });
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error('[Announcement] Clear failed:', err);
+      res.status(500).json({ error: 'Failed to clear system announcement.' });
+    }
+  });
 }
+

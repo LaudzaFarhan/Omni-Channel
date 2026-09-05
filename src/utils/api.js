@@ -604,3 +604,27 @@ export async function adminClearFeatureAccess(key, uid) {
   );
   return data.features || [];
 }
+
+// ---------------------------------------------------------------------------
+// System Announcements / Broadcast Updates
+// ---------------------------------------------------------------------------
+export async function fetchSystemAnnouncement() {
+  try {
+    const res = await fetch(apiUrl('/api/system-announcement'));
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.announcement || null;
+  } catch (err) {
+    console.warn('[Api] Could not fetch system announcement:', err.message);
+    return null;
+  }
+}
+
+export async function adminBroadcastUpdate(payload) {
+  return apiJson('/api/admin/broadcast-update', 'POST', payload);
+}
+
+export async function adminClearBroadcastUpdate() {
+  return apiJson('/api/admin/broadcast-update', 'DELETE');
+}
+
