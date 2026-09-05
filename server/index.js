@@ -748,10 +748,10 @@ io.on('connection', async (socket) => {
     }));
   socket.emit('all-sessions', userSessions);
 
-  // Listen for client requesting to change their presence status (online / away / off)
+  // Listen for client requesting to change their presence status (online / away)
   socket.on('set-presence', async (data) => {
     const status = data?.status;
-    if (['online', 'away', 'off'].includes(status)) {
+    if (['online', 'away'].includes(status)) {
       await setUserPresence(workspaceId, memberId, status, io);
     }
   });

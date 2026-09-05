@@ -66,10 +66,11 @@ export function onUserDisconnected(workspaceId, userId, socketId, io) {
 }
 
 /**
- * Set user status explicitly (e.g. 'online', 'away', 'off').
+ * Set user status explicitly (online or away).
+ * Offline status is strictly automatic when all sockets disconnect.
  */
 export async function setUserPresence(workspaceId, userId, status, io) {
-  const valid = ['online', 'away', 'off'];
+  const valid = ['online', 'away'];
   if (!valid.includes(status)) return;
 
   userPresence.set(userId, {

@@ -143,10 +143,13 @@ export default function TeamPresenceDropdown({ user, userProfile, isSupervisor, 
     };
   }, [userProfile?.uid, user?.email]);
 
-  // Change presence handler
+  // Change presence handler (only online or away can be set manually)
   const handleSetStatus = async (status, manual = true) => {
+    if (!['online', 'away'].includes(status)) return;
     setMyStatus(status);
-    if (manual) setIsManualStatus(true);
+    if (manual) {
+      setIsManualStatus(status === 'away');
+    }
 
     try {
       const socket = getSocket();
@@ -159,40 +162,56 @@ export default function TeamPresenceDropdown({ user, userProfile, isSupervisor, 
     }
   };
 
-  // Auto-Away detection on idle (5 mins of inactivity or tab hidden)
+  // Auto-Away detection:
+  // - Tab switched or minimized (document.hidden) -> immediately Away
+  // - Inactivity (no mouse movement / keyboard input) > 1 minute -> automatically Away
+  // - Close tab -> automatically Offline on server via socket disconnect
   useEffect(() => {
-    const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+    const IDLE_TIMEOUT_MS = 60 * 1000; // 1 minute (60 seconds)
+
+    const switchToAway = () => {
+      handleSetStatus('away', false);
+    };
+
+    const switchToOnline = () => {
+      if (!document.hidden) {
+        handleSetStatus('online', false);
+      }
+    };
 
     const resetIdleTimer = () => {
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
 
-      // Only auto-switch back to online if away was set automatically (not manually by user)
-      if (myStatus === 'away' && !isManualStatus) {
-        handleSetStatus('online', false);
+      // Auto-restore to online on user interaction if tab is active and visible
+      if (myStatus === 'away' && !isManualStatus && !document.hidden) {
+        switchToOnline();
       }
 
+      // Switch to away after 1 minute of inactivity
       idleTimerRef.current = setTimeout(() => {
-        if (myStatus === 'online') {
-          handleSetStatus('away', false);
+        if (!document.hidden) {
+          switchToAway();
         }
       }, IDLE_TIMEOUT_MS);
     };
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        if (myStatus === 'online') {
-          handleSetStatus('away', false);
-        }
+        // User switched tabs or minimized window -> Away
+        switchToAway();
       } else {
-        if (myStatus === 'away' && !isManualStatus) {
-          handleSetStatus('online', false);
+        // User switched back to this tab -> Online
+        if (!isManualStatus) {
+          switchToOnline();
         }
+        resetIdleTimer();
       }
     };
 
     window.addEventListener('mousemove', resetIdleTimer);
     window.addEventListener('keydown', resetIdleTimer);
     window.addEventListener('click', resetIdleTimer);
+    window.addEventListener('scroll', resetIdleTimer);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     resetIdleTimer();
@@ -202,6 +221,7 @@ export default function TeamPresenceDropdown({ user, userProfile, isSupervisor, 
       window.removeEventListener('mousemove', resetIdleTimer);
       window.removeEventListener('keydown', resetIdleTimer);
       window.removeEventListener('click', resetIdleTimer);
+      window.removeEventListener('scroll', resetIdleTimer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [myStatus, isManualStatus]);
@@ -321,16 +341,6 @@ export default function TeamPresenceDropdown({ user, userProfile, isSupervisor, 
                 <span className="presence-dot status-dot-away" />
                 <span>Away</span>
                 {myStatus === 'away' && <Check size={12} className="status-check-icon" />}
-              </button>
-
-              <button
-                type="button"
-                className={`status-switch-btn ${myStatus === 'off' ? 'active status-off-active' : ''}`}
-                onClick={() => handleSetStatus('off', true)}
-              >
-                <span className="presence-dot status-dot-off" />
-                <span>Off</span>
-                {myStatus === 'off' && <Check size={12} className="status-check-icon" />}
               </button>
             </div>
           </div>

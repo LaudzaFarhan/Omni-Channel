@@ -326,8 +326,8 @@ export function mountTeamRoutes(app, io) {
   app.post('/api/team/presence', approved, async (req, res) => {
     try {
       const status = req.body?.status;
-      if (!['online', 'away', 'off'].includes(status)) {
-        return res.status(400).json({ error: 'Invalid status. Must be online, away, or off.' });
+      if (!['online', 'away'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid status. Must be online or away. Offline is automatic when tab is closed.' });
       }
       await setUserPresence(req.workspaceId, req.profile.uid, status, io);
       res.json({ success: true, status });
