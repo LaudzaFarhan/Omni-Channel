@@ -18,6 +18,8 @@ export default function BroadcastUpdateModal({ isOpen, onClose, activeAnnounceme
 
   if (!isOpen) return null;
 
+  const isMac = typeof window !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+
   const handleBroadcast = async (e) => {
     e.preventDefault();
     if (!title.trim() || !message.trim()) {
@@ -79,72 +81,38 @@ export default function BroadcastUpdateModal({ isOpen, onClose, activeAnnounceme
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.75)',
-        backdropFilter: 'blur(6px)',
-        zIndex: 9999,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '620px',
-          background: 'var(--bg-card, #131b24)',
-          border: '1px solid var(--border-color, rgba(255,255,255,0.12))',
-          borderRadius: '16px',
-          boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-          maxHeight: '90vh',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="broadcast-modal-backdrop" onClick={onClose}>
+      <div className="broadcast-modal-card" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div
-          style={{
-            padding: '20px 24px',
-            borderBottom: '1px solid var(--border-color, rgba(255,255,255,0.08))',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            background: 'linear-gradient(135deg, rgba(37, 211, 102, 0.08), rgba(6, 182, 212, 0.05))',
-          }}
-        >
+        <div className="broadcast-modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div
               style={{
-                width: '38px',
-                height: '38px',
+                width: '40px',
+                height: '40px',
                 borderRadius: '10px',
-                background: 'rgba(37, 211, 102, 0.15)',
-                color: 'var(--primary, #25d366)',
+                background: 'var(--primary-soft, #f0f3fc)',
+                color: 'var(--primary, #3f67d8)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(63, 103, 216, 0.15)',
               }}
             >
               <Megaphone size={20} />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '700', color: 'var(--text-main, #f1f5f9)' }}>
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '700', color: 'var(--text-main, #0f172a)' }}>
                 Broadcast System Update
               </h3>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-dimmed, #94a3b8)' }}>
+              <span style={{ fontSize: '0.82rem', color: 'var(--text-muted, #64748b)' }}>
                 Beri notifikasi realtime ke semua pengguna untuk Hard Refresh (Ctrl+Shift+R) & Login Ulang
               </span>
             </div>
           </div>
           <button
             onClick={onClose}
+            aria-label="Tutup modal"
             style={{
               background: 'transparent',
               border: 'none',
@@ -153,6 +121,9 @@ export default function BroadcastUpdateModal({ isOpen, onClose, activeAnnounceme
               padding: '6px',
               borderRadius: '8px',
               display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'color 0.15s',
             }}
           >
             <X size={20} />
@@ -163,25 +134,14 @@ export default function BroadcastUpdateModal({ isOpen, onClose, activeAnnounceme
         <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {/* Active status banner */}
           {activeAnnouncement?.active ? (
-            <div
-              style={{
-                padding: '14px 18px',
-                borderRadius: '10px',
-                background: 'rgba(37, 211, 102, 0.08)',
-                border: '1px solid rgba(37, 211, 102, 0.25)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: '12px',
-              }}
-            >
+            <div className="broadcast-status-banner-active">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 10px #22c55e' }} />
+                <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#16a34a', boxShadow: '0 0 10px rgba(22, 163, 74, 0.6)' }} />
                 <div>
-                  <div style={{ fontSize: '0.88rem', fontWeight: '600', color: '#22c55e' }}>
+                  <div style={{ fontSize: '0.88rem', fontWeight: '700', color: '#15803d' }}>
                     Siaran Sedang Aktif
                   </div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-dimmed, #94a3b8)' }}>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted, #64748b)' }}>
                     Aktif sejak: {new Date(activeAnnouncement.updatedAt || activeAnnouncement.createdAt).toLocaleString('id-ID')}
                   </div>
                 </div>
@@ -191,37 +151,26 @@ export default function BroadcastUpdateModal({ isOpen, onClose, activeAnnounceme
                 onClick={handleClear}
                 disabled={submitting}
                 style={{
-                  background: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                  color: '#ef4444',
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  color: '#dc2626',
                   padding: '6px 14px',
                   borderRadius: '8px',
                   fontSize: '0.8rem',
-                  fontWeight: '600',
+                  fontWeight: '700',
                   cursor: submitting ? 'not-allowed' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
+                  transition: 'all 0.15s',
                 }}
               >
                 <Trash2 size={13} /> Tarik Pengumuman
               </button>
             </div>
           ) : (
-            <div
-              style={{
-                padding: '12px 16px',
-                borderRadius: '10px',
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                fontSize: '0.82rem',
-                color: 'var(--text-dimmed, #94a3b8)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
-            >
-              <AlertCircle size={15} style={{ color: 'var(--text-dimmed)' }} />
+            <div className="broadcast-status-banner-inactive">
+              <AlertCircle size={16} style={{ color: 'var(--text-muted, #64748b)', flexShrink: 0 }} />
               Saat ini tidak ada siaran pengumuman pembaruan yang aktif.
             </div>
           )}
@@ -231,9 +180,9 @@ export default function BroadcastUpdateModal({ isOpen, onClose, activeAnnounceme
               style={{
                 padding: '12px 16px',
                 borderRadius: '10px',
-                background: 'rgba(239, 68, 68, 0.12)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                color: '#f87171',
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                color: '#b91c1c',
                 fontSize: '0.85rem',
                 display: 'flex',
                 alignItems: 'center',
@@ -250,9 +199,9 @@ export default function BroadcastUpdateModal({ isOpen, onClose, activeAnnounceme
               style={{
                 padding: '12px 16px',
                 borderRadius: '10px',
-                background: 'rgba(34, 197, 94, 0.12)',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                color: '#4ade80',
+                background: '#f0fdf4',
+                border: '1px solid #bbf7d0',
+                color: '#15803d',
                 fontSize: '0.85rem',
                 display: 'flex',
                 alignItems: 'center',
@@ -265,75 +214,47 @@ export default function BroadcastUpdateModal({ isOpen, onClose, activeAnnounceme
           )}
 
           <form onSubmit={handleBroadcast} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '14px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-main, #f1f5f9)', marginBottom: '6px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-main, #0f172a)', marginBottom: '6px' }}>
                   Judul Pemberitahuan
                 </label>
                 <input
                   type="text"
+                  className="broadcast-input"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="Pembaruan Sistem Tersedia"
                   required
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-color, rgba(255,255,255,0.12))',
-                    background: 'rgba(255,255,255,0.04)',
-                    color: 'var(--text-main, #f1f5f9)',
-                    fontSize: '0.88rem',
-                    outline: 'none',
-                  }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-main, #f1f5f9)', marginBottom: '6px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-main, #0f172a)', marginBottom: '6px' }}>
                   Versi (Opsional)
                 </label>
                 <input
                   type="text"
+                  className="broadcast-input"
                   value={version}
                   onChange={(e) => setVersion(e.target.value)}
                   placeholder="v2.4.0"
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-color, rgba(255,255,255,0.12))',
-                    background: 'rgba(255,255,255,0.04)',
-                    color: 'var(--text-main, #f1f5f9)',
-                    fontSize: '0.88rem',
-                    outline: 'none',
-                  }}
                 />
               </div>
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-main, #f1f5f9)', marginBottom: '6px' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-main, #0f172a)', marginBottom: '6px' }}>
                 Pesan Notifikasi
               </label>
               <textarea
                 rows={4}
+                className="broadcast-input"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="Tulis pesan petunjuk hard refresh dan login ulang..."
                 required
-                style={{
-                  width: '100%',
-                  padding: '12px 14px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color, rgba(255,255,255,0.12))',
-                  background: 'rgba(255,255,255,0.04)',
-                  color: 'var(--text-main, #f1f5f9)',
-                  fontSize: '0.88rem',
-                  lineHeight: '1.45',
-                  outline: 'none',
-                  resize: 'vertical',
-                }}
+                style={{ lineHeight: '1.5', resize: 'vertical' }}
               />
             </div>
 
@@ -343,37 +264,29 @@ export default function BroadcastUpdateModal({ isOpen, onClose, activeAnnounceme
                 id="forceReloginCheck"
                 checked={forceRelogin}
                 onChange={(e) => setForceRelogin(e.target.checked)}
-                style={{ width: '16px', height: '16px', accentColor: 'var(--primary, #25d366)', cursor: 'pointer' }}
+                style={{ width: '17px', height: '17px', accentColor: 'var(--primary, #3f67d8)', cursor: 'pointer' }}
               />
-              <label htmlFor="forceReloginCheck" style={{ fontSize: '0.85rem', color: 'var(--text-main, #f1f5f9)', cursor: 'pointer', userSelect: 'none' }}>
+              <label htmlFor="forceReloginCheck" style={{ fontSize: '0.86rem', color: 'var(--text-main, #1e293b)', cursor: 'pointer', userSelect: 'none' }}>
                 Sertakan tombol langsung <strong>"Logout & Refresh Sekarang"</strong> (Membersihkan cache dan redirect ke login)
               </label>
             </div>
 
             {/* Live Preview */}
             <div>
-              <div style={{ fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-dimmed, #94a3b8)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Sparkles size={13} style={{ color: '#06b6d4' }} />
+              <div style={{ fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted, #64748b)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Sparkles size={14} style={{ color: 'var(--primary, #3f67d8)' }} />
                 Preview Tampilan Pengguna:
               </div>
-              <div
-                style={{
-                  padding: '16px 20px',
-                  borderRadius: '12px',
-                  background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(6, 182, 212, 0.08))',
-                  border: '1px solid rgba(245, 158, 11, 0.35)',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
-                }}
-              >
+              <div className="broadcast-preview-box">
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div
                       style={{
-                        width: '32px',
-                        height: '32px',
+                        width: '34px',
+                        height: '34px',
                         borderRadius: '8px',
                         background: 'rgba(245, 158, 11, 0.2)',
-                        color: '#f59e0b',
+                        color: '#d97706',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -383,15 +296,15 @@ export default function BroadcastUpdateModal({ isOpen, onClose, activeAnnounceme
                       <RefreshCw size={17} />
                     </div>
                     <div>
-                      <div style={{ fontSize: '0.92rem', fontWeight: '700', color: '#fbbf24' }}>
+                      <div style={{ fontSize: '0.94rem', fontWeight: '700', color: '#b45309' }}>
                         {title || 'Pembaruan Sistem Tersedia'}
                         {version && (
-                          <span style={{ marginLeft: '8px', fontSize: '0.72rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: '#fff' }}>
+                          <span style={{ marginLeft: '8px', fontSize: '0.72rem', padding: '2px 7px', borderRadius: '4px', background: '#ffffff', color: '#b45309', border: '1px solid #fde68a', fontWeight: '700' }}>
                             {version}
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: '0.82rem', color: '#e2e8f0', marginTop: '4px', lineHeight: '1.4' }}>
+                      <div style={{ fontSize: '0.84rem', color: 'var(--text-main, #1e293b)', marginTop: '4px', lineHeight: '1.45' }}>
                         {message}
                       </div>
                     </div>
@@ -399,36 +312,23 @@ export default function BroadcastUpdateModal({ isOpen, onClose, activeAnnounceme
                 </div>
 
                 {/* Keyboard Shortcut Highlight */}
-                <div
-                  style={{
-                    marginTop: '12px',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    background: 'rgba(0,0,0,0.25)',
-                    border: '1px solid rgba(255,255,255,0.06)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '10px',
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: '#cbd5e1' }}>
+                <div className="broadcast-preview-kbd-row">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', color: 'var(--text-main, #1e293b)' }}>
                     <span>Tekan tombol:</span>
-                    <kbd style={{ padding: '2px 7px', borderRadius: '4px', background: '#334155', color: '#f8fafc', fontSize: '0.75rem', fontWeight: '700', border: '1px solid #475569' }}>Ctrl</kbd>
+                    <kbd className="broadcast-kbd-tag">{isMac ? '⌘ Cmd' : 'Ctrl'}</kbd>
                     <span>+</span>
-                    <kbd style={{ padding: '2px 7px', borderRadius: '4px', background: '#334155', color: '#f8fafc', fontSize: '0.75rem', fontWeight: '700', border: '1px solid #475569' }}>Shift</kbd>
+                    <kbd className="broadcast-kbd-tag">{isMac ? '⇧ Shift' : 'Shift'}</kbd>
                     <span>+</span>
-                    <kbd style={{ padding: '2px 7px', borderRadius: '4px', background: '#334155', color: '#f8fafc', fontSize: '0.75rem', fontWeight: '700', border: '1px solid #475569' }}>R</kbd>
+                    <kbd className="broadcast-kbd-tag">R</kbd>
                   </div>
                   {forceRelogin && (
                     <button
                       type="button"
                       style={{
-                        padding: '6px 12px',
+                        padding: '6px 14px',
                         borderRadius: '6px',
                         background: '#f59e0b',
-                        color: '#000',
+                        color: '#ffffff',
                         fontSize: '0.78rem',
                         fontWeight: '700',
                         border: 'none',
@@ -436,6 +336,7 @@ export default function BroadcastUpdateModal({ isOpen, onClose, activeAnnounceme
                         display: 'flex',
                         alignItems: 'center',
                         gap: '6px',
+                        boxShadow: '0 2px 6px rgba(245, 158, 11, 0.35)',
                       }}
                     >
                       <RefreshCw size={12} /> Logout & Refresh Sekarang
@@ -446,41 +347,19 @@ export default function BroadcastUpdateModal({ isOpen, onClose, activeAnnounceme
             </div>
 
             {/* Submit Actions */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px', paddingTop: '16px', borderTop: '1px solid var(--border-color, rgba(255,255,255,0.08))' }}>
+            <div className="broadcast-modal-footer" style={{ margin: '0 -24px -24px -24px', borderRadius: '0 0 16px 16px' }}>
               <button
                 type="button"
+                className="broadcast-btn-cancel"
                 onClick={onClose}
                 disabled={submitting}
-                style={{
-                  padding: '10px 18px',
-                  borderRadius: '8px',
-                  background: 'transparent',
-                  border: '1px solid var(--border-color, rgba(255,255,255,0.12))',
-                  color: 'var(--text-dimmed, #94a3b8)',
-                  fontSize: '0.88rem',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                }}
               >
                 Tutup
               </button>
               <button
                 type="submit"
+                className="broadcast-btn-submit"
                 disabled={submitting}
-                style={{
-                  padding: '10px 22px',
-                  borderRadius: '8px',
-                  background: 'linear-gradient(135deg, #25d366, #10b981)',
-                  color: '#fff',
-                  border: 'none',
-                  fontSize: '0.88rem',
-                  fontWeight: '700',
-                  cursor: submitting ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 14px rgba(37, 211, 102, 0.35)',
-                }}
               >
                 <Megaphone size={16} />
                 {submitting ? 'Menyiarkan...' : 'Kirim Siaran ke Semua Pengguna'}

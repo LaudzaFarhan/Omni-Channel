@@ -83,39 +83,40 @@ export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSu
           <div
             style={{
               width: '100%',
-              padding: '12px 14px',
-              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(234, 88, 12, 0.1))',
-              border: '1.5px solid rgba(245, 158, 11, 0.45)',
-              borderRadius: '10px',
-              fontSize: '0.82rem',
-              color: '#fef3c7',
-              marginBottom: '18px',
+              padding: '14px 16px',
+              background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+              border: '1.5px solid #fde68a',
+              borderRadius: '12px',
+              fontSize: '0.84rem',
+              color: '#78350f',
+              marginBottom: '20px',
               textAlign: 'left',
               lineHeight: '1.45',
-              boxShadow: '0 4px 14px rgba(245, 158, 11, 0.15)',
+              boxShadow: '0 4px 14px rgba(245, 158, 11, 0.12)',
+              boxSizing: 'border-box',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', color: '#fbbf24', marginBottom: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', color: '#b45309', marginBottom: '4px' }}>
               <Sparkles size={16} />
               <span>Pembaruan Sistem Baru Tersedia!</span>
             </div>
-            <div style={{ color: '#e2e8f0', fontSize: '0.8rem', marginBottom: '8px' }}>
+            <div style={{ color: '#451a03', fontSize: '0.82rem', marginBottom: '8px' }}>
               {systemAnnouncement?.message || 'Sistem baru saja diperbarui. Mohon tekan tombol Hard Refresh di browser sebelum Anda login.'}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#cbd5e1', flexWrap: 'wrap' }}>
-              <span>Tekan:</span>
-              <kbd style={{ padding: '2px 6px', borderRadius: '4px', background: '#334155', color: '#fff', fontSize: '0.74rem', fontWeight: '700', border: '1px solid #64748b' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#78350f', flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: '600' }}>Tekan:</span>
+              <kbd className="broadcast-kbd-tag">
                 {typeof window !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0 ? '⌘ Cmd' : 'Ctrl'}
               </kbd>
               <span>+</span>
-              <kbd style={{ padding: '2px 6px', borderRadius: '4px', background: '#334155', color: '#fff', fontSize: '0.74rem', fontWeight: '700', border: '1px solid #64748b' }}>
+              <kbd className="broadcast-kbd-tag">
                 Shift
               </kbd>
               <span>+</span>
-              <kbd style={{ padding: '2px 6px', borderRadius: '4px', background: '#334155', color: '#fff', fontSize: '0.74rem', fontWeight: '700', border: '1px solid #64748b' }}>
+              <kbd className="broadcast-kbd-tag">
                 R
               </kbd>
-              <span style={{ fontSize: '0.75rem', color: '#fbbf24', fontWeight: '600' }}>sebelum login</span>
+              <span style={{ fontSize: '0.78rem', color: '#b45309', fontWeight: '700' }}>sebelum login</span>
             </div>
           </div>
         )}
