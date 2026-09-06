@@ -358,6 +358,17 @@ echo $result;
           </div>
         </article>
       </main>
+
+      <footer className="landing-footer-container" style={{ marginTop: '60px' }}>
+        <div className="landing-footer-bottom" style={{ borderTop: 'none', paddingTop: 0 }}>
+          <div className="footer-copyright">
+            © {new Date().getFullYear()} <strong>PT AWAM KODING INDONESIA</strong>. Hak Cipta Dilindungi Undang-Undang.
+          </div>
+          <div className="footer-engineered">
+            Platform dikembangkan oleh <strong>PT AWAM KODING INDONESIA</strong>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

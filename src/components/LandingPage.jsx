@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Users, Zap, Shield, Check, HelpCircle, Pause, Play, Code, Calendar, Clock, UserCheck, BarChart3, Tag } from 'lucide-react';
+import { MessageSquare, Users, Zap, Shield, Check, HelpCircle, Pause, Play, Code, Calendar, Clock, UserCheck, BarChart3, Tag, Building2, ShieldCheck, FileText, X } from 'lucide-react';
 import { BrandLockup } from './BrandMark.jsx';
 
 export default function LandingPage({ user, onGoToDashboard, onGoToLogin, onGoToRegister, onOpenBlog }) {
@@ -7,6 +7,7 @@ export default function LandingPage({ user, onGoToDashboard, onGoToLogin, onGoTo
   const handleLogin = user ? onGoToDashboard : (onGoToLogin || onGoToDashboard);
 
   const [agentCount, setAgentCount] = React.useState(3);
+  const [legalModalType, setLegalModalType] = React.useState(null);
 
   const calculatePrice = (count) => {
     if (count <= 3) return 300000;
@@ -611,15 +612,211 @@ export default function LandingPage({ user, onGoToDashboard, onGoToLogin, onGoTo
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="landing-footer" style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center', textAlign: 'center' }}>
-        <div style={{ display: 'flex', gap: '20px', fontSize: '0.86rem' }}>
-          <a href="/blog" onClick={(e) => { e.preventDefault(); onOpenBlog?.(); }} style={{ color: 'var(--primary)', fontWeight: '600', textDecoration: 'none' }}>
-            📖 Panduan WhatsApp Unofficial API Indonesia
-          </a>
+      {/* Corporate & Brand Footer */}
+      <footer className="landing-footer-container">
+        <div className="landing-footer-top">
+          {/* Brand & Corporate Column */}
+          <div className="footer-col footer-col-brand">
+            <div className="footer-brand-header">
+              <BrandLockup markSize={32} />
+            </div>
+            <p className="footer-brand-desc">
+              Platform WhatsApp Unofficial API Indonesia & Multi-Agent CRM Inbox modern untuk mempercepat respon customer, otomasi bot cerdas, dan akselerasi konversi penjualan bisnis Anda.
+            </p>
+            <div className="footer-legal-badge">
+              <div className="legal-badge-header">
+                <Building2 size={16} className="legal-badge-icon" />
+                <span className="legal-label">Badan Hukum Resmi</span>
+              </div>
+              <div className="legal-company-name">PT AWAM KODING INDONESIA</div>
+              <div className="legal-entity-note">Perusahaan Teknologi & Pengembang Perangkat Lunak Indonesia</div>
+            </div>
+          </div>
+
+          {/* Product & Solutions Column */}
+          <div className="footer-col">
+            <h4 className="footer-col-title">Produk & Fitur</h4>
+            <ul className="footer-links-list">
+              <li><a href="#features" onClick={(e) => { e.preventDefault(); handleScrollTo('features'); }}>Multi-Agent WhatsApp Inbox</a></li>
+              <li><a href="#features" onClick={(e) => { e.preventDefault(); handleScrollTo('features'); }}>24-Hour Follow-Up SLA</a></li>
+              <li><a href="#features" onClick={(e) => { e.preventDefault(); handleScrollTo('features'); }}>AI Bot & 1-Click Hold API</a></li>
+              <li><a href="#features" onClick={(e) => { e.preventDefault(); handleScrollTo('features'); }}>Webhook Realtime & REST API</a></li>
+              <li><a href="#pricing" onClick={(e) => { e.preventDefault(); handleScrollTo('pricing'); }}>Paket Harga & Uji Coba</a></li>
+            </ul>
+          </div>
+
+          {/* Guides & Resources Column */}
+          <div className="footer-col">
+            <h4 className="footer-col-title">Panduan & Edukasi</h4>
+            <ul className="footer-links-list">
+              <li><a href="/blog" onClick={(e) => { e.preventDefault(); onOpenBlog?.(); }}>Panduan WhatsApp API Indonesia</a></li>
+              <li><a href="#faq" onClick={(e) => { e.preventDefault(); handleScrollTo('faq'); }}>Pertanyaan Umum (FAQ)</a></li>
+              <li><a href="/blog" onClick={(e) => { e.preventDefault(); onOpenBlog?.(); }}>Bypass 4-Device WhatsApp Limit</a></li>
+              <li><a href="mailto:support@omnireach.my.id">Bantuan Teknis & CS</a></li>
+            </ul>
+          </div>
+
+          {/* Legal & Trust Column */}
+          <div className="footer-col">
+            <h4 className="footer-col-title">Legal & Kepatuhan</h4>
+            <ul className="footer-links-list">
+              <li>
+                <button type="button" className="footer-link-btn" onClick={() => setLegalModalType('terms')}>
+                  <FileText size={14} /> Ketentuan Layanan (ToS)
+                </button>
+              </li>
+              <li>
+                <button type="button" className="footer-link-btn" onClick={() => setLegalModalType('privacy')}>
+                  <ShieldCheck size={14} /> Kebijakan Privasi Data
+                </button>
+              </li>
+              <li>
+                <button type="button" className="footer-link-btn" onClick={() => setLegalModalType('disclaimer')}>
+                  <HelpCircle size={14} /> Disclaimer Merek
+                </button>
+              </li>
+              <li>
+                <div className="footer-status-pill">
+                  <span className="status-dot-green"></span> Sistem Operasional 99.9%
+                </div>
+              </li>
+            </ul>
+          </div>
         </div>
-        <div>© {new Date().getFullYear()} Omni Reach. Platform WhatsApp Unofficial API Indo & Multi-Agent CRM.</div>
+
+        {/* Legal Disclaimer Box */}
+        <div className="landing-footer-disclaimer">
+          <p>
+            <strong>Pemberitahuan Hukum:</strong> Omni Reach dikembangkan dan dikelola secara mandiri oleh <strong>PT AWAM KODING INDONESIA</strong>. Layanan ini adalah gateway independen dan tidak memiliki afiliasi resmi, tidak didukung, atau disahkan secara langsung oleh Meta Platforms, Inc. maupun WhatsApp Inc. Nama dan logo "WhatsApp" adalah merek dagang terdaftar milik Meta Platforms, Inc.
+          </p>
+        </div>
+
+        {/* Footer Bottom Bar */}
+        <div className="landing-footer-bottom">
+          <div className="footer-copyright">
+            © {new Date().getFullYear()} <strong>PT AWAM KODING INDONESIA</strong>. Hak Cipta Dilindungi Undang-Undang. All rights reserved.
+          </div>
+          <div className="footer-engineered">
+            Platform dikembangkan oleh <strong>PT AWAM KODING INDONESIA</strong>
+          </div>
+        </div>
       </footer>
+
+      {/* Interactive Legal Modal */}
+      {legalModalType && (
+        <div className="legal-modal-backdrop" onClick={() => setLegalModalType(null)}>
+          <div className="legal-modal-card glass" onClick={(e) => e.stopPropagation()}>
+            <div className="legal-modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Building2 size={22} style={{ color: 'var(--primary)' }} />
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '700' }}>
+                    {legalModalType === 'terms' && 'Ketentuan Layanan (Terms of Service)'}
+                    {legalModalType === 'privacy' && 'Kebijakan Privasi Data (Privacy Policy)'}
+                    {legalModalType === 'disclaimer' && 'Pernyataan Disclaimer Hukum & Merek Dagang'}
+                  </h3>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    Diterbitkan oleh PT AWAM KODING INDONESIA
+                  </div>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                className="legal-modal-close" 
+                onClick={() => setLegalModalType(null)}
+                aria-label="Tutup"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="legal-modal-body">
+              {legalModalType === 'terms' && (
+                <div className="legal-text-content">
+                  <h4>1. Pendahuluan & Penerimaan Ketentuan</h4>
+                  <p>
+                    Ketentuan Layanan ini ("Ketentuan") mengatur akses dan penggunaan Anda atas seluruh fitur dan piranti lunak Omni Reach yang disediakan oleh <strong>PT AWAM KODING INDONESIA</strong> ("Kami"). Dengan mendaftar atau menggunakan platform Omni Reach, Anda menyatakan setuju untuk terikat oleh Ketentuan ini.
+                  </p>
+
+                  <h4>2. Penggunaan Layanan yang Sah & Anti-Spam</h4>
+                  <p>
+                    Anda setuju untuk menggunakan nomor WhatsApp dan platform Omni Reach sesuai dengan ketentuan hukum yang berlaku di Republik Indonesia, termasuk Undang-Undang Informasi dan Transaksi Elektronik (UU ITE). Dilarang keras menggunakan layanan ini untuk pengiriman pesan spam massal tanpa izin penerima, penipuan, konten terlarang, atau aktivitas yang melanggar hukum.
+                  </p>
+
+                  <h4>3. Akun dan Tanggung Jawab Keamanan</h4>
+                  <p>
+                    Pengguna bertanggung jawab penuh atas keamanan nomor WhatsApp yang dipindai (QR scan), token API, dan akun pengguna di dalam workspace Anda. Anda wajib segera memberi tahu kami jika menemukan indikasi akses tidak sah ke akun Anda.
+                  </p>
+
+                  <h4>4. Batasan Tanggung Jawab</h4>
+                  <p>
+                    Omni Reach merupakan alat penghubung (gateway) komunikasi multi-agen independen. PT AWAM KODING INDONESIA tidak bertanggung jawab atas tindakan pemblokiran atau penangguhan nomor WhatsApp yang dilakukan oleh sistem Meta Platforms, Inc. akibat pelanggaran aturan oleh pengguna.
+                  </p>
+
+                  <h4>5. Hukum yang Berlaku</h4>
+                  <p>
+                    Ketentuan ini diatur dan ditafsirkan sesuai dengan hukum yang berlaku di Negara Kesatuan Republik Indonesia.
+                  </p>
+                </div>
+              )}
+
+              {legalModalType === 'privacy' && (
+                <div className="legal-text-content">
+                  <h4>1. Komitmen Perlindungan Data</h4>
+                  <p>
+                    <strong>PT AWAM KODING INDONESIA</strong> menghormati dan berkomitmen penuh untuk melindungi privasi data pribadi Anda serta data pelanggan Anda sesuai dengan prinsip Undang-Undang Perlindungan Data Pribadi (UU PDP) Indonesia.
+                  </p>
+
+                  <h4>2. Data yang Kami Proses</h4>
+                  <p>
+                    Kami hanya memproses informasi akun yang diperlukan untuk penyediaan layanan, seperti alamat email, nama workspace, sesi koneksi WhatsApp, dan nomor kontak yang terdaftar. Data percakapan WhatsApp disimpan di server database lokal Anda secara terenkripsi untuk kebutuhan operasional tim internal Anda.
+                  </p>
+
+                  <h4>3. Kerahasiaan & Tidak Ada Penjualan Data</h4>
+                  <p>
+                    Kami <strong>tidak pernah dan tidak akan pernah</strong> menjual, menyewakan, memperdagangkan, atau membagikan nomor kontak, percakapan, atau data pelanggan bisnis Anda kepada pihak ketiga mana pun untuk tujuan periklanan atau komersial.
+                  </p>
+
+                  <h4>4. Standar Keamanan Data</h4>
+                  <p>
+                    Sistem kami menerapkan enkripsi Secure Sockets Layer (SSL/TLS 1.3), hashing password menggunakan standar scrypt modern, dan pengamanan token otentikasi JWT HS256 yang kadaluarsa secara otomatis untuk melindungi data dari akses pihak yang tidak berhak.
+                  </p>
+                </div>
+              )}
+
+              {legalModalType === 'disclaimer' && (
+                <div className="legal-text-content">
+                  <h4>1. Independensi Layanan</h4>
+                  <p>
+                    Omni Reach adalah platform piranti lunak inovasi mandiri yang dikembangkan, didistribusikan, dan didukung sepenuhnya oleh <strong>PT AWAM KODING INDONESIA</strong>.
+                  </p>
+
+                  <h4>2. Hak Merek Dagang</h4>
+                  <p>
+                    Nama "WhatsApp", logo WhatsApp, dan merek dagang terkait adalah hak kekayaan intelektual milik Meta Platforms, Inc. Penggunaan nama "WhatsApp" di platform ini semata-mata bersifat deskriptif untuk mengidentifikasi kompatibilitas fungsional integrasi perangkat lunak kami.
+                  </p>
+
+                  <h4>3. Tanpa Afiliasi Meta</h4>
+                  <p>
+                    PT AWAM KODING INDONESIA dan produk Omni Reach tidak berafiliasi resmi, tidak disponsori, tidak didukung, atau disahkan secara langsung oleh Meta Platforms, Inc. maupun WhatsApp Inc.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="legal-modal-footer">
+              <button 
+                type="button" 
+                className="nav-btn" 
+                onClick={() => setLegalModalType(null)}
+                style={{ padding: '8px 20px', fontSize: '0.9rem' }}
+              >
+                Saya Mengerti
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
