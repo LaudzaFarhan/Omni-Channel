@@ -11,7 +11,7 @@ Di era digital saat ini, **WhatsApp** menjadi kanal komunikasi utama antara bisn
 
 Namun, kendala terbesar bagi bisnis berkembang adalah **keterbatasan WhatsApp Web biasa (maksimal 4 perangkat)** serta mahalnya biaya per pesan di *Official WhatsApp Cloud API*. 
 
-Solusi terbaik dan paling hemat biaya untuk mengatasi masalah ini adalah menggunakan **WhatsApp Unofficial API Indo** seperti [Omni Reach](https://app.omnireach.my.id/).
+Solusi terbaik dan paling hemat biaya untuk mengatasi masalah ini adalah menggunakan **WhatsApp Unofficial API Indo** seperti [Omni Reach](https://www.omnireach.my.id/).
 
 ---
 
@@ -31,7 +31,7 @@ WhatsApp Unofficial API adalah gateway API yang menghubungkan nomor WhatsApp pri
 
 Secara default, WhatsApp hanya mengizinkan 1 ponsel utama dan 4 perangkat pendamping (*linked companion devices*). 
 
-Dengan sistem gateway [Omni Reach](https://app.omnireach.my.id/):
+Dengan sistem gateway [Omni Reach](https://www.omnireach.my.id/):
 - Server menghubungkan nomor WhatsApp Anda sebagai **1 perangkat pendamping**.
 - Gateway kemudian membuka koneksi **WebSockets realtime** ke dashboard web multi-agent.
 - Setiap tim CS atau sales login ke akun masing-masing dan dapat membalas chat secara bersamaan dari nomor WhatsApp yang sama.
@@ -46,7 +46,7 @@ const axios = require('axios');
 
 async function sendWhatsAppMessage(phone, text) {
   try {
-    const response = await axios.post('https://app.omnireach.my.id/api/send-message', {
+    const response = await axios.post('https://www.omnireach.my.id/api/send-message', {
       sessionId: 'default',
       to: phone, // Format: 6281234567890
       message: text
@@ -78,7 +78,7 @@ $payload = [
 ];
 
 curl_setopt_array($curl, [
-    CURLOPT_URL => "https://app.omnireach.my.id/api/send-message",
+    CURLOPT_URL => "https://www.omnireach.my.id/api/send-message",
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_POST => true,
     CURLOPT_POSTFIELDS => json_encode($payload),
@@ -98,7 +98,7 @@ echo $response;
 ### 3. Fitur Hold Agent / AI Bot Handover
 Ketika agen manusia ingin mengambil alih percakapan dari AI Bot, Anda cukup memanggil endpoint Hold:
 \`\`\`bash
-curl -X POST https://app.omnireach.my.id/api/agent/hold \\
+curl -X POST https://www.omnireach.my.id/api/agent/hold \\
   -H "Content-Type: application/json" \\
   -d '{
     "sessionId": "default",
@@ -123,7 +123,7 @@ curl -X POST https://app.omnireach.my.id/api/agent/hold \\
 Menggunakan **WhatsApp Unofficial API Indo** adalah langkah strategis untuk mempercepat respon pelanggan (*closing rate* lebih tinggi) tanpa terbebani biaya langganan yang mahal per pesan. 
 
 Mulai uji coba gratis dan integrasikan nomor WhatsApp bisnis Anda sekarang di:
-👉 **[https://app.omnireach.my.id/](https://app.omnireach.my.id/)**
+👉 **[https://www.omnireach.my.id/](https://www.omnireach.my.id/)**
 `;
 
   const handleCopyMarkdown = () => {
@@ -222,7 +222,7 @@ Mulai uji coba gratis dan integrasikan nomor WhatsApp bisnis Anda sekarang di:
           </p>
 
           <p style={{ marginBottom: '24px' }}>
-            Namun kendala terbesar bagi bisnis berkembang adalah <strong>keterbatasan 4 perangkat pada WhatsApp Web biasa</strong> serta biaya per percakapan yang relatif tinggi pada Official Cloud API. Solusi terbaik dan paling efisien adalah memanfaatkan <strong>WhatsApp Unofficial API Indo</strong> dengan platform gateway modern seperti <a href="https://app.omnireach.my.id/" style={{ color: 'var(--primary)', fontWeight: '700', textDecoration: 'underline' }}>Omni Reach</a>.
+            Namun kendala terbesar bagi bisnis berkembang adalah <strong>keterbatasan 4 perangkat pada WhatsApp Web biasa</strong> serta biaya per percakapan yang relatif tinggi pada Official Cloud API. Solusi terbaik dan paling efisien adalah memanfaatkan <strong>WhatsApp Unofficial API Indo</strong> dengan platform gateway modern seperti <a href="https://www.omnireach.my.id/" style={{ color: 'var(--primary)', fontWeight: '700', textDecoration: 'underline' }}>Omni Reach</a>.
           </p>
 
           <hr style={{ borderColor: 'var(--border-color)', margin: '30px 0' }} />
@@ -261,7 +261,7 @@ Mulai uji coba gratis dan integrasikan nomor WhatsApp bisnis Anda sekarang di:
 
 async function sendWhatsAppMessage(phone, text) {
   try {
-    const response = await axios.post('https://app.omnireach.my.id/api/send-message', {
+    const response = await axios.post('https://www.omnireach.my.id/api/send-message', {
       sessionId: 'default',
       to: phone, // Format: 6281234567890
       message: text
@@ -296,7 +296,7 @@ $payload = [
     "message" => "Halo! Pembayaran invoice #INV-2026 telah berhasil kami terima."
 ];
 
-$ch = curl_init("https://app.omnireach.my.id/api/send-message");
+$ch = curl_init("https://www.omnireach.my.id/api/send-message");
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
@@ -353,7 +353,7 @@ echo $result;
               onClick={onGoToDashboard}
               style={{ margin: '0 auto', display: 'inline-flex' }}
             >
-              Mulai Uji Coba Gratis di app.omnireach.my.id
+              Mulai Uji Coba Gratis Sekarang
             </button>
           </div>
         </article>

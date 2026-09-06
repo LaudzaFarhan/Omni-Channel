@@ -26,7 +26,7 @@ This guide is written for the server confirmed by recon on 2026-08-30:
 
 | Thing | Value |
 |---|---|
-| App domain | `omnireach.my.id` (+ `www.`) |
+| App domain | `app.omnireach.my.id` (Web App) + `omnireach.my.id` / `www` (Landing) |
 | Project root | `/root/wa-backend` |
 | pm2 app name | `wa-backend` |
 | Internal port | `5000` |
@@ -135,8 +135,8 @@ JWT_SECRET=
 PORT=5000
 HOST=127.0.0.1
 NODE_ENV=production
-CORS_ORIGIN=https://omnireach.my.id
-PUBLIC_URL=https://omnireach.my.id
+CORS_ORIGIN=https://app.omnireach.my.id,https://www.omnireach.my.id,https://omnireach.my.id
+PUBLIC_URL=https://app.omnireach.my.id
 
 # Addresses given the admin role at registration. The FIRST account registered
 # becomes an approved admin regardless, so a fresh deployment is usable
@@ -277,7 +277,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://thelabindonesia.my.id/   # stil
 Now issue the certificate. Certbot edits the file to add the TLS block:
 
 ```bash
-sudo certbot --nginx -d omnireach.my.id -d www.omnireach.my.id
+sudo certbot --nginx -d app.omnireach.my.id -d omnireach.my.id -d www.omnireach.my.id
 sudo nginx -t && sudo systemctl reload nginx
 ```
 

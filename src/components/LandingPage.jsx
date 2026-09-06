@@ -2,9 +2,9 @@ import React from 'react';
 import { MessageSquare, Users, Zap, Shield, Check, HelpCircle, Pause, Play, Code, Calendar, Clock, UserCheck, BarChart3, Tag } from 'lucide-react';
 import { BrandLockup } from './BrandMark.jsx';
 
-export default function LandingPage({ onGoToDashboard, onGoToLogin, onGoToRegister, onOpenBlog }) {
+export default function LandingPage({ user, onGoToDashboard, onGoToLogin, onGoToRegister, onOpenBlog }) {
   const handleRegister = onGoToRegister || onGoToDashboard;
-  const handleLogin = onGoToLogin || onGoToDashboard;
+  const handleLogin = user ? onGoToDashboard : (onGoToLogin || onGoToDashboard);
 
   const [agentCount, setAgentCount] = React.useState(3);
 
@@ -160,7 +160,7 @@ export default function LandingPage({ onGoToDashboard, onGoToLogin, onGoToRegist
           <li><a href="/blog" onClick={(e) => { e.preventDefault(); onOpenBlog?.(); }}>Blog & Panduan API</a></li>
         </ul>
         <button className="nav-btn" onClick={handleLogin}>
-          Login / Masuk
+          {user ? 'Buka Dashboard' : 'Login / Masuk'}
         </button>
       </nav>
 

@@ -3,7 +3,7 @@
 Endpoints for pausing automated replies in a single WhatsApp conversation so a
 human can take over, and for sending messages under that rule.
 
-**Base URL:** `https://app.omnireach.my.id`
+**Base URL:** `https://www.omnireach.my.id`
 
 Every endpoint here requires `Authorization: Bearer <accessToken>`.
 
@@ -246,7 +246,7 @@ Checks run in this sequence, which matters for interpreting errors:
 Verified against production on 2026-08-30.
 
 ```bash
-BASE=https://app.omnireach.my.id
+BASE=https://www.omnireach.my.id
 JID='628123456789@s.whatsapp.net'
 ENC=$(JID="$JID" node -e 'console.log(encodeURIComponent(process.env.JID))')
 AUTH="Authorization: Bearer $TOKEN"
@@ -288,7 +288,7 @@ a Socket.IO client or poll.
 ```js
 import { io } from 'socket.io-client';
 
-const socket = io('https://app.omnireach.my.id', { auth: { token: accessToken } });
+const socket = io('https://www.omnireach.my.id', { auth: { token: accessToken } });
 
 socket.on('new-message', ({ sessionId, jid, message }) => {
   if (message.key.fromMe) return;   // your own sends echo back here too

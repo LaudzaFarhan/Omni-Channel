@@ -3,4 +3,4 @@ User-agent: *
 Allow: /
 
 # Sitemaps
-Sitemap: https://app.omnireach.my.id/sitemap.xml
+Sitemap: https://www.omnireach.my.id/sitemap.xml

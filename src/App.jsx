@@ -153,6 +153,22 @@ export default function App() {
     setCurrentPath(path);
   };
 
+  const isLandingOnlyHost = typeof window !== 'undefined' && 
+    (window.location.hostname === 'omnireach.my.id' || window.location.hostname === 'www.omnireach.my.id');
+  const APP_URL = 'https://app.omnireach.my.id';
+
+  const goToAppRoute = (path) => {
+    if (isLandingOnlyHost) {
+      window.location.href = `${APP_URL}${path}`;
+    } else {
+      navigateTo(path);
+    }
+  };
+
+  const handleGoToLogin = () => goToAppRoute('/login');
+  const handleGoToRegister = () => goToAppRoute('/register');
+  const handleGoToDashboard = () => goToAppRoute(user ? '/dashboard' : '/login');
+
   // Sync state with browser back/forward buttons
   useEffect(() => {
     const handleLocationChange = () => {
@@ -163,6 +179,13 @@ export default function App() {
       window.removeEventListener('popstate', handleLocationChange);
     };
   }, []);
+
+  // Redirect auth & dashboard routes to main web app when accessed on marketing domain
+  useEffect(() => {
+    if (isLandingOnlyHost && ['/login', '/register', '/dashboard', '/accept-invite'].includes(currentPath)) {
+      window.location.href = `${APP_URL}${currentPath}${window.location.search}`;
+    }
+  }, [currentPath, isLandingOnlyHost]);
 
   const fetchChats = async (sessionId) => {
     const sid = sessionId || activeSessionIdRef.current;
@@ -1070,6 +1093,34 @@ export default function App() {
     );
   }
 
+  // 1c. Marketing Host Routing (omnireach.my.id & www.omnireach.my.id always serve Landing Page & Blog)
+  if (isLandingOnlyHost) {
+    if (['/login', '/register', '/dashboard', '/accept-invite'].includes(currentPath)) {
+      return (
+        <div style={{ display: 'flex', height: '100vh', width: '100vw', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-main)' }}>
+          <div className="spinner"></div>
+        </div>
+      );
+    }
+    if (currentPath === '/blog' || currentPath.startsWith('/blog') || currentPath.startsWith('/cara-integrasi')) {
+      return (
+        <BlogPost 
+          onBack={() => navigateTo('/')}
+          onGoToDashboard={handleGoToRegister}
+        />
+      );
+    }
+    return (
+      <LandingPage 
+        user={user}
+        onGoToDashboard={handleGoToDashboard}
+        onGoToLogin={handleGoToLogin}
+        onGoToRegister={handleGoToRegister}
+        onOpenBlog={() => navigateTo('/blog')}
+      />
+    );
+  }
+
   // 2. Unauthenticated Routing (SaaS Landing & Login/Register Panels)
   if (!user) {
     if (currentPath === '/login') {
@@ -1117,15 +1168,16 @@ export default function App() {
       return (
         <BlogPost 
           onBack={() => navigateTo('/')}
-          onGoToDashboard={() => navigateTo('/register')}
+          onGoToDashboard={handleGoToRegister}
         />
       );
     }
     return (
       <LandingPage 
-        onGoToDashboard={() => navigateTo('/login')}
-        onGoToLogin={() => navigateTo('/login')}
-        onGoToRegister={() => navigateTo('/register')}
+        user={user}
+        onGoToDashboard={handleGoToDashboard}
+        onGoToLogin={handleGoToLogin}
+        onGoToRegister={handleGoToRegister}
         onOpenBlog={() => navigateTo('/blog')}
       />
     );

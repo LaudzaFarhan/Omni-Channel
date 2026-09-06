@@ -1421,7 +1421,7 @@ app.post('/api/logout', supervisor, (req, res) => {
 // Public origin of the deployed app, used as the post-payment return URL when
 // the request carries no Referer. Set this to your domain so the hardcoded
 // fallback is never relied on.
-const PUBLIC_URL = (process.env.PUBLIC_URL || 'https://www.omnireach.my.id').trim().replace(/\/+$/, '');
+const PUBLIC_URL = (process.env.PUBLIC_URL || 'https://app.omnireach.my.id').trim().replace(/\/+$/, '');
 
 // Mayar credentials and the API client live in server/mayar.js, which reads them
 // from the environment and never logs them.
