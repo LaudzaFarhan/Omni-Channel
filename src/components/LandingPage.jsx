@@ -147,8 +147,12 @@ export default function LandingPage({ user, onGoToDashboard, onGoToLogin, onGoTo
     }
   }, [messages, typingAgent, holdingAgent]);
 
+  React.useEffect(() => {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }, []);
+
   return (
-    <div className="landing-container">
+    <div className="landing-container" data-theme="light">
       {/* Navigation */}
       <nav className="landing-nav">
         <a href="#" className="landing-brand" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>

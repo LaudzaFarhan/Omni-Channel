@@ -132,8 +132,12 @@ Mulai uji coba gratis dan integrasikan nomor WhatsApp bisnis Anda sekarang di:
     setTimeout(() => setCopied(false), 2500);
   };
 
+  React.useEffect(() => {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }, []);
+
   return (
-    <div style={{ height: '100vh', width: '100vw', overflowY: 'auto', background: 'var(--bg-main)', color: 'var(--text-main)', fontFamily: "'Outfit', sans-serif" }}>
+    <div data-theme="light" style={{ height: '100vh', width: '100vw', overflowY: 'auto', background: 'var(--bg-main)', color: 'var(--text-main)', fontFamily: "'Outfit', sans-serif" }}>
       {/* Header Navigation */}
       <nav style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',

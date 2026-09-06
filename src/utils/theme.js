@@ -31,6 +31,14 @@ function writeStored(theme) {
 
 /** The OS-level preference, used when the user has never chosen explicitly. */
 export function systemTheme() {
+  // On the marketing domain (omnireach.my.id) or public landing routes, always default to clean light theme
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    const path = window.location.pathname;
+    if (host === 'omnireach.my.id' || host === 'www.omnireach.my.id' || path === '/' || path.startsWith('/blog') || path.startsWith('/cara-integrasi')) {
+      return 'light';
+    }
+  }
   try {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   } catch {
@@ -40,6 +48,12 @@ export function systemTheme() {
 
 /** The theme in effect: an explicit choice if there is one, else the OS setting. */
 export function currentTheme() {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'omnireach.my.id' || host === 'www.omnireach.my.id') {
+      return 'light';
+    }
+  }
   return readStored() || systemTheme();
 }
 
@@ -98,6 +112,11 @@ export function applyStoredTheme() {
   try {
     const query = window.matchMedia('(prefers-color-scheme: dark)');
     query.addEventListener('change', (event) => {
+      const host = typeof window !== 'undefined' ? window.location.hostname : '';
+      if (host === 'omnireach.my.id' || host === 'www.omnireach.my.id') {
+        applyTheme('light');
+        return;
+      }
       if (!hasExplicitPreference()) {
         applyTheme(event.matches ? 'dark' : 'light');
       }

@@ -187,6 +187,13 @@ export default function App() {
     }
   }, [currentPath, isLandingOnlyHost]);
 
+  // Ensure omnireach.my.id and unauthenticated landing views are always rendered in light theme
+  useEffect(() => {
+    if (isLandingOnlyHost || !user) {
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+  }, [isLandingOnlyHost, user]);
+
   const fetchChats = async (sessionId) => {
     const sid = sessionId || activeSessionIdRef.current;
     if (!sid) return;
