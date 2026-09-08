@@ -1,10 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ExternalLink, Megaphone, Copy, Check, ChevronDown, ChevronUp, Info } from 'lucide-react';
 import { showToast } from '../../utils/toastBus.js';
 
 export default function AdMessageCard({ adInfo, onOpenDetails }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [imgSrc, setImgSrc] = useState(adInfo?.thumbnailUrl || adInfo?.embeddedThumbnail || '');
+
+  useEffect(() => {
+    if (adInfo) {
+      setImgSrc(adInfo.thumbnailUrl || adInfo.embeddedThumbnail || '');
+    }
+  }, [adInfo?.thumbnailUrl, adInfo?.embeddedThumbnail]);
 
   if (!adInfo) return null;
 
@@ -20,8 +27,6 @@ export default function AdMessageCard({ adInfo, onOpenDetails }) {
     ref = '',
     ctwaClid = '',
   } = adInfo;
-
-  const [imgSrc, setImgSrc] = useState(thumbnailUrl || embeddedThumbnail || '');
 
   const isFacebook = sourceApp === 'facebook';
   const isInstagram = sourceApp === 'instagram';

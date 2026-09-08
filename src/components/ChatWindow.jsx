@@ -1758,11 +1758,12 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                   {/* WhatsApp Ad Card if message originated from an ad */}
                   {(() => {
                     let adInfo = extractAdInfo(msg);
-                    // Fallback: If this message is the first incoming customer message in an Ad conversation,
-                    // ensure the Ad Card is displayed even if individual message context was stripped.
+                    // Fallback: If this message is the first visible incoming customer message in an Ad conversation,
+                    // or if the message text indicates ad initiation, ensure the Ad Card is displayed directly on this bubble.
                     if (!adInfo && !isMe && chatAdInfo) {
-                      const firstIncoming = visibleMessages.find(m => !m.key?.fromMe);
-                      if (firstIncoming && (firstIncoming.key?.id === msg.key?.id || firstIncoming === msg)) {
+                      const isAdText = text && text.startsWith('📢 Iklan:');
+                      const firstIncoming = visibleMessages.find(m => !m.key?.fromMe && Boolean(getMessageText(m)));
+                      if (isAdText || (firstIncoming && (firstIncoming.key?.id === msg.key?.id || firstIncoming === msg))) {
                         adInfo = chatAdInfo;
                       }
                     }
@@ -1778,11 +1779,29 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                     );
                   })()}
 
-                  {hasMedia(msg) ? (
-                    <MediaMessage msg={msg} activeSessionId={activeSessionId} />
-                  ) : (
-                    formatMessageText(text)
-                  )}
+                  {/* Message body / media */}
+                  {(() => {
+                    if (hasMedia(msg)) {
+                      return <MediaMessage msg={msg} activeSessionId={activeSessionId} />;
+                    }
+                    let currentAdInfo = extractAdInfo(msg);
+                    if (!currentAdInfo && !isMe && chatAdInfo) {
+                      const isAdText = text && text.startsWith('📢 Iklan:');
+                      const firstIncoming = visibleMessages.find(m => !m.key?.fromMe && Boolean(getMessageText(m)));
+                      if (isAdText || (firstIncoming && (firstIncoming.key?.id === msg.key?.id || firstIncoming === msg))) {
+                        currentAdInfo = chatAdInfo;
+                      }
+                    }
+                    // If this message displays an Ad Card, and the text is merely the fallback "📢 Iklan: ...",
+                    // omit the redundant text line because the card already clearly displays the ad title and copy.
+                    const isRedundantAdFallback = currentAdInfo && (
+                      text.startsWith('📢 Iklan:') ||
+                      (currentAdInfo.title && text.trim().toLowerCase() === currentAdInfo.title.trim().toLowerCase())
+                    );
+                    if (isRedundantAdFallback) return null;
+
+                    return formatMessageText(text);
+                  })()}
                   {/* Who on the team sent this, for messages sent from the dashboard.
                       Only our own messages are ever stamped, so the badge sits on a
                       footer row with the time; without a badge the time keeps its

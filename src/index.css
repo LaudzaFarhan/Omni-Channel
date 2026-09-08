@@ -6603,7 +6603,34 @@ textarea.form-input {
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-/* 4. Ad Details Modal */
+/* 4. Ad Details Modal & Global Modal Backdrop */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.modal-card {
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 14px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  animation: scaleUp 0.18s ease-out;
+}
+
+[data-theme='dark'] .modal-card {
+  background: var(--bg-card, #1e293b);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
 .ad-details-modal {
   max-width: 520px;
   width: 92%;
