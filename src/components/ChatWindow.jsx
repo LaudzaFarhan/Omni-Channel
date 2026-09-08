@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, AlertTriangle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown, ChevronRight, Pause, Play, UserPlus, UserCheck, MoreVertical, Search, Trophy, UserMinus, RotateCcw, Maximize2, Minimize2, Reply, Forward, Copy, Zap, Users, MessageSquare, Megaphone, ExternalLink, Info, Download } from 'lucide-react';
 import { fetchWithAuth, saveContact, updateContact, setChatStatus as apiSetChatStatus } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
@@ -617,6 +617,15 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   const [forwardMsg, setForwardMsg] = useState(null);
   const msgMenuRef = useRef(null);
   const composerRef = useRef(null);
+
+  // Auto-resize composer textarea to fit content up to max height
+  useLayoutEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const newHeight = Math.min(Math.max(el.scrollHeight, 34), 130);
+    el.style.height = `${newHeight}px`;
+  }, [inputText, activeChat?.id]);
 
   // 24-Hour Follow-up Window: live real-time countdown & status
   const [ticker, setTicker] = useState(Date.now());
@@ -1284,7 +1293,12 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
   };
 
   const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.isComposing || e.nativeEvent?.isComposing) return;
+    if (e.key === 'Enter') {
+      if (e.shiftKey) {
+        // Shift + Enter: default textarea behavior creates a newline
+        return;
+      }
       e.preventDefault();
       handleSend();
     }
@@ -2207,9 +2221,9 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
               )}
             </div>
 
-            <input 
-              type="text" 
+            <textarea 
               ref={composerRef}
+              rows={1}
               placeholder="Ketik pesan... atau gunakan '/' untuk memilih template" 
               className="chat-input"
               value={inputText}
