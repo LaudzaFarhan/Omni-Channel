@@ -2115,7 +2115,10 @@ if (fs.existsSync(distPath)) {
     // deploy and never pick up the new asset hashes.
     setHeaders: (res, filePath) => {
       if (path.basename(filePath) === 'index.html') {
-        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        res.setHeader('Surrogate-Control', 'no-store');
       } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       }
@@ -2123,10 +2126,13 @@ if (fs.existsSync(distPath)) {
   }));
 
   // Deep links (/dashboard, /login, ...) are served the SPA shell. This path
-  // bypasses express.static, so the no-cache header has to be set again here or
+  // bypasses express.static, so strict no-store headers have to be set again here or
   // a returning browser can boot a stale bundle that references deleted assets.
   app.get('*', (req, res) => {
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
     res.sendFile(path.join(distPath, 'index.html'));
   });
 } else {

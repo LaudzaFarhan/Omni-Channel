@@ -76,11 +76,11 @@ export default function BroadcastUpdateModal({
   const [title, setTitle] = useState(activeAnnouncement?.title || 'Pembaruan Sistem Tersedia');
   const [message, setMessage] = useState(
     activeAnnouncement?.message ||
-      'Kami baru saja merilis pembaruan sistem dengan fitur dan perbaikan terbaru. Silakan tekan Ctrl + Shift + R (Hard Refresh) di browser Anda, lalu login ulang untuk memuat versi terbaru.'
+      'Kami baru saja merilis pembaruan sistem dengan fitur dan perbaikan terbaru. Aplikasi akan otomatis diperbarui ke versi terbaru atau Anda dapat menekan tombol "Perbarui Sekarang".'
   );
   const [version, setVersion] = useState(activeAnnouncement?.version || 'v3.0.0');
   const [forceRelogin, setForceRelogin] = useState(
-    activeAnnouncement?.forceRelogin !== undefined ? activeAnnouncement.forceRelogin : true
+    activeAnnouncement?.forceRelogin !== undefined ? activeAnnouncement.forceRelogin : false
   );
 
   const [submitting, setSubmitting] = useState(false);
@@ -506,7 +506,7 @@ export default function BroadcastUpdateModal({
                     className="broadcast-input"
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    placeholder="Tulis pesan petunjuk hard refresh dan login ulang..."
+                    placeholder="Tulis pesan pembaruan sistem untuk pengguna..."
                     required
                     style={{ lineHeight: '1.5', resize: 'vertical' }}
                   />

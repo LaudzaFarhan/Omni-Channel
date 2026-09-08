@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { login as apiLogin, register as apiRegister } from '../utils/api.js';
-import { Mail, Lock, User, ArrowLeft, Eye, EyeOff, Sparkles } from 'lucide-react';
+import { Mail, Lock, User, ArrowLeft, Eye, EyeOff, Sparkles, RefreshCw } from 'lucide-react';
+import { clearCachesAndReload } from '../utils/autoUpdater.js';
 import BrandMark from './BrandMark.jsx';
 
 export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSuccess, systemAnnouncement }) {
@@ -101,23 +102,28 @@ export default function AuthScreens({ type, onSwitchType, onBackToHome, onAuthSu
               <span>Pembaruan Sistem Baru Tersedia!</span>
             </div>
             <div style={{ color: '#451a03', fontSize: '0.82rem', marginBottom: '8px' }}>
-              {systemAnnouncement?.message || 'Sistem baru saja diperbarui. Mohon tekan tombol Hard Refresh di browser sebelum Anda login.'}
+              {systemAnnouncement?.message || 'Sistem telah diperbarui ke versi terbaru.'}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#78350f', flexWrap: 'wrap' }}>
-              <span style={{ fontWeight: '600' }}>Tekan:</span>
-              <kbd className="broadcast-kbd-tag">
-                {typeof window !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0 ? '⌘ Cmd' : 'Ctrl'}
-              </kbd>
-              <span>+</span>
-              <kbd className="broadcast-kbd-tag">
-                Shift
-              </kbd>
-              <span>+</span>
-              <kbd className="broadcast-kbd-tag">
-                R
-              </kbd>
-              <span style={{ fontSize: '0.78rem', color: '#b45309', fontWeight: '700' }}>sebelum login</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => clearCachesAndReload(true)}
+              style={{
+                background: 'rgba(217, 119, 6, 0.15)',
+                border: '1px solid rgba(217, 119, 6, 0.3)',
+                borderRadius: '6px',
+                padding: '4px 10px',
+                fontSize: '0.78rem',
+                fontWeight: '600',
+                color: '#b45309',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+              }}
+            >
+              <RefreshCw size={12} />
+              <span>Muat Versi Terbaru</span>
+            </button>
           </div>
         )}
 

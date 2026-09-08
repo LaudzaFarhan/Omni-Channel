@@ -37,6 +37,7 @@ import SystemUpdateAlert from './components/SystemUpdateAlert.jsx';
 import { showToast } from './utils/toastBus.js';
 import { getStoredSettings, playNotificationSound } from './utils/userSettings.js';
 import { extractAdInfo, extractMessageText } from './utils/adDetection.js';
+import { initAutoUpdater, onUpdateAvailable, clearCachesAndReload } from './utils/autoUpdater.js';
 
 export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -193,6 +194,24 @@ export default function App() {
       document.documentElement.setAttribute('data-theme', 'light');
     }
   }, [isLandingOnlyHost, user]);
+
+  // Background auto-updater: checks for server builds, handles chunk load errors, and enables seamless 1-click update without logout
+  useEffect(() => {
+    const cleanup = initAutoUpdater();
+    const unsub = onUpdateAvailable((info) => {
+      showToast({
+        type: 'info',
+        title: '✨ Pembaruan Aplikasi',
+        message: `Versi terbaru (${info.version || info.serverSha}) telah siap. Klik untuk memuat pembaruan tanpa logout.`,
+        duration: 12000,
+        onClick: () => clearCachesAndReload(true),
+      });
+    });
+    return () => {
+      cleanup?.();
+      unsub?.();
+    };
+  }, []);
 
   const fetchChats = async (sessionId) => {
     const sid = sessionId || activeSessionIdRef.current;

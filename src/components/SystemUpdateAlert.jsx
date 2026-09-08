@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, X, Sparkles, CheckCircle2 } from 'lucide-react';
-import { logout as apiLogout, verifySystemAnnouncement, checkUserAnnouncementVerified } from '../utils/api.js';
+import { verifySystemAnnouncement, checkUserAnnouncementVerified } from '../utils/api.js';
+import { clearCachesAndReload } from '../utils/autoUpdater.js';
 
 export default function SystemUpdateAlert({ announcement, onDismiss }) {
   const [dismissed, setDismissed] = useState(false);
   const [verified, setVerified] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
+  const [updating, setUpdating] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
   // Check if current user already verified this announcement
@@ -27,31 +28,15 @@ export default function SystemUpdateAlert({ announcement, onDismiss }) {
     return null;
   }
 
-  const isMac = typeof window !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-
-  const handleHardRefreshAndRelogin = async () => {
-    setLoggingOut(true);
+  const handleUpdateNow = async () => {
+    setUpdating(true);
     try {
-      // Clear client storage & caches
-      if (typeof window !== 'undefined' && 'caches' in window) {
-        try {
-          const cacheKeys = await window.caches.keys();
-          await Promise.all(cacheKeys.map(key => window.caches.delete(key)));
-        } catch (cErr) {
-          console.warn('[SystemUpdate] Failed to clear browser caches:', cErr);
-        }
-      }
-
-      // Logout API (clears access & refresh tokens)
-      await apiLogout();
-
-      // Force navigate to login with updated query flag
-      window.location.href = '/login?updated=true&t=' + Date.now();
+      await verifySystemAnnouncement();
     } catch (err) {
-      console.error('[SystemUpdate] Error logging out:', err);
-      // Fallback
-      window.location.href = '/login?updated=true';
+      console.warn('[SystemUpdate] Failed to record verification:', err);
     }
+    // Seamless reload without logging out the customer
+    clearCachesAndReload();
   };
 
   const handleDismiss = () => {
@@ -149,29 +134,22 @@ export default function SystemUpdateAlert({ announcement, onDismiss }) {
         {announcement.message}
       </div>
 
-      {/* Keyboard Shortcut Highlight Box */}
+      {/* Info Notice Box */}
       <div
         style={{
           marginTop: '14px',
           padding: '10px 14px',
           borderRadius: '10px',
-          background: 'var(--warning-soft, #fef3e2)',
-          border: '1px solid var(--warning-border, #fde68a)',
+          background: 'rgba(37, 99, 235, 0.06)',
+          border: '1px solid rgba(37, 99, 235, 0.15)',
           display: 'flex',
-          flexDirection: 'column',
-          gap: '6px',
+          alignItems: 'center',
+          gap: '8px',
         }}
       >
-        <div style={{ fontSize: '0.82rem', color: 'var(--text-main, #1e293b)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-          <span style={{ fontWeight: '600' }}>Lakukan Hard Refresh:</span>
-          <kbd className="broadcast-kbd-tag">{isMac ? '⌘ Cmd' : 'Ctrl'}</kbd>
-          <span>+</span>
-          <kbd className="broadcast-kbd-tag">{isMac ? '⇧ Shift' : 'Shift'}</kbd>
-          <span>+</span>
-          <kbd className="broadcast-kbd-tag">R</kbd>
-        </div>
-        <div style={{ fontSize: '0.74rem', color: 'var(--text-muted, #64748b)' }}>
-          *Tekan kombinasi tombol ini sebelum atau setelah login agar browser memuat aset terbaru.
+        <Sparkles size={15} style={{ color: 'var(--primary, #2563eb)', flexShrink: 0 }} />
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-main, #1e293b)' }}>
+          Klik tombol <strong>Perbarui Sekarang</strong> untuk memuat fitur & perbaikan terbaru secara instan tanpa perlu logout.
         </div>
       </div>
 
@@ -189,49 +167,48 @@ export default function SystemUpdateAlert({ announcement, onDismiss }) {
         <button
           type="button"
           onClick={handleVerify}
-          disabled={verifying || loggingOut}
+          disabled={verifying || updating}
           style={{
             padding: '8px 16px',
             borderRadius: '8px',
-            background: 'linear-gradient(135deg, #10b981, #059669)',
-            color: '#ffffff',
-            border: 'none',
+            background: 'var(--bg-card, #ffffff)',
+            color: 'var(--text-main, #334155)',
+            border: '1px solid var(--border-color, #e2e8f0)',
             fontSize: '0.82rem',
-            fontWeight: '700',
+            fontWeight: '600',
             cursor: verifying ? 'not-allowed' : 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
             transition: 'all 0.15s',
           }}
         >
-          <CheckCircle2 size={15} />
-          {verifying ? 'Menyimpan...' : 'Sudah Verify'}
+          <CheckCircle2 size={15} style={{ color: 'var(--success, #10b981)' }} />
+          {verifying ? 'Menyimpan...' : 'Tandai Selesai'}
         </button>
 
         <button
           type="button"
-          onClick={handleHardRefreshAndRelogin}
-          disabled={loggingOut || verifying}
+          onClick={handleUpdateNow}
+          disabled={updating || verifying}
           style={{
-            padding: '8px 16px',
+            padding: '8px 18px',
             borderRadius: '8px',
-            background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+            background: 'linear-gradient(135deg, var(--primary, #2563eb), #1d4ed8)',
             color: '#ffffff',
             border: 'none',
             fontSize: '0.82rem',
             fontWeight: '700',
-            cursor: loggingOut ? 'not-allowed' : 'pointer',
+            cursor: updating ? 'not-allowed' : 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            boxShadow: '0 4px 14px rgba(245, 158, 11, 0.35)',
+            boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)',
             transition: 'all 0.15s',
           }}
         >
-          <RefreshCw size={14} className={loggingOut ? 'spinning' : ''} />
-          {loggingOut ? 'Memproses...' : 'Logout & Refresh Sekarang'}
+          <RefreshCw size={14} className={updating ? 'spinning' : ''} />
+          {updating ? 'Memuat Versi Baru...' : 'Perbarui Sekarang'}
         </button>
       </div>
     </div>

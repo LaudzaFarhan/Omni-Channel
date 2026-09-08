@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { apiUrl } from '../utils/apiBase.js';
+import { clearCachesAndReload } from '../utils/autoUpdater.js';
 
 // Shows which commit this bundle was built from, and warns when the running
 // server is on a different one.
@@ -56,7 +57,7 @@ export default function VersionBadge({ compact = false }) {
     `Built:   ${formatBuiltAt(BUILT_AT)}`,
     serverBuild ? `Server:  ${serverBuild.sha}${serverBuild.branch ? ` on ${serverBuild.branch}` : ''}` : 'Server:  unreachable',
     mismatch
-      ? '\nMismatch: the server is running a different commit than this page was built from. Run `npm run build` and hard-reload.'
+      ? '\nVersi server berbeda dengan halaman ini. Klik badge ini untuk memperbarui aplikasi secara otomatis.'
       : '',
   ].filter(Boolean).join('\n');
 
@@ -66,6 +67,9 @@ export default function VersionBadge({ compact = false }) {
     <span
       title={tooltip}
       aria-label={tooltip}
+      onClick={() => {
+        if (mismatch) clearCachesAndReload(true);
+      }}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -79,7 +83,7 @@ export default function VersionBadge({ compact = false }) {
         padding: '2px 7px',
         borderRadius: '5px',
         whiteSpace: 'nowrap',
-        cursor: 'help',
+        cursor: mismatch ? 'pointer' : 'help',
         userSelect: 'all',
       }}
     >
