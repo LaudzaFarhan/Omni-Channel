@@ -5,6 +5,23 @@ import { showToast } from '../../utils/toastBus.js';
 export default function AdDetailsModal({ adInfo, contactName, onClose }) {
   const [copiedKey, setCopiedKey] = useState(null);
 
+  const {
+    sourceLabel = 'Meta Ad',
+    sourceApp = 'meta',
+    title = '',
+    body = '',
+    thumbnailUrl = '',
+    embeddedThumbnail = '',
+    sourceUrl = '',
+    sourceId = '',
+    ref = '',
+    ctwaClid = '',
+    greetingMessage = '',
+    timestamp,
+  } = adInfo || {};
+
+  const [imgSrc, setImgSrc] = useState(thumbnailUrl || embeddedThumbnail || '');
+
   if (!adInfo) return null;
 
   const copyToClipboard = (text, key, label) => {
@@ -15,37 +32,23 @@ export default function AdDetailsModal({ adInfo, contactName, onClose }) {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  const {
-    sourceLabel = 'Meta Ad',
-    sourceApp = 'meta',
-    title = '',
-    body = '',
-    thumbnailUrl = '',
-    sourceUrl = '',
-    sourceId = '',
-    ref = '',
-    ctwaClid = '',
-    greetingMessage = '',
-    timestamp,
-  } = adInfo;
-
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card ad-details-modal" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="modal-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div className="ad-modal-header">
+          <div className="ad-modal-header-left">
             <div className="ad-modal-icon-badge">
               <Megaphone size={18} />
             </div>
             <div>
-              <h3 className="modal-title">Sumber Iklan Pelanggan</h3>
-              <p className="modal-subtitle">
+              <h3 className="ad-modal-title">Sumber Iklan Pelanggan</h3>
+              <p className="ad-modal-subtitle">
                 Percakapan ini berawal dari promosi berbayar {contactName ? `oleh ${contactName}` : ''}
               </p>
             </div>
           </div>
-          <button className="modal-close-btn" onClick={onClose} aria-label="Tutup">
+          <button className="ad-modal-close-btn" onClick={onClose} aria-label="Tutup" type="button">
             <X size={18} />
           </button>
         </div>
@@ -72,13 +75,19 @@ export default function AdDetailsModal({ adInfo, contactName, onClose }) {
           </div>
 
           {/* Ad Creative Image & Title */}
-          {thumbnailUrl && (
+          {(imgSrc || thumbnailUrl || embeddedThumbnail) && (
             <div className="ad-modal-creative">
               <img
-                src={thumbnailUrl}
+                src={imgSrc || thumbnailUrl || embeddedThumbnail}
                 alt={title || 'Ad Creative'}
                 className="ad-modal-img"
-                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                onError={(e) => {
+                  if (embeddedThumbnail && imgSrc !== embeddedThumbnail) {
+                    setImgSrc(embeddedThumbnail);
+                  } else {
+                    e.currentTarget.style.display = 'none';
+                  }
+                }}
               />
             </div>
           )}
@@ -160,8 +169,8 @@ export default function AdDetailsModal({ adInfo, contactName, onClose }) {
         </div>
 
         {/* Footer */}
-        <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
+        <div className="ad-modal-footer">
+          <button type="button" className="btn btn-secondary" onClick={onClose} style={{ padding: '8px 20px', borderRadius: '8px', cursor: 'pointer' }}>
             Tutup
           </button>
         </div>
