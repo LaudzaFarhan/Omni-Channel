@@ -37,7 +37,7 @@ import SystemUpdateAlert from './components/SystemUpdateAlert.jsx';
 import { showToast } from './utils/toastBus.js';
 import { getStoredSettings, playNotificationSound } from './utils/userSettings.js';
 import { extractAdInfo, extractMessageText } from './utils/adDetection.js';
-import { initAutoUpdater, onUpdateAvailable, clearCachesAndReload } from './utils/autoUpdater.js';
+import { initAutoUpdater, onUpdateAvailable, clearCachesAndReload, dismissUpdate } from './utils/autoUpdater.js';
 
 export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -200,11 +200,13 @@ export default function App() {
     const cleanup = initAutoUpdater();
     const unsub = onUpdateAvailable((info) => {
       showToast({
+        id: 'app_update_notification',
         type: 'info',
         title: '✨ Pembaruan Aplikasi',
         message: `Versi terbaru (${info.version || info.serverSha}) telah siap. Klik untuk memuat pembaruan tanpa logout.`,
-        duration: 12000,
-        onClick: () => clearCachesAndReload(true),
+        duration: 15000,
+        onClick: () => clearCachesAndReload(info.serverSha, true),
+        onDismiss: () => dismissUpdate(info.serverSha),
       });
     });
     return () => {

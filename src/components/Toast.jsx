@@ -20,17 +20,23 @@ function Toast({ toast, onDismiss }) {
   useEffect(() => {
     // Start the exit animation shortly before the toast is actually removed.
     const exitTimer = setTimeout(() => setLeaving(true), Math.max(0, duration - 280));
-    const removeTimer = setTimeout(() => onDismiss(toast.id), duration);
+    const removeTimer = setTimeout(() => {
+      if (typeof toast.onDismiss === 'function') toast.onDismiss();
+      onDismiss(toast.id);
+    }, duration);
 
     return () => {
       clearTimeout(exitTimer);
       clearTimeout(removeTimer);
     };
-  }, [toast.id, duration, onDismiss]);
+  }, [toast.id, duration, onDismiss, toast.onDismiss]);
 
   const handleDismiss = (e) => {
     e?.stopPropagation();
     setLeaving(true);
+    if (typeof toast.onDismiss === 'function') {
+      toast.onDismiss();
+    }
     setTimeout(() => onDismiss(toast.id), 260);
   };
 
@@ -92,8 +98,17 @@ export default function ToastHost() {
 
   useEffect(() => {
     return subscribeToasts((toast) => {
-      // Cap the stack so rapid events can't fill the screen.
-      setToasts(prev => [...prev, toast].slice(-3));
+      setToasts(prev => {
+        // If a toast with the same custom ID already exists, replace it rather than stacking
+        const existingIdx = prev.findIndex(t => t.id === toast.id);
+        if (existingIdx !== -1) {
+          const next = [...prev];
+          next[existingIdx] = toast;
+          return next;
+        }
+        // Cap the stack so rapid events can't fill the screen.
+        return [...prev, toast].slice(-3);
+      });
     });
   }, []);
 
