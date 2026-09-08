@@ -799,6 +799,14 @@ class UserStore {
         content = content.documentWithCaptionMessage.message;
         continue;
       }
+      if (content.botInvokeMessage?.message) {
+        content = content.botInvokeMessage.message;
+        continue;
+      }
+      if (content.interactiveMessage?.header?.documentMessage) {
+        content = { ...content, documentMessage: content.interactiveMessage.header.documentMessage };
+        continue;
+      }
       break;
     }
     return content;

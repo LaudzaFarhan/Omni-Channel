@@ -18,8 +18,11 @@ export function unwrapMessageContent(msg) {
 
   // Repeatedly unwrap nested container structures if present
   let iterations = 0;
-  while (content && typeof content === 'object' && iterations < 8) {
+  while (content && typeof content === 'object' && iterations < 10) {
     iterations++;
+    if (content.message && typeof content.message === 'object' && (content.ephemeralMessage || content.viewOnceMessage || content.documentWithCaptionMessage)) {
+      // Continue to specific container unwrapping
+    }
     if (content.ephemeralMessage?.message) {
       content = content.ephemeralMessage.message;
       continue;
@@ -42,6 +45,18 @@ export function unwrapMessageContent(msg) {
     }
     if (content.botInvokeMessage?.message) {
       content = content.botInvokeMessage.message;
+      continue;
+    }
+    if (content.interactiveMessage?.header?.documentMessage) {
+      content = { ...content, documentMessage: content.interactiveMessage.header.documentMessage };
+      continue;
+    }
+    if (content.interactiveMessage?.header?.imageMessage) {
+      content = { ...content, imageMessage: content.interactiveMessage.header.imageMessage };
+      continue;
+    }
+    if (content.interactiveMessage?.header?.videoMessage) {
+      content = { ...content, videoMessage: content.interactiveMessage.header.videoMessage };
       continue;
     }
     break;
@@ -304,7 +319,7 @@ export function extractMessageText(msg) {
     return content.audioMessage.ptt ? '🎙️ Pesan Suara' : '🎵 Audio';
   }
   if (content.documentMessage) {
-    const fn = content.documentMessage.fileName || content.documentMessage.caption;
+    const fn = content.documentMessage.fileName || content.documentMessage.title || content.documentMessage.caption;
     return fn ? `📄 ${fn}` : '📄 Dokumen';
   }
   if (content.stickerMessage) {
@@ -340,7 +355,17 @@ export function extractMessageText(msg) {
   }
 
   // 9. Graceful fallback rather than generic "Unsupported Message"
-  const knownKeys = Object.keys(content).filter(k => k !== 'messageContextInfo' && k !== 'contextInfo');
+  const ignoredKeys = new Set([
+    'messageContextInfo',
+    'contextInfo',
+    'key',
+    'messageSecret',
+    'status',
+    'userReceipt',
+    'originalSelfAuthorUserJidString',
+    'isMentionedInStatus'
+  ]);
+  const knownKeys = Object.keys(content).filter(k => !ignoredKeys.has(k));
   if (knownKeys.length > 0) {
     const key = knownKeys[0];
     const friendlyName = key.replace(/Message$/, '').replace(/([A-Z])/g, ' $1').toLowerCase();

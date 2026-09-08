@@ -1318,9 +1318,30 @@ app.post('/api/messages/send', approved, async (req, res) => {
   }
 });
 
-app.post('/api/media/download', approved, async (req, res) => {
+function repairBuffers(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  if (obj.type === 'Buffer' && Array.isArray(obj.data)) {
+    return Buffer.from(obj.data);
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(repairBuffers);
+  }
+  for (const k of Object.keys(obj)) {
+    if (obj[k] && typeof obj[k] === 'object') {
+      if (obj[k].type === 'Buffer' && Array.isArray(obj[k].data)) {
+        obj[k] = Buffer.from(obj[k].data);
+      } else {
+        repairBuffers(obj[k]);
+      }
+    }
+  }
+  return obj;
+}
+
+const handleMediaDownload = async (req, res) => {
   const ownerId = req.workspaceId;
-  const sid = req.body.sessionId || req.query.sessionId || 'default';
+  let sid = req.body?.sessionId || req.query?.sessionId || 'default';
+  if (sid === 'undefined' || sid === 'null' || !sid) sid = 'default';
   const key = sessionKey(ownerId, sid);
   const session = activeSessions[key];
 
@@ -1328,39 +1349,104 @@ app.post('/api/media/download', approved, async (req, res) => {
     return res.status(500).json({ error: 'WhatsApp client is not initialized' });
   }
 
-  const { message } = req.body;
-  if (!message) {
-    return res.status(400).json({ error: 'Missing message object' });
+  const store = getStore(key);
+  let message = req.body?.message;
+  const msgId = message?.key?.id || req.query?.msgId;
+  const jid = message?.key?.remoteJid || req.query?.jid;
+
+  let targetMessage = message;
+
+  // Look up authoritative message from store if msgId is provided
+  if (msgId && store?.messages) {
+    if (jid && store.messages[jid]) {
+      const found = store.messages[jid].find(m => m?.key?.id === msgId);
+      if (found) targetMessage = found;
+    }
+    if (!targetMessage || targetMessage === message) {
+      for (const chatJid in store.messages) {
+        const found = store.messages[chatJid]?.find(m => m?.key?.id === msgId);
+        if (found) {
+          targetMessage = found;
+          break;
+        }
+      }
+    }
   }
 
+  if (!targetMessage) {
+    return res.status(400).json({ error: 'Missing message object or message not found in store' });
+  }
+
+  // Restore any Buffer instances that were serialized as JSON
+  targetMessage = repairBuffers(targetMessage);
+
   try {
-    const buffer = await downloadMediaMessage(
-      message,
-      'buffer',
-      {},
-      {
-        logger: pino({ level: 'silent' }),
-        reuploadRequest: session.sock.updateMediaMessage
+    let buffer;
+    try {
+      buffer = await downloadMediaMessage(
+        targetMessage,
+        'buffer',
+        {},
+        {
+          logger: pino({ level: 'silent' }),
+          reuploadRequest: session.sock.updateMediaMessage
+        }
+      );
+    } catch (primaryErr) {
+      // If primary download failed and target message is wrapped, try with unwrapped content
+      const unwrappedContent = store.unwrapMessage(targetMessage);
+      if (unwrappedContent && unwrappedContent !== targetMessage.message) {
+        const fallbackMsg = { ...targetMessage, message: unwrappedContent };
+        buffer = await downloadMediaMessage(
+          fallbackMsg,
+          'buffer',
+          {},
+          {
+            logger: pino({ level: 'silent' }),
+            reuploadRequest: session.sock.updateMediaMessage
+          }
+        );
+      } else {
+        throw primaryErr;
       }
-    );
+    }
 
-    // Determine content type
-    const msg = message.message;
+    // Determine content type and proper filename
+    const unwrapped = store.unwrapMessage(targetMessage) || targetMessage.message;
     let contentType = 'application/octet-stream';
-    if (msg?.imageMessage) contentType = msg.imageMessage.mimetype || 'image/jpeg';
-    else if (msg?.videoMessage) contentType = msg.videoMessage.mimetype || 'video/mp4';
-    else if (msg?.audioMessage) contentType = msg.audioMessage.mimetype || 'audio/ogg';
-    else if (msg?.documentMessage) contentType = msg.documentMessage.mimetype || 'application/octet-stream';
-    else if (msg?.stickerMessage) contentType = msg.stickerMessage.mimetype || 'image/webp';
+    let fileName = 'download';
 
+    if (unwrapped?.imageMessage) {
+      contentType = unwrapped.imageMessage.mimetype || 'image/jpeg';
+      fileName = 'image.jpg';
+    } else if (unwrapped?.videoMessage || unwrapped?.ptvMessage) {
+      const v = unwrapped.videoMessage || unwrapped.ptvMessage;
+      contentType = v.mimetype || 'video/mp4';
+      fileName = 'video.mp4';
+    } else if (unwrapped?.audioMessage) {
+      contentType = unwrapped.audioMessage.mimetype || 'audio/ogg';
+      fileName = 'audio.ogg';
+    } else if (unwrapped?.documentMessage) {
+      contentType = unwrapped.documentMessage.mimetype || 'application/pdf';
+      fileName = unwrapped.documentMessage.fileName || unwrapped.documentMessage.title || (contentType.includes('pdf') ? 'document.pdf' : 'document');
+    } else if (unwrapped?.stickerMessage) {
+      contentType = unwrapped.stickerMessage.mimetype || 'image/webp';
+      fileName = 'sticker.webp';
+    }
+
+    const safeAsciiFilename = fileName.replace(/[^\x20-\x7E]/g, '_');
     res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `inline; filename="${safeAsciiFilename}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
     res.setHeader('Content-Length', buffer.length);
     res.send(buffer);
   } catch (err) {
     console.error(`[Media - ${key}] Failed to download media:`, err.message);
     res.status(500).json({ error: 'Failed to download media: ' + err.message });
   }
-});
+};
+
+app.post('/api/media/download', approved, handleMediaDownload);
+app.get('/api/media/download', approved, handleMediaDownload);
 
 app.post('/api/sync', approved, async (req, res) => {
   const ownerId = req.workspaceId;

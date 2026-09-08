@@ -51,12 +51,16 @@ export async function authMiddleware(req, res, next) {
     }
   }
 
-  // 2. Standard JWT access token authentication
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  // 2. Standard JWT access token authentication (Header or query param for downloads/previews)
+  const token = (authHeader && authHeader.startsWith('Bearer '))
+    ? authHeader.slice('Bearer '.length).trim()
+    : (req.query && typeof req.query.token === 'string' ? req.query.token.trim() : null);
+
+  if (!token) {
     return res.status(401).json({ error: 'Unauthorized: Missing token or API key' });
   }
 
-  const decoded = verifyAccessToken(authHeader.slice('Bearer '.length));
+  const decoded = verifyAccessToken(token);
   if (!decoded) {
     // 401 with this code tells the client to try its refresh token once.
     return res.status(401).json({ error: 'Unauthorized: Invalid or expired token', code: 'token_invalid' });

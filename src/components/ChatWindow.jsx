@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, AlertTriangle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown, ChevronRight, Pause, Play, UserPlus, UserCheck, MoreVertical, Search, Trophy, UserMinus, RotateCcw, Maximize2, Minimize2, Reply, Forward, Copy, Zap, Users, MessageSquare, Megaphone, ExternalLink, Info } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Send, FileText, Calendar, Clock, Smile, PanelRight, AlertCircle, AlertTriangle, Plus, X, Pencil, Trash2, Loader2, Paperclip, Check, CheckCheck, Tag, ChevronDown, ChevronRight, Pause, Play, UserPlus, UserCheck, MoreVertical, Search, Trophy, UserMinus, RotateCcw, Maximize2, Minimize2, Reply, Forward, Copy, Zap, Users, MessageSquare, Megaphone, ExternalLink, Info, Download } from 'lucide-react';
 import { fetchWithAuth, saveContact, updateContact, setChatStatus as apiSetChatStatus } from '../utils/api.js';
 import { subscribeSocket } from '../utils/socket.js';
 import { showToast } from '../utils/toastBus.js';
@@ -10,7 +10,7 @@ import { jidToPhone, formatPhone } from '../utils/phone.js';
 import ContactEditor from './contacts/ContactEditor.jsx';
 import ForwardDialog from './chat/ForwardDialog.jsx';
 import { loadTemplates, saveTemplates, resolveTemplateVariables, TEMPLATE_VARIABLES } from '../utils/templates.js';
-import { extractAdInfo, extractMessageText } from '../utils/adDetection.js';
+import { extractAdInfo, extractMessageText, unwrapMessageContent, getMessageContextInfo } from '../utils/adDetection.js';
 import AdMessageCard from './chat/AdMessageCard.jsx';
 import AdDetailsModal from './chat/AdDetailsModal.jsx';
 
@@ -97,91 +97,296 @@ if (!window.__mediaCache) {
 }
 const mediaCache = window.__mediaCache; // msgId -> string URL or Promise
 
+function formatFileSize(bytes) {
+  if (!bytes || isNaN(bytes)) return '';
+  const num = Number(bytes);
+  if (num <= 0) return '';
+  if (num < 1024) return `${num} B`;
+  if (num < 1024 * 1024) return `${(num / 1024).toFixed(1)} KB`;
+  return `${(num / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function MediaMessage({ msg, activeSessionId }) {
-  const msgId = msg.key.id;
+  const msgId = msg.key?.id;
+  const content = unwrapMessageContent(msg);
+
   const [mediaUrl, setMediaUrl] = useState(mediaCache[msgId] && typeof mediaCache[msgId] === 'string' ? mediaCache[msgId] : null);
   const [loading, setLoading] = useState(!mediaCache[msgId] || typeof mediaCache[msgId] !== 'string');
   const [error, setError] = useState(false);
-  
-  const content = msg.message;
+
   const isImage = !!content?.imageMessage;
-  const isVideo = !!content?.videoMessage;
+  const isVideo = !!(content?.videoMessage || content?.ptvMessage);
   const isAudio = !!content?.audioMessage;
   const isDocument = !!content?.documentMessage;
   const isSticker = !!content?.stickerMessage;
-  
-  const fileName = content?.documentMessage?.fileName || 'document';
+
+  const docMsg = content?.documentMessage;
+  const fileName = docMsg?.fileName || docMsg?.title || (docMsg?.mimetype === 'application/pdf' ? 'Dokumen.pdf' : 'document');
+  const fileSize = formatFileSize(docMsg?.fileLength);
+  const isPdf = Boolean(docMsg?.mimetype?.toLowerCase()?.includes('pdf') || fileName.toLowerCase().endsWith('.pdf'));
+  const fileExt = fileName.includes('.') ? fileName.split('.').pop().toUpperCase() : (isPdf ? 'PDF' : 'DOC');
+  const caption = docMsg?.caption || content?.imageMessage?.caption || content?.videoMessage?.caption || content?.stickerMessage?.caption;
+
+  const sid = activeSessionId && activeSessionId !== 'undefined' ? activeSessionId : 'default';
+
+  const fetchMedia = useCallback(async () => {
+    if (!msgId) return;
+    setLoading(true);
+    setError(false);
+
+    const downloadPromise = (async () => {
+      const res = await fetchWithAuth(`/api/media/download?sessionId=${encodeURIComponent(sid)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ sessionId: sid, message: msg })
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        throw new Error(errJson?.error || `Failed to download media (${res.status})`);
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      mediaCache[msgId] = url; // Save string to cache
+      return url;
+    })();
+
+    mediaCache[msgId] = downloadPromise; // Save promise to cache
+
+    try {
+      const url = await downloadPromise;
+      setMediaUrl(url);
+    } catch (err) {
+      console.error('Error fetching media:', err);
+      delete mediaCache[msgId]; // Remove from cache on failure so retry can happen
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [msg, msgId, sid]);
 
   useEffect(() => {
     let active = true;
+
+    if (!msgId) return;
 
     if (mediaCache[msgId]) {
       if (typeof mediaCache[msgId] === 'string') {
         setMediaUrl(mediaCache[msgId]);
         setLoading(false);
       } else {
-        // It is a Promise currently downloading, wait for it
+        // Promise currently downloading, wait for it
         mediaCache[msgId].then(url => {
           if (active) {
             setMediaUrl(url);
             setLoading(false);
           }
-        }).catch(err => {
+        }).catch(() => {
           if (active) setError(true);
         });
       }
       return;
     }
 
-    const fetchMedia = async () => {
-      setLoading(true);
-      setError(false);
-      
-      const downloadPromise = (async () => {
-        const res = await fetchWithAuth(`/api/media/download?sessionId=${activeSessionId}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ message: msg })
-        });
-        
-        if (!res.ok) throw new Error('Failed to download media');
-        
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        mediaCache[msgId] = url; // Save string to cache
-        return url;
-      })();
-
-      mediaCache[msgId] = downloadPromise; // Save promise to cache
-
-      try {
-        const url = await downloadPromise;
-        if (active) {
-          setMediaUrl(url);
-        }
-      } catch (err) {
-        console.error('Error fetching media:', err);
-        delete mediaCache[msgId]; // Remove from cache on failure so retry can happen
-        if (active) setError(true);
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-
     fetchMedia();
 
     return () => {
       active = false;
     };
-  }, [msgId, activeSessionId]);
+  }, [msgId, fetchMedia]);
+
+  const handleDownload = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (!mediaUrl) {
+      fetchMedia();
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = mediaUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handleOpen = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (mediaUrl) {
+      window.open(mediaUrl, '_blank');
+    } else {
+      fetchMedia();
+    }
+  };
+
+  if (isDocument) {
+    return (
+      <div style={{ marginTop: '4px', maxWidth: '320px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div 
+          className="document-message-card"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            padding: '10px 12px',
+            background: 'var(--overlay-subtle, rgba(0,0,0,0.03))',
+            border: '1px solid var(--border-color, rgba(0,0,0,0.08))',
+            borderRadius: '10px',
+            cursor: mediaUrl ? 'pointer' : 'default',
+            transition: 'all 0.15s ease',
+          }}
+          onClick={mediaUrl ? handleDownload : (!loading ? fetchMedia : undefined)}
+        >
+          {/* File Icon */}
+          <div style={{
+            width: '40px',
+            height: '46px',
+            borderRadius: '6px',
+            background: isPdf ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+            color: '#ffffff',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+            position: 'relative'
+          }}>
+            <FileText size={20} />
+            <span style={{ fontSize: '0.6rem', fontWeight: '700', textTransform: 'uppercase', marginTop: '1px', letterSpacing: '0.5px' }}>
+              {isPdf ? 'PDF' : fileExt.slice(0, 4)}
+            </span>
+          </div>
+
+          {/* Details */}
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div 
+              style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              title={fileName}
+            >
+              {fileName}
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-dimmed)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {fileSize && <span>{fileSize}</span>}
+              {fileSize && <span>•</span>}
+              <span>{isPdf ? 'Dokumen PDF' : fileExt}</span>
+            </div>
+          </div>
+
+          {/* Action icon */}
+          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+            {loading ? (
+              <div style={{ padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Mengunduh media...">
+                <Loader2 size={20} className="spin-icon" style={{ color: 'var(--primary)' }} />
+              </div>
+            ) : error ? (
+              <button 
+                type="button"
+                onClick={(e) => { e.stopPropagation(); fetchMedia(); }}
+                style={{ background: '#fee2e2', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', cursor: 'pointer' }}
+                title="Gagal memuat. Klik untuk coba lagi"
+              >
+                <RotateCcw size={16} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleDownload}
+                style={{ background: 'var(--primary-soft, rgba(37,99,235,0.1))', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary, #2563eb)', cursor: 'pointer' }}
+                title="Unduh File"
+              >
+                <Download size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Action buttons (Download / Open) */}
+        {mediaUrl && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '2px' }}>
+            <button
+              type="button"
+              onClick={handleDownload}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '4px 10px',
+                fontSize: '0.78rem',
+                fontWeight: '600',
+                color: 'var(--primary)',
+                background: 'transparent',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              <Download size={13} />
+              Unduh
+            </button>
+            {isPdf && (
+              <button
+                type="button"
+                onClick={handleOpen}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '4px 10px',
+                  fontSize: '0.78rem',
+                  fontWeight: '500',
+                  color: 'var(--text-dimmed)',
+                  background: 'transparent',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                <ExternalLink size={13} />
+                Buka Pratinjau
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Error retry text if error */}
+        {error && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#ef4444', paddingLeft: '2px' }}>
+            <AlertCircle size={14} />
+            <span>Gagal memuat dokumen.</span>
+            <button 
+              type="button"
+              onClick={(e) => { e.stopPropagation(); fetchMedia(); }}
+              style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '600' }}
+            >
+              Coba lagi
+            </button>
+          </div>
+        )}
+
+        {/* Caption */}
+        {caption && (
+          <div style={{ padding: '2px 4px', fontSize: '0.88rem', color: 'var(--text-main)', wordBreak: 'break-word' }}>
+            {formatMessageText(caption)}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0', color: 'var(--text-dimmed)', fontSize: '0.85rem' }}>
         <Loader2 size={16} className="spin-icon" style={{ color: 'var(--primary)' }} />
-        <span>Downloading media...</span>
+        <span>Mengunduh media...</span>
       </div>
     );
   }
@@ -190,7 +395,14 @@ function MediaMessage({ msg, activeSessionId }) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 0', color: '#ef4444', fontSize: '0.85rem' }}>
         <AlertCircle size={16} />
-        <span>Failed to load media</span>
+        <span>Gagal memuat media</span>
+        <button 
+          type="button"
+          onClick={(e) => { e.stopPropagation(); fetchMedia(); }}
+          style={{ background: 'none', border: 'none', padding: '0 4px', color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+        >
+          <RotateCcw size={12} /> Coba lagi
+        </button>
       </div>
     );
   }
@@ -206,9 +418,9 @@ function MediaMessage({ msg, activeSessionId }) {
           style={{ width: '100%', height: 'auto', display: 'block', maxHeight: '300px', objectFit: 'contain', cursor: 'pointer', borderRadius: '6px' }}
           onClick={() => window.open(mediaUrl, '_blank')}
         />
-        {(content?.imageMessage?.caption || content?.stickerMessage?.caption) && (
+        {caption && (
           <div style={{ padding: '8px 4px 4px 4px', fontSize: '0.9rem', color: 'var(--text-main)', wordBreak: 'break-word' }}>
-            {formatMessageText(content.imageMessage?.caption || content.stickerMessage?.caption)}
+            {formatMessageText(caption)}
           </div>
         )}
       </div>
@@ -223,9 +435,9 @@ function MediaMessage({ msg, activeSessionId }) {
           controls 
           style={{ width: '100%', maxHeight: '300px', display: 'block', borderRadius: '6px' }}
         />
-        {content?.videoMessage?.caption && (
+        {caption && (
           <div style={{ padding: '8px 4px 4px 4px', fontSize: '0.9rem', color: 'var(--text-main)', wordBreak: 'break-word' }}>
-            {formatMessageText(content.videoMessage.caption)}
+            {formatMessageText(caption)}
           </div>
         )}
       </div>
@@ -236,26 +448,6 @@ function MediaMessage({ msg, activeSessionId }) {
     return (
       <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
         <audio src={mediaUrl} controls style={{ maxWidth: '240px', height: '40px' }} />
-      </div>
-    );
-  }
-
-  if (isDocument) {
-    return (
-      <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: 'rgba(0,0,0,0.03)', borderRadius: '8px', maxWidth: '280px' }}>
-        <FileText size={24} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {fileName}
-          </div>
-          <a 
-            href={mediaUrl} 
-            download={fileName}
-            style={{ fontSize: '0.8rem', color: 'var(--link-color)', textDecoration: 'underline', fontWeight: '500' }}
-          >
-            Download
-          </a>
-        </div>
       </div>
     );
   }
@@ -294,9 +486,16 @@ function MenuDivider() {
 }
 
 function hasMedia(msg) {
-  const content = msg.message;
+  const content = unwrapMessageContent(msg);
   if (!content) return false;
-  return !!(content.imageMessage || content.videoMessage || content.audioMessage || content.documentMessage || content.stickerMessage);
+  return !!(
+    content.imageMessage ||
+    content.videoMessage ||
+    content.audioMessage ||
+    content.documentMessage ||
+    content.stickerMessage ||
+    content.ptvMessage
+  );
 }
 
 export default function ChatWindow({ activeChat, messages, setMessages, userProfile, user, activeSessionId, userInfo, savedNames = {}, savedContacts = {},
@@ -938,17 +1137,9 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
 
   // Baileys attaches contextInfo to whichever message variant was sent, so a reply to a
   // photo carries it on imageMessage and a plain text reply on extendedTextMessage.
-  // Checking only one of them would make replies to media look like ordinary messages.
+  // getMessageContextInfo unwraps containers and checks all variants.
   const getContextInfo = (msg) => {
-    const c = msg?.message;
-    if (!c) return null;
-    return c.extendedTextMessage?.contextInfo
-      || c.imageMessage?.contextInfo
-      || c.videoMessage?.contextInfo
-      || c.documentMessage?.contextInfo
-      || c.audioMessage?.contextInfo
-      || c.stickerMessage?.contextInfo
-      || null;
+    return getMessageContextInfo(msg);
   };
 
   // The quoted message shown inside a bubble, or null when this is not a reply.
