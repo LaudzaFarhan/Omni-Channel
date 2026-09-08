@@ -1264,6 +1264,35 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                   </span>
                 )}
 
+                {/* Ad Origin Pill in Header */}
+                {chatAdInfo && (
+                  <button
+                    type="button"
+                    className="chat-header-ad-pill"
+                    onClick={() => {
+                      setSelectedModalAd(chatAdInfo);
+                      setShowAdModal(true);
+                    }}
+                    title="Klik untuk melihat detail iklan kampanye (Ad Details)"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '2px 8px',
+                      fontSize: '0.72rem',
+                      fontWeight: '600',
+                      borderRadius: '12px',
+                      backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                      color: 'var(--primary-color, #2563eb)',
+                      border: '1px solid rgba(59, 130, 246, 0.25)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Megaphone size={11} />
+                    <span>{chatAdInfo.sourceLabel || 'FB Ad'}{chatAdInfo.title ? `: ${chatAdInfo.title.length > 20 ? chatAdInfo.title.substring(0, 20) + '...' : chatAdInfo.title}` : ''}</span>
+                    <Info size={10} style={{ opacity: 0.7 }} />
+                  </button>
+                )}
               </div>
               {/* The secondary line, which must not simply repeat the primary one.
                   An unsaved contact has no name, so getDisplayName returns the number —

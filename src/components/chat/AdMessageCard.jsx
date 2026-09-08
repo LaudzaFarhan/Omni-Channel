@@ -14,11 +14,14 @@ export default function AdMessageCard({ adInfo, onOpenDetails }) {
     title = '',
     body = '',
     thumbnailUrl = '',
+    embeddedThumbnail = '',
     sourceUrl = '',
     sourceId = '',
     ref = '',
     ctwaClid = '',
   } = adInfo;
+
+  const [imgSrc, setImgSrc] = useState(thumbnailUrl || embeddedThumbnail || '');
 
   const isFacebook = sourceApp === 'facebook';
   const isInstagram = sourceApp === 'instagram';
@@ -77,14 +80,20 @@ export default function AdMessageCard({ adInfo, onOpenDetails }) {
 
       {/* Main card body with image thumbnail & details */}
       <div className="ad-card-main">
-        {thumbnailUrl && (
+        {(imgSrc || thumbnailUrl || embeddedThumbnail) && (
           <div className="ad-card-thumb-wrapper">
             <img
-              src={thumbnailUrl}
+              src={imgSrc || thumbnailUrl || embeddedThumbnail}
               alt={title || 'Ad Preview'}
               className="ad-card-thumb"
               loading="lazy"
-              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              onError={(e) => {
+                if (embeddedThumbnail && imgSrc !== embeddedThumbnail) {
+                  setImgSrc(embeddedThumbnail);
+                } else {
+                  e.currentTarget.style.display = 'none';
+                }
+              }}
             />
           </div>
         )}

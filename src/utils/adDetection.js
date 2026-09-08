@@ -150,11 +150,12 @@ export function extractAdInfo(msg) {
       app = rawApp;
     }
 
+    const embeddedThumbnail = normalizeThumbnail(externalAdReply.thumbnail, null, null);
     const thumbnail = normalizeThumbnail(
       externalAdReply.thumbnail,
       externalAdReply.thumbnailUrl,
       externalAdReply.originalImageUrl
-    );
+    ) || embeddedThumbnail;
 
     return {
       isAd: true,
@@ -167,6 +168,7 @@ export function extractAdInfo(msg) {
       title: externalAdReply.title || 'Iklan Bersponsor',
       body: externalAdReply.body || '',
       thumbnailUrl: thumbnail,
+      embeddedThumbnail: embeddedThumbnail,
       mediaType: externalAdReply.mediaType || 'IMAGE',
       ctwaClid: externalAdReply.ctwaClid || null,
       ref: externalAdReply.ref || null,
