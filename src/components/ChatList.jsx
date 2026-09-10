@@ -202,7 +202,7 @@ export default function ChatList({ chats, setChats, searchQuery, setSearchQuery,
                       </span>
                       {(chat.isFromAd || chat.adInfo) && (
                         <span
-                          className="chat-item-ad-badge"
+                          className="chat-item-campaign-badge"
                           title={chat.adInfo?.title ? `Dari Iklan: ${chat.adInfo.title}` : 'Percakapan dari Iklan'}
                         >
                           <Megaphone size={9} />

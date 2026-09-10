@@ -45,18 +45,18 @@ export default function AdMessageCard({ adInfo, onOpenDetails }) {
   const displayBody = bodyIsLong && !expanded ? `${body.substring(0, 110)}...` : body;
 
   return (
-    <div className={`ad-card-container ad-source-${sourceApp}`}>
+    <div className={`campaign-card-container campaign-source-${sourceApp}`}>
       {/* Top bar: Source badge & links */}
-      <div className="ad-card-top">
-        <div className="ad-card-source-badge">
-          <Megaphone size={12} className="ad-card-icon" />
-          <span className="ad-card-source-text">{sourceLabel}</span>
+      <div className="campaign-card-top">
+        <div className="campaign-card-source-badge">
+          <Megaphone size={12} className="campaign-card-icon" />
+          <span className="campaign-card-source-text">{sourceLabel}</span>
         </div>
-        <div className="ad-card-actions">
+        <div className="campaign-card-actions">
           {onOpenDetails && (
             <button
               type="button"
-              className="ad-card-link-btn"
+              className="campaign-card-link-btn"
               title="Lihat detail lengkap kampanye iklan"
               onClick={(e) => {
                 e.stopPropagation();
@@ -72,7 +72,7 @@ export default function AdMessageCard({ adInfo, onOpenDetails }) {
               href={sourceUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="ad-card-link-btn"
+              className="campaign-card-link-btn"
               title="Buka tautan iklan"
               onClick={(e) => e.stopPropagation()}
             >
@@ -84,13 +84,13 @@ export default function AdMessageCard({ adInfo, onOpenDetails }) {
       </div>
 
       {/* Main card body with image thumbnail & details */}
-      <div className="ad-card-main">
+      <div className="campaign-card-main">
         {(imgSrc || thumbnailUrl || embeddedThumbnail) && (
-          <div className="ad-card-thumb-wrapper">
+          <div className="campaign-card-thumb-wrapper">
             <img
               src={imgSrc || thumbnailUrl || embeddedThumbnail}
               alt={title || 'Ad Preview'}
-              className="ad-card-thumb"
+              className="campaign-card-thumb"
               loading="lazy"
               onError={(e) => {
                 if (embeddedThumbnail && imgSrc !== embeddedThumbnail) {
@@ -103,15 +103,15 @@ export default function AdMessageCard({ adInfo, onOpenDetails }) {
           </div>
         )}
 
-        <div className="ad-card-details">
-          {title && <div className="ad-card-title">{title}</div>}
+        <div className="campaign-card-details">
+          {title && <div className="campaign-card-title">{title}</div>}
           {body && (
-            <div className="ad-card-body-text">
+            <div className="campaign-card-body-text">
               {displayBody}
               {bodyIsLong && (
                 <button
                   type="button"
-                  className="ad-card-expand-toggle"
+                  className="campaign-card-expand-toggle"
                   onClick={(e) => { e.stopPropagation(); setExpanded(v => !v); }}
                 >
                   {expanded ? <>Ringkas <ChevronUp size={11} /></> : <>Selengkapnya <ChevronDown size={11} /></>}
@@ -124,11 +124,11 @@ export default function AdMessageCard({ adInfo, onOpenDetails }) {
 
       {/* Metadata tags: Ad ID, Ref, Click ID */}
       {(sourceId || ref) && (
-        <div className="ad-card-footer">
+        <div className="campaign-card-footer">
           {sourceId && (
             <button
               type="button"
-              className="ad-card-meta-chip"
+              className="campaign-card-meta-chip"
               onClick={copyAdId}
               title="Klik untuk salin Ad ID"
             >
@@ -137,7 +137,7 @@ export default function AdMessageCard({ adInfo, onOpenDetails }) {
             </button>
           )}
           {ref && (
-            <span className="ad-card-meta-chip ad-chip-ref" title={`Ref: ${ref}`}>
+            <span className="campaign-card-meta-chip campaign-chip-ref" title={`Ref: ${ref}`}>
               Ref: {ref.length > 20 ? `${ref.substring(0, 20)}...` : ref}
             </span>
           )}

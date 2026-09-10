@@ -34,29 +34,29 @@ export default function AdDetailsModal({ adInfo, contactName, onClose }) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card ad-details-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card campaign-details-modal" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="ad-modal-header">
-          <div className="ad-modal-header-left">
-            <div className="ad-modal-icon-badge">
+        <div className="campaign-modal-header">
+          <div className="campaign-modal-header-left">
+            <div className="campaign-modal-icon-badge">
               <Megaphone size={18} />
             </div>
             <div>
-              <h3 className="ad-modal-title">Sumber Iklan Pelanggan</h3>
-              <p className="ad-modal-subtitle">
+              <h3 className="campaign-modal-title">Sumber Iklan Pelanggan</h3>
+              <p className="campaign-modal-subtitle">
                 Percakapan ini berawal dari promosi berbayar {contactName ? `oleh ${contactName}` : ''}
               </p>
             </div>
           </div>
-          <button className="ad-modal-close-btn" onClick={onClose} aria-label="Tutup" type="button">
+          <button className="campaign-modal-close-btn" onClick={onClose} aria-label="Tutup" type="button">
             <X size={18} />
           </button>
         </div>
 
         {/* Content */}
-        <div className="modal-body ad-details-body">
+        <div className="modal-body campaign-details-body">
           {/* Platform banner */}
-          <div className={`ad-platform-banner platform-${sourceApp}`}>
+          <div className={`campaign-platform-banner platform-${sourceApp}`}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Globe size={16} />
               <span style={{ fontWeight: '700', fontSize: '0.9rem' }}>{sourceLabel}</span>
@@ -66,7 +66,7 @@ export default function AdDetailsModal({ adInfo, contactName, onClose }) {
                 href={sourceUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ad-view-link-btn"
+                className="campaign-view-link-btn"
               >
                 <span>Lihat Iklan Langsung</span>
                 <ExternalLink size={12} />
@@ -76,11 +76,11 @@ export default function AdDetailsModal({ adInfo, contactName, onClose }) {
 
           {/* Ad Creative Image & Title */}
           {(imgSrc || thumbnailUrl || embeddedThumbnail) && (
-            <div className="ad-modal-creative">
+            <div className="campaign-modal-creative">
               <img
                 src={imgSrc || thumbnailUrl || embeddedThumbnail}
                 alt={title || 'Ad Creative'}
-                className="ad-modal-img"
+                className="campaign-modal-img"
                 onError={(e) => {
                   if (embeddedThumbnail && imgSrc !== embeddedThumbnail) {
                     setImgSrc(embeddedThumbnail);
@@ -93,29 +93,29 @@ export default function AdDetailsModal({ adInfo, contactName, onClose }) {
           )}
 
           {title && (
-            <div className="ad-modal-section">
-              <label className="ad-modal-label">Judul Iklan / Kampanye</label>
-              <div className="ad-modal-headline">{title}</div>
+            <div className="campaign-modal-section">
+              <label className="campaign-modal-label">Judul Iklan / Kampanye</label>
+              <div className="campaign-modal-headline">{title}</div>
             </div>
           )}
 
           {body && (
-            <div className="ad-modal-section">
-              <label className="ad-modal-label">Teks Iklan (Ad Copy)</label>
-              <div className="ad-modal-copy-box">{body}</div>
+            <div className="campaign-modal-section">
+              <label className="campaign-modal-label">Teks Iklan (Ad Copy)</label>
+              <div className="campaign-modal-copy-box">{body}</div>
             </div>
           )}
 
           {/* Metadata Grid */}
-          <div className="ad-modal-grid">
+          <div className="campaign-modal-grid">
             {sourceId && (
-              <div className="ad-modal-field">
-                <span className="ad-modal-field-title">Facebook / Meta Ad ID</span>
-                <div className="ad-modal-field-value-row">
+              <div className="campaign-modal-field">
+                <span className="campaign-modal-field-title">Facebook / Meta Ad ID</span>
+                <div className="campaign-modal-field-value-row">
                   <code>{sourceId}</code>
                   <button
                     type="button"
-                    className="ad-field-copy-btn"
+                    className="campaign-field-copy-btn"
                     onClick={() => copyToClipboard(sourceId, 'sourceId', 'Ad ID')}
                     title="Salin Ad ID"
                   >
@@ -126,13 +126,13 @@ export default function AdDetailsModal({ adInfo, contactName, onClose }) {
             )}
 
             {ref && (
-              <div className="ad-modal-field">
-                <span className="ad-modal-field-title">Referral Tag (ref)</span>
-                <div className="ad-modal-field-value-row">
+              <div className="campaign-modal-field">
+                <span className="campaign-modal-field-title">Referral Tag (ref)</span>
+                <div className="campaign-modal-field-value-row">
                   <code>{ref}</code>
                   <button
                     type="button"
-                    className="ad-field-copy-btn"
+                    className="campaign-field-copy-btn"
                     onClick={() => copyToClipboard(ref, 'ref', 'Referral Tag')}
                     title="Salin Ref"
                   >
@@ -143,13 +143,13 @@ export default function AdDetailsModal({ adInfo, contactName, onClose }) {
             )}
 
             {ctwaClid && (
-              <div className="ad-modal-field" style={{ gridColumn: 'span 2' }}>
-                <span className="ad-modal-field-title">Click-to-WhatsApp Click ID (ctwa_clid)</span>
-                <div className="ad-modal-field-value-row">
+              <div className="campaign-modal-field" style={{ gridColumn: 'span 2' }}>
+                <span className="campaign-modal-field-title">Click-to-WhatsApp Click ID (ctwa_clid)</span>
+                <div className="campaign-modal-field-value-row">
                   <code style={{ wordBreak: 'break-all', fontSize: '0.72rem' }}>{ctwaClid}</code>
                   <button
                     type="button"
-                    className="ad-field-copy-btn"
+                    className="campaign-field-copy-btn"
                     onClick={() => copyToClipboard(ctwaClid, 'ctwaClid', 'Click ID')}
                     title="Salin Click ID"
                   >
@@ -160,16 +160,16 @@ export default function AdDetailsModal({ adInfo, contactName, onClose }) {
             )}
 
             {greetingMessage && (
-              <div className="ad-modal-field" style={{ gridColumn: 'span 2' }}>
-                <span className="ad-modal-field-title">Pesan Pembuka Otomatis dari Iklan</span>
-                <div className="ad-modal-greeting-box">"{greetingMessage}"</div>
+              <div className="campaign-modal-field" style={{ gridColumn: 'span 2' }}>
+                <span className="campaign-modal-field-title">Pesan Pembuka Otomatis dari Iklan</span>
+                <div className="campaign-modal-greeting-box">"{greetingMessage}"</div>
               </div>
             )}
           </div>
         </div>
 
         {/* Footer */}
-        <div className="ad-modal-footer">
+        <div className="campaign-modal-footer">
           <button type="button" className="btn btn-secondary" onClick={onClose} style={{ padding: '8px 20px', borderRadius: '8px', cursor: 'pointer' }}>
             Tutup
           </button>

@@ -1473,7 +1473,7 @@ export default function ChatWindow({ activeChat, messages, setMessages, userProf
                 {chatAdInfo && (
                   <button
                     type="button"
-                    className="chat-header-ad-pill"
+                    className="chat-header-campaign-pill"
                     onClick={() => {
                       setSelectedModalAd(chatAdInfo);
                       setShowAdModal(true);
